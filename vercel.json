@@ -1,61 +1,7 @@
 {
-  "version": 2,
-  "buildCommand": "vite build",
-  "outputDirectory": "dist",
-  "installCommand": "npm install",
-  "framework": "vite",
-  "functions": {
-    "api/bake-collection.ts": {
-      "runtime": "@vercel/node",
-      "maxDuration": 15
-    },
-    "api/delete-image.ts": {
-      "runtime": "@vercel/node",
-      "maxDuration": 15
-    }
-  },
   "rewrites": [
-    { "source": "/api/bake-collection", "destination": "/api/bake-collection" },
-    { "source": "/api/delete-image",    "destination": "/api/delete-image"    },
-    { "source": "/",                    "destination": "/index.html" },
-    { "source": "/about",               "destination": "/index.html" },
-    { "source": "/projects",            "destination": "/index.html" },
-    { "source": "/projects/:id",        "destination": "/index.html" },
-    { "source": "/events",              "destination": "/index.html" },
-    { "source": "/board",               "destination": "/index.html" },
-    { "source": "/news",                "destination": "/index.html" },
-    { "source": "/news/:id",            "destination": "/index.html" },
-    { "source": "/gallery",             "destination": "/index.html" },
-    { "source": "/contact",             "destination": "/index.html" },
-    { "source": "/join",                "destination": "/index.html" },
-    { "source": "/login",               "destination": "/index.html" },
-    { "source": "/sponsorship",         "destination": "/index.html" },
-    { "source": "/dashboard",               "destination": "/index.html" },
-    { "source": "/dashboard/profile",       "destination": "/index.html" },
-    { "source": "/dashboard/attendance",    "destination": "/index.html" },
-    { "source": "/dashboard/projects",      "destination": "/index.html" },
-    { "source": "/dashboard/calendar",      "destination": "/index.html" },
-    { "source": "/dashboard/reminders",     "destination": "/index.html" },
-    { "source": "/dashboard/announcements", "destination": "/index.html" },
-    { "source": "/dashboard/resources",     "destination": "/index.html" },
-    { "source": "/admin",                   "destination": "/index.html" },
-    { "source": "/admin/members",           "destination": "/index.html" },
-    { "source": "/admin/applications",      "destination": "/index.html" },
-    { "source": "/admin/attendance",        "destination": "/index.html" },
-    { "source": "/admin/events",            "destination": "/index.html" },
-    { "source": "/admin/projects",          "destination": "/index.html" },
-    { "source": "/admin/board",             "destination": "/index.html" },
-    { "source": "/admin/news",              "destination": "/index.html" },
-    { "source": "/admin/gallery",           "destination": "/index.html" },
-    { "source": "/admin/communications",    "destination": "/index.html" },
-    { "source": "/admin/reminders",         "destination": "/index.html" },
-    { "source": "/admin/resources",         "destination": "/index.html" },
-    { "source": "/admin/pages",             "destination": "/index.html" },
-    { "source": "/admin/contact",           "destination": "/index.html" },
-    { "source": "/admin/theme",             "destination": "/index.html" },
-    { "source": "/admin/settings",          "destination": "/index.html" },
-    { "source": "/admin/sponsors",          "destination": "/index.html" },
-    { "source": "/(.*)",                    "destination": "/index.html" }
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
     {
