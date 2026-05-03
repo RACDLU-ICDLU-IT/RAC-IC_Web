@@ -82,6 +82,7 @@ export default function MainLayout() {
     { label: 'News', path: '/news' },
     { label: 'Board', path: '/board' },
     { label: 'Join', path: '/join' },
+    { label: 'Sponsors', path: '/sponsorship' },
   ];
 
   return (
@@ -174,6 +175,7 @@ export default function MainLayout() {
             <ul className="space-y-4 text-gray-400">
               <li><Link to="/contact" className="hover:text-white transition-colors">Contact Us</Link></li>
               <li><Link to="/join" className="hover:text-white transition-colors">Join the Club</Link></li>
+              <li><Link to="/sponsorship" className="hover:text-white transition-colors">Sponsorship</Link></li>
               <li><a href={`mailto:${settings.contactEmail}`} className="hover:text-white transition-colors">{settings.contactEmail}</a></li>
             </ul>
           </div>

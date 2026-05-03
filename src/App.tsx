@@ -38,6 +38,7 @@ import Gallery from './pages/Gallery';
 import Contact from './pages/Contact';
 import Join from './pages/Join';
 import Login from './pages/auth/Login';
+import Sponsorship from './pages/Sponsorship';
 
 // Admin Pages
 import AdminOverview from './pages/admin/AdminOverview';
@@ -56,6 +57,7 @@ import AdminResources from './pages/admin/AdminResources';
 import AdminPages from './pages/admin/AdminPages';
 import AdminContactInbox from './pages/admin/AdminContactInbox';
 import AdminTheme from './pages/admin/AdminTheme';
+import AdminSponsors from './pages/admin/AdminSponsors';
 
 export default function App() {
   return (
@@ -78,6 +80,7 @@ export default function App() {
                   <Route path="/gallery" element={<Gallery />} />
                   <Route path="/contact" element={<Contact />} />
                   <Route path="/join" element={<Join />} />
+                  <Route path="/sponsorship" element={<Sponsorship />} />
                   <Route path="/login" element={<Login />} />
                 </Route>
 
@@ -112,6 +115,7 @@ export default function App() {
                     <Route path="resources" element={<AdminResources />} />
                     <Route path="pages" element={<AdminPages />} />
                     <Route path="contact" element={<AdminContactInbox />} />
+                    <Route path="sponsors" element={<AdminSponsors />} />
                     <Route path="theme" element={<AdminTheme />} />
                     <Route path="settings" element={<AdminSettings />} />
                   </Route>

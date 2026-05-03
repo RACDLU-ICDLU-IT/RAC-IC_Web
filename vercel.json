@@ -54,6 +54,7 @@
     { "source": "/admin/contact",           "destination": "/index.html" },
     { "source": "/admin/theme",             "destination": "/index.html" },
     { "source": "/admin/settings",          "destination": "/index.html" },
+    { "source": "/admin/sponsors",          "destination": "/index.html" },
     { "source": "/(.*)",                    "destination": "/index.html" }
   ],
   "headers": [

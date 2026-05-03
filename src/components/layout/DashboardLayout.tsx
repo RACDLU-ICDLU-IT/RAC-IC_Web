@@ -84,6 +84,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       { path: '/admin/news', label: 'News', icon: Newspaper },
       { path: '/admin/gallery', label: 'Gallery', icon: ImageIcon },
       { path: '/admin/board', label: 'Board', icon: User },
+      { path: '/admin/sponsors', label: 'Sponsors', icon: HeartHandshake },
       { path: '/admin/contact', label: 'Contact Inbox', icon: Inbox, badge: unreadCount },
     ]},
     { title: 'System', items: [

@@ -82,7 +82,30 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); onUpload('', ''); }}
+              onClick={async (e) => {
+                e.stopPropagation();
+                
+                if (currentUrl.includes('cloudinary.com')) {
+                  // Attempt to extract the public_id, which usually comes after /v[0-9]+/ or /upload/
+                  // e.g. https://res.cloudinary.com/demo/image/upload/v1234/folder/file.jpg -> folder/file
+                  try {
+                    const match = currentUrl.match(/(?:upload\/(?:v\d+\/)?)(.+?)(?:\.[^.]+)?$/);
+                    const publicId = match ? match[1] : null;
+                    
+                    if (publicId) {
+                      await fetch('/api/delete-image', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ publicId })
+                      });
+                    }
+                  } catch (err) {
+                    console.error('Failed to call delete API', err);
+                  }
+                }
+                
+                onUpload('', '');
+              }}
               className="p-2 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors shadow-lg"
               title="Remove image"
             >
