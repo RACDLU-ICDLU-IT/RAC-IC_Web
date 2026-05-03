@@ -17,7 +17,7 @@ export default function AdminSettings() {
     logoUrl: '',
     districtNumber: '64',
     rotaryYear: '2025-2026',
-    sponsorClubName: 'Rotary Club of Dhaka',
+    sponsorClubName: 'Rotary Club of Dhaka Luminous',
     foundingYear: '2015',
     memberDues: 0,
     maxMembers: 150,

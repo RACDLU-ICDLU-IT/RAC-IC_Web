@@ -62,9 +62,11 @@ export default function About() {
             <div className="absolute left-0 md:left-32 top-0 bottom-0 w-px bg-gray-200"></div>
             
             {[
-              { year: '2015', text: 'Club chartered with 20 founding members.' },
-              { year: '2018', text: 'Reached 100 members and launched our first international exchange.' },
-              { year: '2022', text: 'Awarded Presidential Citation by Rotary International for outstanding community impact.' },
+              { year: '2021', text: 'Club chartered with 20 founding members.' },
+              { year: '2022', text: 'Reached 100 members and launched our first international exchange.' },
+              { year: '2023', text: 'Awarded Presidential Citation by Rotary International for outstanding community impact.' },
+              { year: '2024', text: 'Expanded community projects and focused on local sustainability.' },
+              { year: '2025', text: 'Hosted the largest district conference for youth leaders.' },
               { year: '2026', text: 'Launching the digital platform to expand our reach entirely.' }
             ].map((milestone, i) => (
               <div key={i} className="flex flex-col md:flex-row relative">
@@ -90,9 +92,9 @@ export default function About() {
               <span className="font-heading font-bold text-2xl text-accent">R</span>
             </div>
             <h2 className="text-sm font-bold tracking-widest text-gray-500 uppercase mb-4">Our Sponsor</h2>
-            <h3 className="text-4xl md:text-5xl font-heading font-bold mb-6">Rotary Club of Dhaka</h3>
+            <h3 className="text-4xl md:text-5xl font-heading font-bold mb-6">Rotary Club of Dhaka Luminous</h3>
             <p className="text-lg text-gray-400 mb-8 leading-relaxed">
-              We are proudly sponsored by the Rotary Club of Dhaka, District 64. Our affiliation gives us access to a global network of 1.2 million neighbors, friends, leaders, and problem-solvers who see a world where people unite and take action to create lasting change.
+              We are proudly sponsored by the Rotary Club of Dhaka Luminous, District 64. Our affiliation gives us access to a global network of 1.2 million neighbors, friends, leaders, and problem-solvers who see a world where people unite and take action to create lasting change.
             </p>
           </div>
           <div className="relative min-h-[40vh]">
