@@ -1,0 +1,141 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Primitives
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isUnverifiedSignedIn() { return request.auth != null; }
+    
+    // For this app, admins are defined by having role=='admin' or 'officer' in their user document.
+    // To bootstrap, we let a hardcoded email be admin, or we rely on the users collection.
+    // The spec says: read requires authentication, write requires officer/admin role.
+    function getUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function getUserRole() {
+      return (getUserDoc() != null && 'role' in getUserDoc().data) ? getUserDoc().data.role : 'member';
+    }
+    function isAutoAdmin() {
+      return request.auth != null && 'email' in request.auth.token && request.auth.token.email == 'khalidfx100@gmail.com';
+    }
+    function isOfficerOrAdmin() {
+      return isSignedIn() && (getUserRole() == 'officer' || getUserRole() == 'admin' || isAutoAdmin());
+    }
+    function isAdmin() {
+      return isSignedIn() && (getUserRole() == 'admin' || isAutoAdmin());
+    }
+    
+    // Users
+    match /users/{userId} {
+      // Users can read own profile, officers/admins can read all.
+      // Wait, spec says: all users... read requires authentication; write requires officer or admin.
+      // However, users need to read other users to see member lists perhaps, and definitely need to read their own profile to know their role!
+      // The spec says: read requires authentication; write requires officer or admin role.
+      // And users update their own profile? The spec says "My Profile (/dashboard/profile): Editable fields... Save changes via Firestore update."
+      // So members must be able to update their own non-role fields!
+      allow read: if isUnverifiedSignedIn();
+      
+      function isValidSelfUpdate(data) {
+        return data.diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'dob', 'bloodGroup', 'school', 'grade', 'class', 'gender', 'parentName', 'parentPhone', 'bio', 'avatar', 'socialLinks', 'notificationPrefs'])
+            && data.role == existing().role
+            && data.status == existing().status;
+      }
+      
+      allow update: if (isUnverifiedSignedIn() && userId == request.auth.uid && (isValidSelfUpdate(incoming()) || isAutoAdmin())) || isOfficerOrAdmin();
+      allow create: if isOfficerOrAdmin() || (isUnverifiedSignedIn() && userId == request.auth.uid && (incoming().role == 'member' || isAutoAdmin())); // to create their profile initially
+
+      allow delete: if isOfficerOrAdmin();
+    }
+    
+    // Events
+    match /events/{eventId} {
+      allow read: if isUnverifiedSignedIn() || resource.data.isPublic == true;
+      allow write: if isOfficerOrAdmin();
+    }
+    
+    // Attendance
+    match /attendance/{attendanceId} {
+      allow read: if isUnverifiedSignedIn();
+      allow write: if isOfficerOrAdmin();
+    }
+    
+    // Projects
+    match /projects/{projectId} {
+      allow read: if isUnverifiedSignedIn() || true; // they are also public on the public site
+      allow write: if isOfficerOrAdmin();
+    }
+    
+    // Applications
+    match /applications/{applicationId} {
+      allow create: if true; // Public can submit
+      allow read, update, delete: if isOfficerOrAdmin();
+    }
+    
+    // Announcements
+    match /announcements/{announcementId} {
+      allow read: if isUnverifiedSignedIn();
+      allow write: if isOfficerOrAdmin();
+    }
+    
+    // Reminders
+    match /reminders/{reminderId} {
+      allow read: if isUnverifiedSignedIn(); // Should filter by targetRole in queries
+      allow write: if isOfficerOrAdmin();
+    }
+    
+    // News
+    match /news/{newsId} {
+      allow read: if true;
+      allow write: if isOfficerOrAdmin();
+    }
+    
+    // Gallery
+    match /gallery/{photoId} {
+      allow read: if true;
+      allow write: if isOfficerOrAdmin();
+    }
+    
+    // Sponsors
+    match /sponsors/{sponsorId} {
+      allow read: if true;
+      allow write: if isOfficerOrAdmin();
+    }
+    
+    // Board
+    match /board/{memberId} {
+      allow read: if true;
+      allow write: if isOfficerOrAdmin();
+    }
+    
+    // Resources
+    match /resources/{resourceId} {
+      allow read: if isUnverifiedSignedIn();
+      allow write: if isOfficerOrAdmin();
+    }
+    
+    // Page Content
+    match /pageContent/{pageId} {
+      allow read: if true;
+      allow write: if isOfficerOrAdmin();
+    }
+    
+    // Settings
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isOfficerOrAdmin();
+    }
+    
+    // Contact Messages
+    match /contact_messages/{messageId} {
+      allow create: if true;
+      allow read, update, delete: if isOfficerOrAdmin();
+    }
+  }
+}

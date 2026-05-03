@@ -1,0 +1,365 @@
+import React, { useEffect, useState } from 'react';
+import { collection, query, getDocs, doc, setDoc, writeBatch, orderBy, where, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { Button } from '../../components/ui/Button';
+import { useToast } from '../../hooks/useToast';
+import { useAuth } from '../../contexts/AuthContext';
+import { Download, CalendarPlus, Search, List, CalendarDays } from 'lucide-react';
+import { Modal } from '../../components/ui/Modal';
+import { fetchAndBake } from '../../utils/bake';
+
+export default function AdminAttendance() {
+  const { user } = useAuth();
+  const [mode, setMode] = useState<'mark'|'history'>('mark');
+  const [events, setEvents] = useState<any[]>([]);
+  const [activeMembers, setActiveMembers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  // Mark Attendance state
+  const [selectedEventId, setSelectedEventId] = useState('');
+  const [attendanceSheet, setAttendanceSheet] = useState<Record<string, string>>({}); // userId -> status
+  const [isSaving, setIsSaving] = useState(false);
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [quickEventTitle, setQuickEventTitle] = useState('');
+  const [quickEventDate, setQuickEventDate] = useState('');
+
+  // View History state
+  const [historyEventId, setHistoryEventId] = useState('');
+  const [historyRecords, setHistoryRecords] = useState<any[]>([]);
+  const [isEditingHistory, setIsEditingHistory] = useState(false);
+  
+  const { addToast } = useToast();
+
+  const loadBaseData = async () => {
+    setLoading(true);
+    try {
+      const eSnap = await getDocs(query(collection(db, 'events'), orderBy('date', 'desc')));
+      setEvents(eSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      
+      const mSnap = await getDocs(query(collection(db, 'users'), where('status', '==', 'active')));
+      setActiveMembers(mSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch(err) {
+      console.error(err);
+      addToast('Failed to load data', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBaseData();
+  }, []);
+
+  const loadEventAttendance = async (eventId: string, setSheet: boolean = true) => {
+    if (!eventId) {
+      if (setSheet) setAttendanceSheet({});
+      return [];
+    }
+    try {
+      const snap = await getDocs(query(collection(db, 'attendance'), where('eventId', '==', eventId)));
+      const records = snap.docs.map(d => d.data());
+      
+      if (setSheet) {
+        const sheet: Record<string, string> = {};
+        records.forEach(r => sheet[r.userId] = r.status);
+        setAttendanceSheet(sheet);
+      }
+      return records;
+    } catch(err) {
+      console.error(err);
+      addToast('Failed to load attendance records', 'error');
+      return [];
+    }
+  };
+
+  useEffect(() => {
+    if (mode === 'mark') {
+      loadEventAttendance(selectedEventId, true);
+    }
+  }, [selectedEventId, mode]);
+
+  useEffect(() => {
+    if (mode === 'history' && historyEventId) {
+      loadEventAttendance(historyEventId, false).then(recs => setHistoryRecords(recs));
+    }
+  }, [historyEventId, mode]);
+
+  const handleSaveAttendance = async () => {
+    if (!selectedEventId) return;
+    setIsSaving(true);
+    try {
+      const batch = writeBatch(db);
+      const eventDetails = events.find(e => e.id === selectedEventId);
+      Object.entries(attendanceSheet).forEach(([userId, status]) => {
+        if (!status) return;
+        const ref = doc(db, 'attendance', `${selectedEventId}_${userId}`);
+        batch.set(ref, {
+          userId,
+          eventId: selectedEventId,
+          eventTitle: eventDetails?.title || 'Unknown Event',
+          eventDate: eventDetails?.date || '',
+          eventType: eventDetails?.type || '',
+          status,
+          markedAt: serverTimestamp(),
+          markedBy: user?.uid
+        });
+      });
+      await batch.commit();
+      addToast('Attendance saved', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to save attendance', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const setAll = (status: string|null) => {
+    const newSheet: Record<string, string> = {};
+    if (status) {
+      activeMembers.forEach(m => newSheet[m.id] = status);
+    }
+    setAttendanceSheet(newSheet);
+  };
+
+  const exportCurrentEvent = () => {
+    if (!selectedEventId) return;
+    const ev = events.find(e => e.id === selectedEventId);
+    let csv = 'Member Name,School,Status\n';
+    activeMembers.forEach(m => {
+       const status = attendanceSheet[m.id] || 'Not Marked';
+       csv += `"${m.name || ''}","${m.school || ''}",${status}\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Attendance_${ev?.title?.replace(/\\s+/g, '_')}.csv`;
+    a.click();
+  };
+
+  const handleQuickAddEvent = async () => {
+    if (!quickEventTitle || !quickEventDate) return;
+    try {
+      const pDoc = doc(collection(db, 'events'));
+      await setDoc(pDoc, {
+        title: quickEventTitle,
+        date: quickEventDate,
+        type: 'Meeting',
+        isPublic: false,
+        createdAt: serverTimestamp()
+      });
+      addToast('Event created quickly', 'success');
+      await fetchAndBake('events');
+      await loadBaseData();
+      setSelectedEventId(pDoc.id);
+      setIsQuickAddOpen(false);
+      setQuickEventTitle('');
+      setQuickEventDate('');
+    } catch(err) { addToast('Failed', 'error'); }
+  };
+
+  const exportSummary = async () => {
+    try {
+       const snap = await getDocs(query(collection(db, 'attendance')));
+       const allRecs = snap.docs.map(d => d.data());
+       
+       const userTotals: Record<string, { present: number, total: number }> = {};
+       
+       // Build map of user -> {present, totalEventsTheyWereMarkedIn}
+       // Better: total events is events array length (approximation)
+       // Let's do simple: total = total past events. 
+       const pastEvents = events.filter(e => new Date(e.date) <= new Date()).length;
+
+       allRecs.forEach(r => {
+         if (!userTotals[r.userId]) userTotals[r.userId] = { present: 0, total: 0 };
+         if (r.status === 'P' || r.status === 'L') userTotals[r.userId].present++;
+       });
+
+       let csv = 'Member Name,Role,School,Present Count,Attendance Rate %\n';
+       activeMembers.forEach(m => {
+          const u = userTotals[m.id] || { present: 0 };
+          const rate = pastEvents > 0 ? Math.round((u.present / pastEvents) * 100) : 0;
+          csv += `"${m.name}","${m.role}","${m.school}",${u.present},${rate}%\n`;
+       });
+       
+       const blob = new Blob([csv], { type: 'text/csv' });
+       const a = document.createElement('a');
+       a.href = URL.createObjectURL(blob);
+       a.download = 'Attendance_Summary.csv';
+       a.click();
+    } catch(err) {
+      addToast('Export failed', 'error');
+    }
+  };
+
+  const getStatusColor = (s: string) => {
+    if (s==='P') return 'bg-green-500 text-white border-green-600';
+    if (s==='A') return 'bg-red-500 text-white border-red-600';
+    if (s==='E') return 'bg-amber-500 text-white border-amber-600';
+    if (s==='L') return 'bg-blue-500 text-white border-blue-600';
+    return 'bg-gray-100 text-gray-400 border-gray-200';
+  };
+
+  return (
+    <div className="space-y-8 pb-32">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-heading font-bold text-gray-900">Attendance</h1>
+          <p className="text-gray-500 text-sm mt-1">Track member participation</p>
+        </div>
+      </div>
+
+      <div className="flex gap-2 border-b border-gray-200">
+        {[ {id:'mark', label:'Mark Attendance'}, {id:'history', label:'View History'} ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => setMode(t.id as any)}
+            className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${mode === t.id ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'mark' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+             <div className="w-full sm:max-w-md">
+                <label className="block text-sm font-bold text-gray-700 mb-2">Select Event</label>
+                <select value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:border-accent bg-gray-50">
+                   <option value="">-- Choose an event --</option>
+                   {events.map(e => <option key={e.id} value={e.id}>{e.date} — {e.title} ({e.type})</option>)}
+                </select>
+             </div>
+             <button onClick={() => setIsQuickAddOpen(true)} className="text-primary font-medium text-sm flex items-center gap-1 hover:underline whitespace-nowrap mt-4 sm:mt-0 pt-6">
+                <CalendarPlus size={16} /> Quick Add Event
+             </button>
+          </div>
+
+          {selectedEventId && (
+            <div className="pt-6 border-t border-gray-100 space-y-4">
+               <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50 p-4 rounded-lg">
+                  <div className="flex gap-2 flex-wrap">
+                    <Button variant="outline" size="sm" onClick={() => setAll('P')}>Mark All Present</Button>
+                    <Button variant="outline" size="sm" onClick={() => setAll('A')}>Mark All Absent</Button>
+                    <Button variant="outline" size="sm" onClick={() => setAll(null)}>Clear All</Button>
+                  </div>
+                  <div className="text-sm font-bold text-gray-500">
+                    <span className="text-primary">{Object.values(attendanceSheet).filter(Boolean).length}</span> / {activeMembers.length} marked
+                  </div>
+               </div>
+
+               <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+                 {activeMembers.map(m => {
+                   const s = attendanceSheet[m.id];
+                   return (
+                     <div key={m.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:border-accent/30 transition-colors">
+                       <div className="flex items-center gap-3 w-1/2">
+                          {m.avatar ? <img src={m.avatar} className="w-8 h-8 rounded-full" /> : <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">{m.name?.substring(0,2)}</div>}
+                          <div className="min-w-0">
+                            <p className="font-bold text-gray-900 truncate">{m.name}</p>
+                            <p className="text-[10px] text-gray-500 truncate">{m.school}</p>
+                          </div>
+                       </div>
+                       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg shrink-0">
+                         {['P','A','E','L'].map(st => (
+                           <button 
+                             key={st}
+                             onClick={() => setAttendanceSheet({...attendanceSheet, [m.id]: st})}
+                             className={`w-8 h-8 rounded-md font-bold text-sm border flex items-center justify-center transition-colors ${s === st ? getStatusColor(st) : 'bg-transparent text-gray-500 border-transparent hover:bg-gray-200'}`}
+                             title={st==='P'?'Present':st==='A'?'Absent':st==='E'?'Excused':'Late'}
+                           >
+                             {st}
+                           </button>
+                         ))}
+                       </div>
+                     </div>
+                   );
+                 })}
+               </div>
+
+               <div className="pt-6 border-t border-gray-100 flex justify-between items-center sticky bottom-0 bg-white p-4 -mx-6 -mb-6 border-t shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] rounded-b-xl z-10">
+                  <Button variant="outline" onClick={exportCurrentEvent}><Download size={16} className="mr-2"/> Export CSV</Button>
+                  <Button onClick={handleSaveAttendance} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Attendance'}</Button>
+               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {mode === 'history' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="md:col-span-1 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col max-h-[600px]">
+             <div className="p-4 border-b border-gray-100 bg-gray-50 font-bold text-gray-700 flex justify-between items-center">
+               Past Events
+               <button onClick={exportSummary} className="text-primary hover:underline text-xs flex items-center gap-1"><Download size={12}/> Summary</button>
+             </div>
+             <div className="overflow-y-auto flex-1 p-2 space-y-1">
+               {events.map(e => (
+                 <button 
+                   key={e.id}
+                   onClick={() => setHistoryEventId(e.id)}
+                   className={`w-full text-left p-3 rounded-lg border transition-colors ${historyEventId === e.id ? 'border-primary bg-primary/5' : 'border-transparent hover:bg-gray-50'}`}
+                 >
+                   <div className="font-bold text-gray-900 truncate">{e.title}</div>
+                   <div className="text-xs text-gray-500 mt-1">{e.date} • {e.type}</div>
+                 </button>
+               ))}
+             </div>
+          </div>
+          
+          <div className="md:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-6 min-h-[400px]">
+             {!historyEventId ? (
+               <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                  <CalendarDays size={48} className="mb-4 text-gray-300" />
+                  <p>Select an event to view attendance.</p>
+               </div>
+             ) : (
+               <div className="space-y-6">
+                 {/* Summary stats */}
+                 <div className="flex gap-4 p-4 bg-gray-50 rounded-lg">
+                   {['P','A','E','L'].map(s => (
+                     <div key={s} className="flex items-center gap-2">
+                       <span className={`w-3 h-3 rounded-full ${getStatusColor(s).split(' ')[0]}`}></span>
+                       <span className="font-bold text-gray-700">{historyRecords.filter(r => r.status === s).length}</span>
+                     </div>
+                   ))}
+                   <div className="ml-auto text-sm text-gray-500">Unmarked: {activeMembers.length - historyRecords.length}</div>
+                 </div>
+
+                 <div className="max-h-[450px] overflow-y-auto pr-2 divide-y divide-gray-100">
+                   {historyRecords.map((r, i) => {
+                     const m = activeMembers.find(x => x.id === r.userId);
+                     return (
+                       <div key={i} className="py-3 flex justify-between items-center">
+                         <div>
+                           <p className="font-bold text-sm text-gray-900">{m?.name || 'Unknown'}</p>
+                           <p className="text-xs text-gray-400">{m?.school || '...'}</p>
+                         </div>
+                         <div className={`px-3 py-1 rounded text-xs font-bold ${getStatusColor(r.status).replace('border-', '')}`}>
+                           {r.status === 'P' ? 'Present' : r.status==='A'?'Absent':r.status==='E'?'Excused':'Late'}
+                         </div>
+                       </div>
+                     )
+                   })}
+                   {historyRecords.length === 0 && <p className="text-center text-gray-400 py-8">No records for this event.</p>}
+                 </div>
+               </div>
+             )}
+          </div>
+        </div>
+      )}
+
+      {/* Quick Add Event Modal */}
+      <Modal isOpen={isQuickAddOpen} onClose={() => setIsQuickAddOpen(false)} title="Quick Add Event" size="sm">
+         <div className="space-y-4 mb-6">
+            <div><label className="block text-sm font-medium mb-1">Title</label><input value={quickEventTitle} onChange={e=>setQuickEventTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g. Weekly Meeting" /></div>
+            <div><label className="block text-sm font-medium mb-1">Date</label><input type="date" value={quickEventDate} onChange={e=>setQuickEventDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
+         </div>
+         <Button onClick={handleQuickAddEvent} className="w-full">Create Event</Button>
+      </Modal>
+
+    </div>
+  );
+}

@@ -1,0 +1,325 @@
+import React, { useEffect, useState } from 'react';
+import { collection, query, getDocs, doc, setDoc, deleteDoc, orderBy, writeBatch, getDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { fetchAndBake } from '../../utils/bake';
+import { Button } from '../../components/ui/Button';
+import { useToast } from '../../hooks/useToast';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { Modal } from '../../components/ui/Modal';
+import { Image as ImageIcon, Pencil, Trash, Download, ZoomIn, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CloudinaryUpload } from '../../components/CloudinaryUpload';
+
+import imgGallery1 from '../../assets/images/regenerated_image_1777783191084.jpg';
+import imgGallery2 from '../../assets/images/regenerated_image_1777783192770.jpg';
+import imgGallery3 from '../../assets/images/regenerated_image_1777783183004.jpg';
+import imgGallery4 from '../../assets/images/regenerated_image_1777783180868.jpg';
+import imgGallery5 from '../../assets/images/regenerated_image_1777783189156.jpg';
+import imgGallery6 from '../../assets/images/regenerated_image_1777783187022.jpg';
+
+const defaultPhotos = [
+  { url: imgGallery1, caption: 'Service Above Self', albumTag: 'Community, Featured', order: 1 },
+  { url: imgGallery2, caption: 'Rotary Team', albumTag: 'Team, Featured', order: 2 },
+  { url: imgGallery3, caption: 'Giving Back', albumTag: 'Community, Featured', order: 3 },
+  { url: imgGallery4, caption: 'Leadership', albumTag: 'Events, Featured', order: 4 },
+  { url: imgGallery5, caption: 'Charity Walk', albumTag: 'Events, Featured', order: 5 },
+  { url: imgGallery6, caption: 'Impact', albumTag: 'Team, Featured', order: 6 },
+];
+
+export default function AdminGallery() {
+  const [photos, setPhotos] = useState<any[]>([]);
+  const [tags, setTags] = useState<string[]>(['Projects', 'Events', 'Team', 'Community']);
+  const [newTag, setNewTag] = useState('');
+  const [loading, setLoading] = useState(true);
+  
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [formData, setFormData] = useState<any>({});
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const { addToast } = useToast();
+
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  const fetchPhotos = async () => {
+    setLoading(true);
+    try {
+      const snap = await getDocs(query(collection(db, 'gallery'), orderBy('createdAt', 'desc')));
+      setPhotos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      
+      const contentSnap = await getDoc(doc(db, 'settings', 'pageContent'));
+      if (contentSnap.exists() && contentSnap.data().galleryTags) {
+        setTags(contentSnap.data().galleryTags);
+      }
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to load gallery', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddTag = async () => {
+    if (!newTag.trim() || tags.includes(newTag.trim())) return;
+    const updatedTags = [...tags, newTag.trim()];
+    setTags(updatedTags);
+    setNewTag('');
+    try {
+      await setDoc(doc(db, 'settings', 'pageContent'), { galleryTags: updatedTags }, { merge: true });
+      addToast('Tag added', 'success');
+      await fetchAndBake('settings');
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to add tag', 'error');
+    }
+  };
+
+  const handleRemoveTag = async (tagToRemove: string) => {
+    const updatedTags = tags.filter(t => t !== tagToRemove);
+    setTags(updatedTags);
+    try {
+      await setDoc(doc(db, 'settings', 'pageContent'), { galleryTags: updatedTags }, { merge: true });
+      addToast('Tag removed', 'success');
+      await fetchAndBake('settings');
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to remove tag', 'error');
+    }
+  };
+
+  useEffect(() => {
+    fetchPhotos();
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (lightboxIndex === null) return;
+      if (e.key === 'ArrowLeft' && lightboxIndex > 0) setLightboxIndex(lightboxIndex - 1);
+      if (e.key === 'ArrowRight' && lightboxIndex < photos.length - 1) setLightboxIndex(lightboxIndex + 1);
+      if (e.key === 'Escape') setLightboxIndex(null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [lightboxIndex, photos]);
+
+  const handleSave = async () => {
+    if (!formData.url) return;
+    const isNew = !formData.id;
+    const docId = isNew ? doc(collection(db, 'gallery')).id : formData.id;
+    
+    try {
+      await setDoc(doc(db, 'gallery', docId), { ...formData, createdAt: formData.createdAt || new Date() }, { merge: true });
+      addToast('Photo saved', 'success');
+      setIsFormOpen(false);
+      await fetchAndBake('gallery');
+      fetchPhotos();
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to save photo', 'error');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      await deleteDoc(doc(db, 'gallery', deleteId));
+      addToast('Photo removed', 'success');
+      setDeleteId(null);
+      await fetchAndBake('gallery');
+      fetchPhotos();
+    } catch (err) { addToast('Failed to delete', 'error'); }
+  };
+
+  const handleImportDefaults = async () => {
+    try {
+      const batch = writeBatch(db);
+      defaultPhotos.forEach(p => {
+        const dRef = doc(collection(db, 'gallery'));
+        batch.set(dRef, { ...p, createdAt: new Date() });
+      });
+      await batch.commit();
+      addToast('Imported default photos', 'success');
+      await fetchAndBake('gallery');
+      fetchPhotos();
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to import defaults', 'error');
+    }
+  };
+
+  const inputClass = "w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent bg-white";
+  const labelClass = "block text-sm font-medium text-gray-700 mb-1.5";
+
+  return (
+    <div className="space-y-8 pb-32">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-heading font-bold text-gray-900">Gallery</h1>
+          <p className="text-gray-500 text-sm mt-1">Manage public site photos and albums</p>
+        </div>
+        <div className="flex gap-2">
+          {photos.length === 0 && (
+            <Button variant="outline" onClick={handleImportDefaults}>
+               <Download size={16} className="mr-2" />
+               Seed Defaults
+            </Button>
+          )}
+          <Button onClick={() => { setFormData({}); setIsFormOpen(true); }}>Add Photo</Button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+           {[1,2,3,4,5].map(i => <div key={i} className="h-40 bg-gray-100 animate-pulse rounded-xl"></div>)}
+        </div>
+      ) : photos.length === 0 ? (
+        <div className="space-y-6">
+          <div className="bg-blue-50 text-blue-800 p-4 rounded-xl flex items-center justify-between">
+            <p className="text-sm"><strong>No uploaded photos.</strong> The images below are placeholders shown on the public site. Seed them to database to edit or remove them.</p>
+            <Button variant="primary" size="sm" onClick={handleImportDefaults}>Seed Defaults</Button>
+          </div>
+          <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4 opacity-50 pointer-events-none grayscale">
+             {defaultPhotos.map((p, i) => (
+                <div key={i} className="relative group break-inside-avoid rounded-xl overflow-hidden cursor-pointer">
+                   <img src={p.url} className="w-full object-cover bg-gray-100 transition-transform duration-300" />
+                   <div className="absolute inset-0 bg-black/50 opacity-100 flex flex-col justify-between p-3">
+                      <div></div>
+                      <div>
+                         {p.albumTag && <span className="text-[10px] uppercase font-bold text-primary bg-primary/20 px-2 py-0.5 rounded">{p.albumTag}</span>}
+                         {p.caption && <p className="text-white text-xs font-medium mt-1 truncate">{p.caption}</p>}
+                      </div>
+                   </div>
+                </div>
+             ))}
+          </div>
+        </div>
+      ) : (
+        <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
+           {photos.map((p, i) => (
+              <div key={p.id} className="relative group break-inside-avoid rounded-xl overflow-hidden cursor-pointer" onClick={() => setLightboxIndex(i)}>
+                 <img src={p.url} className="w-full object-cover bg-gray-100 transition-transform duration-300 group-hover:scale-105" />
+                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-all duration-300 flex items-center justify-center">
+                    <ZoomIn size={32} className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                 </div>
+                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3 pointer-events-none">
+                    <div className="flex justify-end gap-1.5 pointer-events-auto">
+                       <button onClick={(e) => { e.stopPropagation(); setFormData(p); setIsFormOpen(true); }} className="p-1.5 bg-blue-600/90 text-white rounded hover:bg-blue-600"><Pencil size={14}/></button>
+                       <button onClick={(e) => { e.stopPropagation(); setDeleteId(p.id); }} className="p-1.5 bg-red-600/90 text-white rounded hover:bg-red-600"><Trash size={14}/></button>
+                    </div>
+                    <div>
+                       {p.albumTag && <span className="text-[10px] uppercase font-bold text-primary bg-primary/20 px-2 py-0.5 rounded backdrop-blur-sm inline-block mb-1">{p.albumTag}</span>}
+                       {p.caption && <p className="text-white text-xs font-medium mt-1 truncate">{p.caption}</p>}
+                    </div>
+                 </div>
+              </div>
+           ))}
+        </div>
+      )}
+
+      {/* Tag Management */}
+      <div className="mt-12 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-lg font-bold text-gray-900 mb-4">Gallery Filters (Tags)</h2>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {tags.map(tag => (
+            <div key={tag} className="flex items-center gap-1 bg-gray-100 px-3 py-1.5 rounded-full text-sm font-medium text-gray-700">
+              {tag}
+              <button onClick={() => handleRemoveTag(tag)} className="text-gray-400 hover:text-red-500 ml-1 focus:outline-none">
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+          {tags.length === 0 && <p className="text-sm text-gray-500">No tags configured.</p>}
+        </div>
+        <div className="flex gap-2 max-w-sm">
+          <input 
+            type="text" 
+            value={newTag} 
+            onChange={(e) => setNewTag(e.target.value)}
+            placeholder="New tag name (e.g., Campaigns)" 
+            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent bg-white"
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAddTag(); }}
+          />
+          <Button onClick={handleAddTag} disabled={!newTag.trim()}>Add Tag</Button>
+        </div>
+      </div>
+
+      <Modal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} title="Photo Details" size="md">
+        <div className="space-y-6">
+           <div className="bg-gray-50 p-4 rounded-lg flex justify-center border border-gray-100 border-dashed">
+              <div className="max-w-xs w-full">
+                 <CloudinaryUpload onUpload={(url) => setFormData({...formData, url})} currentUrl={formData.url} label="Upload Image" />
+              </div>
+           </div>
+
+           <div><label className={labelClass}>Caption</label><input value={formData.caption || ''} onChange={e => setFormData({...formData, caption: e.target.value})} className={inputClass} /></div>
+           <div>
+               <label className={labelClass}>Album Tag</label>
+               <input value={formData.albumTag || ''} onChange={e => setFormData({...formData, albumTag: e.target.value})} className={inputClass} placeholder="e.g. Events" />
+               <div className="flex flex-wrap gap-2 mt-2">
+                  {tags.map(tag => (
+                     <button key={tag} type="button" onClick={() => {
+                        const currentTags = formData.albumTag ? formData.albumTag.split(',').map((t: string) => t.trim()).filter(Boolean) : [];
+                        if (!currentTags.includes(tag)) {
+                          setFormData({...formData, albumTag: [...currentTags, tag].join(', ')});
+                        }
+                     }} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-full font-medium transition-colors">
+                        + {tag}
+                     </button>
+                  ))}
+                  <button type="button" onClick={() => {
+                        const currentTags = formData.albumTag ? formData.albumTag.split(',').map((t: string) => t.trim()).filter(Boolean) : [];
+                        if (!currentTags.includes('Featured')) {
+                          setFormData({...formData, albumTag: [...currentTags, 'Featured'].join(', ')});
+                        }
+                     }} className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full font-medium transition-colors">
+                        + Featured
+                  </button>
+               </div>
+           </div>
+        </div>
+        <div className="flex justify-end pt-6 mt-6 border-t border-gray-100">
+          <Button onClick={handleSave} disabled={!formData.url}>Save Photo</Button>
+        </div>
+      </Modal>
+
+      <ConfirmDialog isOpen={!!deleteId} onClose={() => setDeleteId(null)} onConfirm={handleDelete} title="Delete Photo" message="Are you sure?" />
+
+      {/* Lightbox */}
+      {lightboxIndex !== null && (
+        <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 md:p-8" onClick={() => setLightboxIndex(null)}>
+          <button className="absolute top-6 right-6 text-white hover:text-accent transition-colors z-50 bg-black/20 p-2 rounded-full" onClick={() => setLightboxIndex(null)}>
+            <X size={32} />
+          </button>
+          
+          <button 
+            className="absolute left-4 md:left-8 text-white hover:text-accent transition-colors z-50 disabled:opacity-30 bg-black/20 p-2 md:p-4 rounded-full"
+            disabled={lightboxIndex === 0} 
+            onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex - 1); }}
+          >
+            <ChevronLeft size={32} />
+          </button>
+          
+          <img 
+            src={photos[lightboxIndex]?.url} 
+            alt="" 
+            className="max-h-[85vh] max-w-[85vw] object-contain rounded-lg shadow-2xl" 
+            onClick={(e) => e.stopPropagation()} 
+          />
+          
+          <button 
+            className="absolute right-4 md:right-8 text-white hover:text-accent transition-colors z-50 disabled:opacity-30 bg-black/20 p-2 md:p-4 rounded-full"
+            disabled={lightboxIndex === photos.length - 1} 
+            onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex + 1); }}
+          >
+            <ChevronRight size={32} />
+          </button>
+          
+          {photos[lightboxIndex]?.caption && (
+            <div className="absolute bottom-12 md:bottom-8 text-white/90 text-base font-medium text-center px-4 bg-black/50 py-2 rounded-full max-w-xl mx-auto backdrop-blur-sm">
+              {photos[lightboxIndex].caption}
+            </div>
+          )}
+          <div className="absolute bottom-4 text-white/40 text-xs font-bold tracking-widest">{lightboxIndex + 1} / {photos.length}</div>
+        </div>
+      )}
+    </div>
+  );
+}
