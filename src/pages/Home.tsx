@@ -17,90 +17,554 @@ import imgGallery4 from '../assets/images/regenerated_image_1777783180868.jpg';
 import imgGallery5 from '../assets/images/regenerated_image_1777783189156.jpg';
 import imgGallery6 from '../assets/images/regenerated_image_1777783187022.jpg';
 import generatedImgAbout from '../assets/images/regenerated_image_1777820660503.jpg';
-import { ZoomIn, X, ChevronLeft, ChevronRight, ArrowUpRight, MapPin, Calendar } from 'lucide-react';
+import { ZoomIn, X, ChevronLeft, ChevronRight, ArrowUpRight, MapPin, Calendar, Users, Globe, Heart } from 'lucide-react';
 
-// ─── unchanged data & plugin bootstrap ────────────────────────────────────────
 const defaultPhotos = [
-  { id: '1', url: imgGallery1, caption: 'Service Above Self',  albumTag: 'Community, Featured' },
-  { id: '2', url: imgGallery2, caption: 'Rotary Team',         albumTag: 'Team, Featured'      },
-  { id: '3', url: imgGallery3, caption: 'Giving Back',         albumTag: 'Community, Featured' },
-  { id: '4', url: imgGallery4, caption: 'Leadership',          albumTag: 'Events, Featured'    },
-  { id: '5', url: imgGallery5, caption: 'Charity Walk',        albumTag: 'Events, Featured'    },
-  { id: '6', url: imgGallery6, caption: 'Impact',              albumTag: 'Team, Featured'      },
+  { id: '1', url: imgGallery1, caption: 'Service Above Self', albumTag: 'Community, Featured' },
+  { id: '2', url: imgGallery2, caption: 'Rotary Team', albumTag: 'Team, Featured' },
+  { id: '3', url: imgGallery3, caption: 'Giving Back', albumTag: 'Community, Featured' },
+  { id: '4', url: imgGallery4, caption: 'Leadership', albumTag: 'Events, Featured' },
+  { id: '5', url: imgGallery5, caption: 'Charity Walk', albumTag: 'Events, Featured' },
+  { id: '6', url: imgGallery6, caption: 'Impact', albumTag: 'Team, Featured' },
 ];
 
 gsap.registerPlugin(ScrollTrigger);
 
-// ─── tiny helpers ──────────────────────────────────────────────────────────────
-const GrainOverlay = ({ opacity = 0.035 }: { opacity?: number }) => (
-  <div
-    aria-hidden
-    className="absolute inset-0 pointer-events-none"
-    style={{
-      opacity,
-      backgroundImage:
-        'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 200 200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.75\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\'/%3E%3C/svg%3E")',
-    }}
-  />
-);
+/* ─────────────────────────────────────────────
+   Inline CSS injected once at module load
+───────────────────────────────────────────── */
+const INJECTED_ID = '__home_v2_styles__';
+if (typeof document !== 'undefined' && !document.getElementById(INJECTED_ID)) {
+  const s = document.createElement('style');
+  s.id = INJECTED_ID;
+  s.textContent = `
+    /* ── Hero ── */
+    .hv2-hero {
+      position: relative;
+      min-height: 100svh;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      overflow: hidden;
+    }
+    .hv2-hero__noise {
+      position: absolute; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      opacity: 0.045; pointer-events: none;
+    }
+    .hv2-hero__orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(120px);
+      pointer-events: none;
+    }
+    .hv2-hero__badge {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 8px 16px; border-radius: 999px;
+      font-size: 10px; letter-spacing: 0.2em; font-weight: 700; text-transform: uppercase;
+      border: 1px solid rgba(255,255,255,0.18);
+      backdrop-filter: blur(12px);
+      background: rgba(255,255,255,0.08);
+      width: fit-content;
+    }
+    .hv2-hero__badge-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      animation: hv2-pulse 2s ease-in-out infinite;
+    }
+    @keyframes hv2-pulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.7); }
+    }
+    .hv2-hero__headline {
+      font-size: clamp(56px, 10vw, 160px);
+      font-weight: 900;
+      line-height: 0.88;
+      letter-spacing: -0.04em;
+      white-space: pre-line;
+    }
+    .hv2-hero__meta-line {
+      display: flex; align-items: center; gap: 24px;
+      padding-top: 32px;
+      border-top: 1px solid rgba(255,255,255,0.15);
+      margin-top: 48px;
+    }
+    .hv2-hero__meta-divider {
+      width: 1px; height: 32px;
+      background: rgba(255,255,255,0.2);
+    }
+    .hv2-hero__scroll-hint {
+      position: absolute; bottom: 40px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      font-size: 9px; letter-spacing: 0.25em; text-transform: uppercase;
+      opacity: 0.45;
+    }
+    .hv2-hero__scroll-bar {
+      width: 1px; height: 56px;
+      background: currentColor;
+      position: relative; overflow: hidden;
+    }
+    .hv2-hero__scroll-bar::after {
+      content: ''; position: absolute;
+      width: 100%; height: 40%;
+      background: currentColor;
+      animation: hv2-scroll-drop 1.8s ease-in-out infinite;
+    }
+    @keyframes hv2-scroll-drop {
+      0% { top: -40%; }
+      100% { top: 140%; }
+    }
 
-const HrAccent = () => (
-  <div className="flex items-center gap-3 mb-6">
-    <span className="block h-px w-12 bg-[var(--color-accent)]" />
-    <span className="block h-px flex-1 bg-current opacity-10" />
-  </div>
-);
+    /* ── Stats ribbon ── */
+    .hv2-stats {
+      position: relative; z-index: 20;
+    }
+    .hv2-stats__card {
+      background: var(--color-page-bg);
+      border: 1px solid rgba(0,0,0,0.07);
+      border-radius: 24px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.08);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      overflow: hidden;
+    }
+    .hv2-stats__item {
+      padding: 40px 32px;
+      display: flex; flex-direction: column; align-items: center;
+      position: relative;
+    }
+    .hv2-stats__item + .hv2-stats__item::before {
+      content: ''; position: absolute; left: 0; top: 20%; height: 60%;
+      width: 1px; background: rgba(0,0,0,0.07);
+    }
+    .hv2-stats__label {
+      font-size: 9px; font-weight: 800; letter-spacing: 0.2em;
+      text-transform: uppercase; color: #9ca3af; margin-bottom: 12px;
+    }
+    .hv2-stats__number {
+      font-size: clamp(40px, 6vw, 72px);
+      font-weight: 900; line-height: 1;
+    }
 
-// ─── component ────────────────────────────────────────────────────────────────
+    /* ── Section labels ── */
+    .hv2-section-eyebrow {
+      font-size: 9px; font-weight: 800; letter-spacing: 0.25em;
+      text-transform: uppercase; color: #9ca3af;
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 24px;
+    }
+    .hv2-section-eyebrow::before {
+      content: ''; display: block;
+      width: 32px; height: 2px;
+      background: var(--color-accent, #0070c9);
+    }
+
+    /* ── Mission banner ── */
+    .hv2-mission {
+      position: relative; overflow: hidden;
+      padding: 120px 0;
+    }
+    .hv2-mission__quote {
+      font-size: clamp(28px, 4vw, 64px);
+      font-weight: 800; line-height: 1.1;
+      letter-spacing: -0.025em;
+    }
+    .hv2-mission__large-word {
+      display: block;
+      font-size: clamp(80px, 15vw, 220px);
+      font-weight: 900; line-height: 0.85;
+      letter-spacing: -0.06em;
+      opacity: 0.06;
+      position: absolute;
+      bottom: -20px; right: -20px;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* ── About split ── */
+    .hv2-about {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 680px;
+    }
+    @media (max-width: 900px) {
+      .hv2-about { grid-template-columns: 1fr; }
+    }
+    .hv2-about__image-wrap {
+      position: relative; overflow: hidden;
+    }
+    .hv2-about__image-wrap img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      transition: transform 0.8s ease;
+    }
+    .hv2-about__image-wrap:hover img { transform: scale(1.04); }
+    .hv2-about__content {
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 80px 72px;
+    }
+    @media (max-width: 900px) {
+      .hv2-about__content { padding: 60px 32px; }
+    }
+    .hv2-about__heading {
+      font-size: clamp(32px, 4vw, 52px);
+      font-weight: 900; line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin-bottom: 24px;
+    }
+    .hv2-about__body {
+      font-size: 17px; line-height: 1.75;
+      color: #6b7280; margin-bottom: 40px;
+    }
+
+    /* ── Events ── */
+    .hv2-events__item {
+      display: grid;
+      grid-template-columns: 80px 1fr;
+      gap: 32px; align-items: center;
+      padding: 32px 0;
+      border-bottom: 1px solid rgba(0,0,0,0.07);
+      cursor: pointer;
+      transition: background 0.2s;
+      border-radius: 12px;
+      padding-left: 16px; padding-right: 16px;
+    }
+    .hv2-events__item:hover {
+      background: rgba(0,0,0,0.02);
+    }
+    .hv2-events__date-month {
+      font-size: 10px; font-weight: 800; letter-spacing: 0.2em;
+      text-transform: uppercase; margin-bottom: 4px;
+    }
+    .hv2-events__date-day {
+      font-size: 40px; font-weight: 900; line-height: 1;
+    }
+    .hv2-events__pill {
+      font-size: 9px; font-weight: 800; letter-spacing: 0.15em;
+      text-transform: uppercase; padding: 4px 10px;
+      border-radius: 999px; display: inline-block;
+      background: rgba(0,0,0,0.06); margin-bottom: 8px;
+    }
+    .hv2-events__title {
+      font-size: 20px; font-weight: 800;
+      letter-spacing: -0.02em; margin-bottom: 4px;
+    }
+    .hv2-events__venue {
+      font-size: 13px; color: #9ca3af;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .hv2-events__arrow {
+      opacity: 0;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    .hv2-events__item:hover .hv2-events__arrow {
+      opacity: 1; transform: translateX(4px);
+    }
+
+    /* ── Gallery ── */
+    .hv2-gallery__grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      grid-template-rows: repeat(2, 300px);
+      gap: 8px;
+    }
+    @media (max-width: 768px) {
+      .hv2-gallery__grid {
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: auto;
+      }
+    }
+    .hv2-gallery__cell {
+      position: relative; overflow: hidden;
+      border-radius: 12px; cursor: pointer;
+      background: #e5e7eb;
+    }
+    .hv2-gallery__cell:nth-child(1) { grid-column: span 5; grid-row: span 2; }
+    .hv2-gallery__cell:nth-child(2) { grid-column: span 4; }
+    .hv2-gallery__cell:nth-child(3) { grid-column: span 3; }
+    .hv2-gallery__cell:nth-child(4) { grid-column: span 3; }
+    .hv2-gallery__cell:nth-child(5) { grid-column: span 4; }
+    .hv2-gallery__cell:nth-child(6) { grid-column: span 5; }
+    @media (max-width: 768px) {
+      .hv2-gallery__cell { grid-column: span 1 !important; grid-row: span 1 !important; height: 200px; }
+    }
+    .hv2-gallery__cell img {
+      width: 100%; height: 100%; object-fit: cover;
+      transition: transform 0.6s cubic-bezier(0.4,0,0.2,1);
+    }
+    .hv2-gallery__cell:hover img { transform: scale(1.07); }
+    .hv2-gallery__overlay {
+      position: absolute; inset: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 60%);
+      opacity: 0; transition: opacity 0.3s;
+      display: flex; align-items: flex-end;
+      padding: 20px;
+    }
+    .hv2-gallery__cell:hover .hv2-gallery__overlay { opacity: 1; }
+    .hv2-gallery__zoom {
+      position: absolute; top: 16px; right: 16px;
+      background: rgba(0,0,0,0.4); border-radius: 50%;
+      width: 40px; height: 40px;
+      display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(8px);
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .hv2-gallery__cell:hover .hv2-gallery__zoom { opacity: 1; }
+
+    /* ── Join CTA ── */
+    .hv2-join {
+      position: relative; overflow: hidden;
+    }
+    .hv2-join__grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 520px;
+    }
+    @media (max-width: 900px) {
+      .hv2-join__grid { grid-template-columns: 1fr; }
+    }
+    .hv2-join__left {
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 100px 80px;
+    }
+    @media (max-width: 900px) {
+      .hv2-join__left { padding: 60px 32px; }
+      .hv2-join__right { display: none; }
+    }
+    .hv2-join__headline {
+      font-size: clamp(36px, 6vw, 72px);
+      font-weight: 900; line-height: 1;
+      letter-spacing: -0.04em;
+      margin-bottom: 24px;
+    }
+    .hv2-join__sub {
+      font-size: 17px; line-height: 1.7;
+      opacity: 0.75; margin-bottom: 40px;
+      max-width: 440px;
+    }
+    .hv2-join__chips {
+      display: flex; flex-wrap: wrap; gap: 10px;
+      margin-bottom: 40px;
+    }
+    .hv2-join__chip {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 8px 16px; border-radius: 999px;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    .hv2-join__right {
+      position: relative; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .hv2-join__right-content {
+      position: relative; z-index: 2;
+      display: grid; gap: 16px;
+      grid-template-columns: 1fr 1fr;
+      padding: 40px;
+    }
+    .hv2-join__card {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 20px; padding: 24px;
+      backdrop-filter: blur(16px);
+    }
+    .hv2-join__card-icon {
+      width: 40px; height: 40px;
+      border-radius: 12px; display: flex;
+      align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.15);
+      margin-bottom: 12px;
+    }
+    .hv2-join__card-label {
+      font-size: 10px; font-weight: 700;
+      letter-spacing: 0.15em; text-transform: uppercase;
+      opacity: 0.6; margin-bottom: 4px;
+    }
+    .hv2-join__card-value {
+      font-size: 22px; font-weight: 900;
+      line-height: 1.1;
+    }
+
+    /* ── Lightbox ── */
+    .hv2-lightbox {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.97);
+      z-index: 100;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    .hv2-lightbox__nav {
+      position: absolute;
+      top: 50%; transform: translateY(-50%);
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 50%;
+      width: 52px; height: 52px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; color: white;
+      transition: background 0.2s;
+    }
+    .hv2-lightbox__nav:hover { background: rgba(255,255,255,0.18); }
+    .hv2-lightbox__nav:disabled { opacity: 0.25; pointer-events: none; }
+    .hv2-lightbox__close {
+      position: absolute; top: 20px; right: 20px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 50%;
+      width: 44px; height: 44px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; color: white;
+      transition: background 0.2s;
+    }
+    .hv2-lightbox__close:hover { background: rgba(255,255,255,0.18); }
+    .hv2-lightbox__counter {
+      position: absolute; bottom: 24px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px; font-weight: 700; letter-spacing: 0.2em;
+      color: rgba(255,255,255,0.4);
+    }
+    .hv2-lightbox__caption {
+      position: absolute; bottom: 60px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      backdrop-filter: blur(12px);
+      border-radius: 999px; padding: 8px 20px;
+      font-size: 13px; color: rgba(255,255,255,0.8);
+      white-space: nowrap;
+    }
+
+    /* ── Utility ── */
+    .hv2-btn-primary {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 14px 28px; border-radius: 12px;
+      font-size: 13px; font-weight: 800;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      background: var(--color-accent, #0070c9);
+      color: white;
+      border: none; cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+      text-decoration: none;
+    }
+    .hv2-btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.2);
+    }
+    .hv2-btn-ghost {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 14px 28px; border-radius: 12px;
+      font-size: 13px; font-weight: 800;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      background: transparent;
+      color: inherit;
+      border: 1px solid rgba(255,255,255,0.3); cursor: pointer;
+      transition: background 0.15s;
+      text-decoration: none;
+    }
+    .hv2-btn-ghost:hover { background: rgba(255,255,255,0.1); }
+    .hv2-btn-outline {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 14px 28px; border-radius: 12px;
+      font-size: 13px; font-weight: 800;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      background: transparent;
+      color: var(--color-accent, #0070c9);
+      border: 2px solid currentColor; cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      text-decoration: none;
+    }
+    .hv2-btn-outline:hover {
+      background: var(--color-accent, #0070c9);
+      color: white;
+    }
+    .hv2-btn-white {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 16px 32px; border-radius: 12px;
+      font-size: 13px; font-weight: 800;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      background: white; color: #111;
+      border: none; cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      text-decoration: none;
+    }
+    .hv2-btn-white:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.25);
+    }
+    @media (max-width: 640px) {
+      .hv2-stats__card {
+        grid-template-columns: 1fr;
+        border-radius: 20px;
+      }
+      .hv2-stats__item + .hv2-stats__item::before {
+        top: 0; left: 20%; width: 60%; height: 1px;
+      }
+    }
+  `;
+  document.head.appendChild(s);
+}
+
 export default function Home() {
   const { tenant, settings } = useTenant();
-  const heroRef    = useRef<HTMLDivElement>(null);
+  const heroRef = useRef<HTMLDivElement>(null);
   const headlineRef = useRef<HTMLHeadingElement>(null);
+  const statsRef = useRef<HTMLDivElement>(null);
+  const aboutRef = useRef<HTMLDivElement>(null);
 
   const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
-  const [galleryPhotos,  setGalleryPhotos]  = useState<any[]>([]);
-  const [lightboxIndex,  setLightboxIndex]  = useState<number | null>(null);
+  const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-  // ── brand helpers (unchanged logic) ──
   const defaultHeroTitle = tenant.brand.primaryColor === '#FFFFFF'
     ? 'Fellowship\nThrough Service.'
     : 'Service\nAbove Self.';
+
   const defaultMissionText = tenant.brand.primaryColor === '#FFFFFF'
     ? 'We are young professionals united by fellowship, leadership, and service. Together, we build communities and create lasting change across Bangladesh and beyond.'
     : 'We are a generation of action. Bridging continents, uplifting communities, and proving that youth can inspire global change.';
 
   const [content, setContent] = useState<any>({
-    homeHeroTitle:    defaultHeroTitle,
+    homeHeroTitle: defaultHeroTitle,
     homeHeroSubtitle: `${tenant.fullName.toUpperCase()} — ${tenant.district}`,
-    homeMissionText:  defaultMissionText,
-    homeStatMembers:  120,
+    homeMissionText: defaultMissionText,
+    homeStatMembers: 120,
     homeStatProjects: 45,
-    homeStatHours:    1000,
+    homeStatHours: 1000,
   });
 
-  const isLight       = tenant.brand.primaryColor === '#FFFFFF';
-  const headingColor  = isLight ? 'text-[var(--color-accent)]' : 'text-[var(--color-primary)]';
-  const heroTextColor = tenant.brand.primaryColor === '#FFFFFF'
-    ? '#ffffff'
-    : (tenant.brand.textOnPrimary || '#ffffff');
+  const isLight = tenant.brand.primaryColor === '#FFFFFF';
+  const accentColor = 'var(--color-accent)';
+  const headingColorClass = isLight ? 'text-[var(--color-accent)]' : 'text-[var(--color-primary)]';
+  const headingColorStyle = isLight
+    ? { color: 'var(--color-accent)' }
+    : { color: 'var(--color-primary)' };
 
-  // ── GSAP headline split (unchanged) ──
+  /* ── Headline animation (unchanged) ── */
   useEffect(() => {
     if (!headlineRef.current) return;
     const split = new SplitType(headlineRef.current, { types: 'words,chars' });
     gsap.from(split.chars, {
-      y: 80,
-      opacity: 0,
-      rotationZ: 6,
-      duration: 1.1,
-      stagger: 0.018,
-      ease: 'power4.out',
-      delay: 0.3,
+      y: 120, opacity: 0, rotationZ: 8,
+      duration: 1.4, stagger: 0.018,
+      ease: 'power4.out', delay: 0.3,
     });
     return () => { split.revert(); };
   }, [content.homeHeroTitle]);
 
-  // ── data fetch (unchanged) ──
+  /* ── Scroll reveals ── */
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      gsap.utils.toArray<HTMLElement>('.hv2-reveal').forEach((el) => {
+        gsap.from(el, {
+          scrollTrigger: { trigger: el, start: 'top 85%', once: true },
+          y: 40, opacity: 0, duration: 0.9, ease: 'power3.out',
+        });
+      });
+    });
+    return () => ctx.revert();
+  }, []);
+
+  /* ── Data fetch (unchanged) ── */
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -111,16 +575,19 @@ export default function Home() {
         setUpcomingEvents(eventsSnap || []);
 
         const { data: gallerySnap } = await supabase.from('gallery')
-          .select('*').eq('tenant_id', tenant.id).order('sort_order', { ascending: true });
-        const fetched = gallerySnap || [];
-        if (fetched.length > 0) {
-          setGalleryPhotos(fetched.filter((p: any) => p.albumTag?.toLowerCase().includes('featured')));
+          .select('*').eq('tenant_id', tenant.id)
+          .order('sort_order', { ascending: true });
+        const fetchedPhotos = gallerySnap || [];
+        if (fetchedPhotos.length > 0) {
+          const featured = fetchedPhotos.filter((p: any) =>
+            p.albumTag && p.albumTag.toLowerCase().includes('featured'));
+          setGalleryPhotos(featured);
         } else {
           setGalleryPhotos(defaultPhotos);
         }
 
-        const { data } = await supabase.from('page_content').select('data')
-          .eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
+        const { data } = await supabase.from('page_content')
+          .select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
         if (data?.data) setContent((prev: any) => ({ ...prev, ...data.data }));
       } catch (err) {
         console.error('Error fetching home data:', err);
@@ -129,19 +596,26 @@ export default function Home() {
     fetchData();
   }, [tenant.id]);
 
-  // ── lightbox keyboard (unchanged) ──
+  /* ── Lightbox keyboard nav (unchanged) ── */
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (lightboxIndex === null) return;
-      if (e.key === 'ArrowLeft'  && lightboxIndex > 0)                        setLightboxIndex(lightboxIndex - 1);
+      if (e.key === 'ArrowLeft' && lightboxIndex > 0) setLightboxIndex(lightboxIndex - 1);
       if (e.key === 'ArrowRight' && lightboxIndex < galleryPhotos.length - 1) setLightboxIndex(lightboxIndex + 1);
-      if (e.key === 'Escape')                                                  setLightboxIndex(null);
+      if (e.key === 'Escape') setLightboxIndex(null);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [lightboxIndex, galleryPhotos]);
 
-  // ── structured data (unchanged) ──
+  const heroTextColor = tenant.brand.primaryColor === '#FFFFFF'
+    ? '#ffffff'
+    : (tenant.brand.textOnPrimary || '#ffffff');
+
+  const heroTitleLines = typeof content.homeHeroTitle === 'string'
+    ? content.homeHeroTitle.replace(/\\n/g, '\n')
+    : content.homeHeroTitle;
+
   const orgSchema = {
     '@context': 'https://schema.org',
     '@type': 'Organization',
@@ -158,596 +632,435 @@ export default function Home() {
     sameAs: [tenant.social.facebook, tenant.social.instagram, tenant.social.linkedin].filter(Boolean),
   };
 
-  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div className="bg-[var(--color-page-bg)] overflow-x-hidden">
       <SEOHead title="Home" canonicalPath="/" structuredData={orgSchema} />
 
-      {/* ══════════════════════════════════════════════════════════════
+      {/* ════════════════════════════════════════
           HERO
-      ══════════════════════════════════════════════════════════════ */}
+      ════════════════════════════════════════ */}
       <section
         ref={heroRef}
-        className="relative min-h-[100svh] flex flex-col justify-end overflow-hidden"
+        className="hv2-hero"
         style={{
-          background: `linear-gradient(150deg, var(--color-hero-start) 0%, ${tenant.brand.heroDark || 'var(--color-primary)'} 100%)`,
+          background: `linear-gradient(145deg, var(--color-hero-start) 0%, ${tenant.brand.heroDark || 'var(--color-primary)'} 100%)`,
           color: heroTextColor,
         }}
       >
-        <GrainOverlay opacity={0.045} />
+        {/* Noise grain */}
+        <div className="hv2-hero__noise" />
 
-        {/* Background radial glow */}
+        {/* Ambient orbs */}
         <div
-          aria-hidden
-          className="absolute -top-[20%] -right-[10%] w-[70vw] h-[70vw] rounded-full pointer-events-none"
+          className="hv2-hero__orb"
           style={{
-            background: `radial-gradient(circle, var(--color-accent) 0%, transparent 65%)`,
-            opacity: 0.12,
-            filter: 'blur(60px)',
+            width: '60vw', height: '60vw',
+            top: '-20%', right: '-15%',
+            background: `radial-gradient(circle, ${accentColor}55 0%, transparent 70%)`,
           }}
         />
         <div
-          aria-hidden
-          className="absolute bottom-0 left-0 w-[50vw] h-[50vw] rounded-full pointer-events-none"
+          className="hv2-hero__orb"
           style={{
-            background: `radial-gradient(circle, var(--color-accent) 0%, transparent 70%)`,
-            opacity: 0.07,
-            filter: 'blur(80px)',
+            width: '40vw', height: '40vw',
+            bottom: '0', left: '-10%',
+            background: `radial-gradient(circle, ${accentColor}30 0%, transparent 70%)`,
           }}
         />
-
-        {/* Top bar */}
-        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-6 md:px-12 pt-8 z-10">
-          <div
-            className="flex items-center gap-3 text-xs tracking-[0.2em] uppercase font-semibold"
-            style={{ color: heroTextColor, opacity: 0.7 }}
-          >
-            <span
-              className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse"
-              style={{ boxShadow: '0 0 8px var(--color-accent)' }}
-            />
-            {tenant.shortName.toUpperCase()}
-          </div>
-          <div
-            className="hidden md:flex items-center gap-2 text-[11px] tracking-[0.15em] uppercase"
-            style={{ color: heroTextColor, opacity: 0.45 }}
-          >
-            {tenant.district}
-          </div>
-        </div>
 
         {/* Main hero content */}
-        <div className="relative z-10 max-w-7xl mx-auto w-full px-6 md:px-12 pb-16 md:pb-24">
-          {/* Eyebrow */}
-          <p
-            className="text-[11px] tracking-[0.3em] uppercase font-bold mb-6 md:mb-8"
-            style={{ color: 'var(--color-accent)' }}
-          >
-            {tenant.fullName}
-          </p>
+        <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-12 w-full pt-36 pb-24">
+          {/* Badge */}
+          <div className="hv2-hero__badge mb-10" style={{ color: heroTextColor }}>
+            <span className="hv2-hero__badge-dot" style={{ background: accentColor }} />
+            <span style={{ opacity: 0.9 }}>{tenant.shortName.toUpperCase()}</span>
+            <span className="hv2-hero__meta-divider" />
+            <span style={{ opacity: 0.5 }}>{tenant.district}</span>
+          </div>
 
           {/* Headline */}
           <h1
             ref={headlineRef}
-            className="font-heading font-bold leading-[0.88] tracking-tighter whitespace-pre-line"
-            style={{
-              fontSize: 'clamp(3.5rem, 11vw, 9.5rem)',
-              color: heroTextColor,
-              maxWidth: '16ch',
-            }}
+            className="hv2-hero__headline"
+            style={{ color: heroTextColor }}
           >
-            {typeof content.homeHeroTitle === 'string'
-              ? content.homeHeroTitle.replace(/\\n/g, '\n')
-              : content.homeHeroTitle}
+            {heroTitleLines}
           </h1>
 
-          {/* Bottom row */}
-          <div className="mt-12 md:mt-16 flex flex-col md:flex-row md:items-end justify-between gap-8">
+          {/* Meta line */}
+          <div className="hv2-hero__meta-line flex-wrap gap-y-4">
             <p
-              className="text-base md:text-lg max-w-sm leading-relaxed"
-              style={{ color: heroTextColor, opacity: 0.65 }}
+              style={{ fontSize: 13, letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600, opacity: 0.55 }}
             >
-              {content.homeMissionText?.split(' ').slice(0, 16).join(' ')}…
+              {tenant.fullName}
             </p>
-            <div className="flex flex-row gap-3 shrink-0">
-              <Link to="/join">
-                <Button size="lg" variant="primary">
-                  <span className="flex items-center gap-2">
-                    Join Our Club <ArrowUpRight size={16} />
-                  </span>
-                </Button>
+            <div className="hv2-hero__meta-divider" />
+            <div className="flex gap-4">
+              <Link to="/join" className="hv2-btn-primary">
+                Join the Club <ArrowUpRight size={14} />
               </Link>
-              <Link to="/about">
-                <Button size="lg" variant="outline">Learn More</Button>
+              <Link to="/about" className="hv2-btn-ghost">
+                Our Story
               </Link>
             </div>
           </div>
         </div>
 
-        {/* Decorative vertical rule + scroll hint */}
-        <div className="absolute right-8 md:right-12 bottom-10 flex flex-col items-center gap-3 z-10 hidden md:flex">
-          <div className="w-px h-16 bg-current opacity-20" />
-          <p
-            className="text-[9px] tracking-[0.3em] uppercase rotate-90 origin-center"
-            style={{ color: heroTextColor, opacity: 0.35 }}
-          >
-            scroll
-          </p>
+        {/* Scroll hint */}
+        <div className="hv2-hero__scroll-hint" style={{ color: heroTextColor }}>
+          <span>Scroll</span>
+          <div className="hv2-hero__scroll-bar" />
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════
-          MARQUEE
-      ══════════════════════════════════════════════════════════════ */}
+      {/* Marquee ticker — unchanged component */}
       <MarqueeTicker items={['Unite for Good', 'People of Action', 'Create Lasting Impact']} />
 
-      {/* ══════════════════════════════════════════════════════════════
-          IMPACT STATS  — floats up, overlaps hero bottom
-      ══════════════════════════════════════════════════════════════ */}
-      <section className="relative z-20 max-w-6xl mx-auto px-6 md:px-12 -mt-1">
-        <div
-          className="rounded-2xl md:rounded-3xl overflow-hidden"
-          style={{
-            background: 'var(--color-page-bg)',
-            boxShadow: '0 4px 60px -10px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.06)',
-          }}
-        >
-          <div className="grid grid-cols-1 md:grid-cols-3">
-            {[
-              { label: 'Active Members', value: content.homeStatMembers, suffix: '+', color: 'var(--color-accent)' },
-              { label: 'Projects Completed', value: content.homeStatProjects, suffix: '',  color: 'var(--color-accent)' },
-              { label: 'Volunteer Hours', value: content.homeStatHours, suffix: '+', color: 'var(--color-accent)' },
-            ].map((stat, i) => (
-              <div
-                key={stat.label}
-                className={`flex flex-col items-center justify-center py-10 px-8 text-center relative
-                  ${i < 2 ? 'md:border-r border-[var(--color-page-bg)] border-opacity-20' : ''}
-                  ${i > 0 ? 'border-t md:border-t-0' : ''}
-                `}
-                style={{ borderColor: 'rgba(0,0,0,0.07)' }}
-              >
-                <span
-                  className="font-heading font-bold tabular-nums"
-                  style={{ fontSize: 'clamp(3rem, 6vw, 4.5rem)', color: stat.color, lineHeight: 1 }}
-                >
-                  <ScrollAnimatedNumber end={stat.value} suffix={stat.suffix} />
-                </span>
-                <span className="mt-2 text-xs font-bold tracking-[0.18em] uppercase text-gray-400">
-                  {stat.label}
-                </span>
-              </div>
-            ))}
-          </div>
+      {/* ════════════════════════════════════════
+          IMPACT STATS
+      ════════════════════════════════════════ */}
+      <section className="hv2-stats max-w-5xl mx-auto px-6 -mt-16">
+        <div ref={statsRef} className="hv2-stats__card hv2-reveal">
+          {[
+            { label: 'Active Members', value: content.homeStatMembers, suffix: '+' },
+            { label: 'Projects Completed', value: content.homeStatProjects, suffix: '' },
+            { label: 'Volunteer Hours', value: content.homeStatHours, suffix: '+' },
+          ].map((stat, i) => (
+            <div key={i} className="hv2-stats__item">
+              <span className="hv2-stats__label">{stat.label}</span>
+              <span className="hv2-stats__number font-heading" style={headingColorStyle}>
+                <ScrollAnimatedNumber end={stat.value} suffix={stat.suffix} />
+              </span>
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════
-          MISSION STATEMENT
-      ══════════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════
+          MISSION BANNER
+      ════════════════════════════════════════ */}
       <section
-        className="relative py-28 md:py-40 mt-24 overflow-hidden"
+        className="hv2-mission hv2-reveal"
         style={{
           background: tenant.brand.secondaryColor,
           color: tenant.brand.textOnPrimary,
+          marginTop: 120,
         }}
       >
-        <GrainOverlay opacity={0.04} />
-
-        {/* Large decorative quote mark */}
-        <div
-          aria-hidden
-          className="absolute -top-8 left-8 md:left-16 font-heading font-bold leading-none select-none pointer-events-none"
-          style={{ fontSize: 'clamp(12rem, 28vw, 22rem)', opacity: 0.06, color: 'currentColor' }}
-        >
-          "
-        </div>
-
-        <div className="relative z-10 max-w-5xl mx-auto px-6 md:px-12">
-          <p
-            className="text-xs font-bold tracking-[0.25em] uppercase mb-8"
-            style={{ color: 'var(--color-accent)' }}
-          >
+        <div className="hv2-hero__noise" />
+        <div className="max-w-5xl mx-auto px-6 md:px-12 relative z-10">
+          <div className="hv2-section-eyebrow" style={{ color: 'rgba(255,255,255,0.45)' }}>
             Our Mission
-          </p>
-          <blockquote
-            className="font-heading font-medium leading-[1.1] tracking-tight"
-            style={{
-              fontSize: 'clamp(1.75rem, 4.5vw, 4rem)',
-              color: tenant.brand.textOnPrimary,
-            }}
+          </div>
+          <p
+            className="hv2-mission__quote"
+            style={{ color: tenant.brand.textOnPrimary }}
           >
             {content.homeMissionText}
-          </blockquote>
+          </p>
         </div>
+        <span className="hv2-mission__large-word font-heading" style={{ color: tenant.brand.textOnPrimary }}>
+          Service
+        </span>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════
-          ABOUT PREVIEW
-      ══════════════════════════════════════════════════════════════ */}
-      <section className="py-28 md:py-36 px-6 md:px-12 max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 md:gap-24 items-center">
-
-          {/* Text column */}
-          <div className="order-2 lg:order-1">
-            <HrAccent />
-            <p className="text-xs font-bold tracking-[0.25em] uppercase text-gray-400 mb-3">
-              Our Story
-            </p>
-            <h2
-              className={`font-heading font-bold leading-[0.95] tracking-tight mb-8 ${headingColor}`}
-              style={{ fontSize: 'clamp(2.25rem, 5vw, 3.75rem)' }}
-            >
-              Building leaders<br />through service.
-            </h2>
-            <p className="text-gray-500 text-lg leading-relaxed mb-10 max-w-prose">
-              Founded under the guidance of {tenant.district}, our club brings together passionate
-              individuals to tackle pressing local and global challenges. By joining us, you don't
-              just volunteer — you learn how to lead.
-            </p>
-            <Link to="/about">
-              <Button variant="outline-dark">
-                <span className="flex items-center gap-2">
-                  Read Our History <ArrowUpRight size={15} />
-                </span>
-              </Button>
-            </Link>
-          </div>
-
-          {/* Image column */}
-          <div className="order-1 lg:order-2 relative">
-            {/* Main image */}
-            <div
-              className="aspect-[5/4] rounded-2xl overflow-hidden shadow-2xl relative z-10"
-              style={{ boxShadow: '0 30px 80px -20px rgba(0,0,0,0.25)' }}
-            >
-              <img
-                src={content.homeAboutImage || generatedImgAbout}
-                alt="Club members volunteering"
-                className="w-full h-full object-cover"
-              />
-              {/* Caption badge */}
-              <div className="absolute bottom-4 left-4 right-4">
-                <div
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold tracking-wider uppercase backdrop-blur-md"
-                  style={{ background: 'rgba(0,0,0,0.45)', color: '#fff' }}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse" />
-                  {tenant.shortName} — Est. {tenant.foundedYear}
-                </div>
-              </div>
+      {/* ════════════════════════════════════════
+          ABOUT SPLIT
+      ════════════════════════════════════════ */}
+      <section ref={aboutRef} className="hv2-about hv2-reveal" style={{ marginTop: 0 }}>
+        <div className="hv2-about__image-wrap">
+          <img
+            src={content.homeAboutImage || generatedImgAbout}
+            alt="Club members in action"
+          />
+          {/* Floating label */}
+          <div
+            style={{
+              position: 'absolute', bottom: 32, left: 32,
+              background: 'rgba(0,0,0,0.7)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 16, padding: '16px 24px',
+              color: 'white',
+            }}
+          >
+            <div style={{ fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', opacity: 0.5, marginBottom: 6 }}>
+              Est. {tenant.foundedYear || '2015'}
             </div>
-
-            {/* Accent blob behind image */}
-            <div
-              aria-hidden
-              className="absolute -bottom-8 -right-8 w-72 h-72 rounded-full -z-0 pointer-events-none"
-              style={{
-                background: 'var(--color-accent)',
-                opacity: 0.12,
-                filter: 'blur(50px)',
-              }}
-            />
-            {/* Subtle grid lines decoration */}
-            <div
-              aria-hidden
-              className="absolute -top-6 -left-6 w-32 h-32 -z-0 pointer-events-none hidden md:block"
-              style={{
-                backgroundImage: 'radial-gradient(circle, var(--color-accent) 1px, transparent 1px)',
-                backgroundSize: '16px 16px',
-                opacity: 0.25,
-              }}
-            />
+            <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>
+              {tenant.shortName}
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.5 }}>{tenant.district}</div>
           </div>
+        </div>
+
+        <div
+          className="hv2-about__content"
+          style={{ background: 'var(--color-page-bg)' }}
+        >
+          <div className="hv2-section-eyebrow">Our Story</div>
+          <h2 className="hv2-about__heading font-heading" style={headingColorStyle}>
+            Building leaders through service.
+          </h2>
+          <p className="hv2-about__body">
+            Founded under the guidance of {tenant.district}, our club brings together
+            passionate individuals to tackle pressing local and global challenges. By
+            joining us, you don't just volunteer — you learn how to lead.
+          </p>
+          <Link to="/about" className="hv2-btn-outline" style={{ width: 'fit-content' }}>
+            Read Our History <ArrowUpRight size={14} />
+          </Link>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════
-          FEATURED PROJECTS  (component, unchanged)
-      ══════════════════════════════════════════════════════════════ */}
-      <FeaturedProjects />
+      {/* ════════════════════════════════════════
+          FEATURED PROJECTS (unchanged component)
+      ════════════════════════════════════════ */}
+      <div className="hv2-reveal">
+        <FeaturedProjects />
+      </div>
 
-      {/* ══════════════════════════════════════════════════════════════
+      {/* ════════════════════════════════════════
           UPCOMING EVENTS
-      ══════════════════════════════════════════════════════════════ */}
-      <section className="py-24 md:py-32 bg-[var(--color-page-bg)]">
-        <div className="max-w-4xl mx-auto px-6 md:px-12">
-
-          {/* Header */}
-          <div className="flex items-end justify-between mb-14 gap-4">
-            <div>
-              <p className="text-xs font-bold tracking-[0.25em] uppercase text-gray-400 mb-2">What's Coming</p>
-              <h2
-                className={`font-heading font-bold leading-none tracking-tight ${headingColor}`}
-                style={{ fontSize: 'clamp(2.5rem, 6vw, 4rem)' }}
-              >
-                Events
-              </h2>
-            </div>
-            <Link
-              to="/events"
-              className="flex items-center gap-1.5 text-sm font-bold tracking-wide shrink-0 pb-1 group"
-              style={{ color: 'var(--color-accent)' }}
-            >
-              Full Calendar
-              <ArrowUpRight
-                size={15}
-                className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
-              />
-            </Link>
+      ════════════════════════════════════════ */}
+      <section className="py-28 px-6 max-w-3xl mx-auto hv2-reveal">
+        <div className="flex items-end justify-between mb-16">
+          <div>
+            <div className="hv2-section-eyebrow">What's Coming</div>
+            <h2 className="font-heading text-4xl md:text-5xl font-black" style={{ ...headingColorStyle, letterSpacing: '-0.03em' }}>
+              Upcoming Events
+            </h2>
           </div>
-
-          {/* Event list */}
-          <div className="space-y-3">
-            {upcomingEvents.length > 0 ? upcomingEvents.map((event, idx) => {
-              const d = new Date(event.date + 'T00:00:00');
-              return (
-                <Link
-                  key={event.id}
-                  to="/events"
-                  className="group flex items-center gap-6 md:gap-8 p-5 md:p-6 rounded-2xl border transition-all duration-200 hover:shadow-lg"
-                  style={{
-                    borderColor: 'rgba(0,0,0,0.07)',
-                    background: 'var(--color-page-bg)',
-                  }}
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-accent)';
-                    (e.currentTarget as HTMLElement).style.background = 'rgba(0,0,0,0.02)';
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLElement).style.borderColor = 'rgba(0,0,0,0.07)';
-                    (e.currentTarget as HTMLElement).style.background = 'var(--color-page-bg)';
-                  }}
-                >
-                  {/* Date block */}
-                  <div
-                    className="shrink-0 w-14 h-14 md:w-16 md:h-16 rounded-xl flex flex-col items-center justify-center text-white"
-                    style={{ background: 'var(--color-accent)' }}
-                  >
-                    <span className="text-[10px] font-bold tracking-wider uppercase leading-none">
-                      {d.toLocaleDateString('en-US', { month: 'short' })}
-                    </span>
-                    <span className="font-heading font-bold text-2xl leading-tight">
-                      {d.getDate()}
-                    </span>
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span
-                        className="text-[10px] font-bold tracking-widest uppercase px-2 py-0.5 rounded-full"
-                        style={{ background: 'rgba(0,0,0,0.05)', color: 'var(--color-accent)' }}
-                      >
-                        {event.type}
-                      </span>
-                    </div>
-                    <h3
-                      className={`font-heading font-bold text-lg md:text-xl truncate ${headingColor} transition-opacity`}
-                    >
-                      {event.title}
-                    </h3>
-                    {event.venue && (
-                      <p className="text-sm text-gray-400 flex items-center gap-1.5 mt-1">
-                        <MapPin size={12} />
-                        {event.venue}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Arrow */}
-                  <ArrowUpRight
-                    size={20}
-                    className="shrink-0 text-gray-300 transition-all duration-200 group-hover:text-[var(--color-accent)] group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
-                  />
-                </Link>
-              );
-            }) : (
-              <div className="py-16 border border-dashed rounded-2xl text-center text-gray-400 text-sm"
-                style={{ borderColor: 'rgba(0,0,0,0.1)' }}>
-                No upcoming events at the moment — check back soon.
-              </div>
-            )}
-          </div>
+          <Link
+            to="/events"
+            style={{
+              fontSize: 12, fontWeight: 800, letterSpacing: '0.1em',
+              textTransform: 'uppercase', color: 'var(--color-accent)',
+              display: 'flex', alignItems: 'center', gap: 6,
+              textDecoration: 'none',
+            }}
+          >
+            Full Calendar <ArrowUpRight size={14} />
+          </Link>
         </div>
+
+        {upcomingEvents.length > 0 ? (
+          <div>
+            {upcomingEvents.map((event) => (
+              <Link to="/events" key={event.id} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
+                <div className="hv2-events__item">
+                  <div>
+                    <div className="hv2-events__date-month" style={{ color: 'var(--color-accent)' }}>
+                      {new Date(event.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short' })}
+                    </div>
+                    <div className="hv2-events__date-day font-heading" style={headingColorStyle}>
+                      {new Date(event.date + 'T00:00:00').getDate()}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <span className="hv2-events__pill">{event.type}</span>
+                    <div className="hv2-events__title font-heading">{event.title}</div>
+                    <div className="hv2-events__venue">
+                      <MapPin size={12} />
+                      {event.venue || 'TBA'}
+                    </div>
+                  </div>
+                  <ArrowUpRight size={20} className="hv2-events__arrow shrink-0" style={{ color: 'var(--color-accent)' }} />
+                </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div
+            style={{
+              border: '1px dashed rgba(0,0,0,0.12)',
+              borderRadius: 20,
+              padding: '64px 32px',
+              textAlign: 'center',
+              color: '#9ca3af',
+              fontSize: 14,
+            }}
+          >
+            <Calendar size={32} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
+            No upcoming events at the moment.
+          </div>
+        )}
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════
-          GALLERY SNAPSHOT
-      ══════════════════════════════════════════════════════════════ */}
-      <section className="py-24 md:py-32" style={{ background: 'var(--color-page-bg)' }}>
-
-        {/* Section header */}
-        <div className="max-w-7xl mx-auto px-6 md:px-12 mb-10 md:mb-14">
-          <div className="flex items-end justify-between gap-4">
+      {/* ════════════════════════════════════════
+          GALLERY
+      ════════════════════════════════════════ */}
+      <section className="py-24 hv2-reveal" style={{ background: 'rgba(0,0,0,0.02)' }}>
+        <div className="max-w-7xl mx-auto px-6 mb-14">
+          <div className="flex items-end justify-between">
             <div>
-              <p className="text-xs font-bold tracking-[0.25em] uppercase text-gray-400 mb-2">Visual Story</p>
-              <h2
-                className={`font-heading font-bold leading-none tracking-tight ${headingColor}`}
-                style={{ fontSize: 'clamp(2.5rem, 6vw, 4rem)' }}
-              >
-                Captured Moments
+              <div className="hv2-section-eyebrow">Gallery</div>
+              <h2 className="font-heading text-4xl md:text-5xl font-black" style={{ ...headingColorStyle, letterSpacing: '-0.03em' }}>
+                Captured Moments.
               </h2>
             </div>
             <Link
               to="/gallery"
-              className="flex items-center gap-1.5 text-sm font-bold tracking-wide shrink-0 pb-1 group"
-              style={{ color: 'var(--color-accent)' }}
+              style={{
+                fontSize: 12, fontWeight: 800, letterSpacing: '0.1em',
+                textTransform: 'uppercase', color: 'var(--color-accent)',
+                display: 'flex', alignItems: 'center', gap: 6,
+                textDecoration: 'none',
+              }}
             >
-              Full Gallery
-              <ArrowUpRight
-                size={15}
-                className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
-              />
+              View All <ArrowUpRight size={14} />
             </Link>
           </div>
         </div>
 
         {galleryPhotos.length > 0 ? (
-          /* Masonry-inspired CSS grid */
-          <div
-            className="max-w-7xl mx-auto px-4 md:px-6"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gridAutoRows: '220px',
-              gap: '12px',
-            }}
-          >
-            {galleryPhotos.slice(0, 6).map((photo, i) => {
-              let gridStyle: React.CSSProperties = {};
-              if (i === 0) gridStyle = { gridColumn: 'span 2', gridRow: 'span 2' };
-              if (i === 3) gridStyle = { gridColumn: 'span 2' };
-              if (i === 5) gridStyle = { gridColumn: 'span 2' };
-
-              return (
-                <div
-                  key={photo.id || i}
-                  className="relative group overflow-hidden rounded-2xl cursor-pointer bg-gray-200"
-                  style={gridStyle}
-                  onClick={() => setLightboxIndex(i)}
-                >
-                  <img
-                    src={photo.url}
-                    alt={photo.caption || 'Gallery'}
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                  />
-
-                  {/* Dark overlay on hover */}
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/55 transition-all duration-400 flex items-center justify-center">
-                    <div className="w-12 h-12 rounded-full border border-white/60 flex items-center justify-center opacity-0 group-hover:opacity-100 scale-75 group-hover:scale-100 transition-all duration-300 backdrop-blur-sm bg-white/10">
-                      <ZoomIn size={20} className="text-white" />
+          <div className="hv2-gallery__grid max-w-7xl mx-auto px-6">
+            {galleryPhotos.slice(0, 6).map((photo, i) => (
+              <div
+                key={photo.id || i}
+                className="hv2-gallery__cell"
+                onClick={() => setLightboxIndex(i)}
+              >
+                <img src={photo.url} alt={photo.caption || 'Gallery'} />
+                <div className="hv2-gallery__overlay">
+                  {photo.albumTag && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {photo.albumTag.split(',').map((t: string) => t.trim()).map((tag: string) => (
+                        <span key={tag} style={{
+                          fontSize: 9, fontWeight: 800, letterSpacing: '0.15em',
+                          textTransform: 'uppercase', color: 'white',
+                          background: 'rgba(255,255,255,0.15)',
+                          padding: '3px 8px', borderRadius: 999,
+                        }}>
+                          {tag}
+                        </span>
+                      ))}
                     </div>
-                  </div>
-
-                  {/* Caption strip */}
-                  <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/80 via-black/30 to-transparent translate-y-full group-hover:translate-y-0 transition-transform duration-400">
-                    <p className="text-white text-sm font-medium leading-tight">{photo.caption}</p>
-                    {photo.albumTag && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {photo.albumTag.split(',').map((t: string) => t.trim()).map((tag: string) => (
-                          <span
-                            key={tag}
-                            className="text-[9px] uppercase font-bold text-white/80 bg-white/15 px-2 py-0.5 rounded backdrop-blur-sm"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
-              );
-            })}
+                <div className="hv2-gallery__zoom">
+                  <ZoomIn size={16} color="white" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
-          <div className="max-w-7xl mx-auto px-6 text-center py-12 text-gray-400 text-sm">
-            No featured photos available right now.
+          <div className="max-w-7xl mx-auto px-6 py-16 text-center" style={{ color: '#9ca3af' }}>
+            No featured moments available.
           </div>
         )}
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════
+      {/* ════════════════════════════════════════
           JOIN CTA
-      ══════════════════════════════════════════════════════════════ */}
+      ════════════════════════════════════════ */}
       <section
-        className="relative py-32 md:py-40 overflow-hidden"
-        style={{ backgroundColor: isLight ? 'var(--color-accent)' : '#000251' }}
+        className="hv2-join hv2-reveal"
+        style={{
+          background: isLight ? 'var(--color-accent)' : '#000251',
+          color: 'white',
+          marginTop: 80,
+        }}
       >
-        <GrainOverlay opacity={0.05} />
-
-        {/* Radial glow */}
-        <div
-          aria-hidden
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90vw] h-[90vw] rounded-full pointer-events-none"
-          style={{
-            background: 'radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 60%)',
-          }}
-        />
-
-        <div className="relative z-10 max-w-3xl mx-auto px-6 md:px-12 text-center text-white">
-          <p className="text-xs font-bold tracking-[0.3em] uppercase mb-6 opacity-60">
-            Ready to Lead?
-          </p>
-          <h2
-            className="font-heading font-bold leading-[0.9] tracking-tighter mb-6"
-            style={{ fontSize: 'clamp(3rem, 9vw, 7rem)' }}
-          >
-            Make a difference.
-          </h2>
-          <p className="text-lg md:text-xl text-white/75 mb-12 max-w-xl mx-auto leading-relaxed">
-            Join a global network of 350,000+ young leaders taking action in their communities.
-          </p>
-          <Link to="/join">
-            <Button
-              size="lg"
-              className="bg-white text-gray-900 border-none hover:bg-gray-100 font-bold shadow-2xl"
+        <div className="hv2-join__grid max-w-7xl mx-auto">
+          {/* Left */}
+          <div className="hv2-join__left">
+            <div
+              style={{
+                fontSize: 9, fontWeight: 800, letterSpacing: '0.25em',
+                textTransform: 'uppercase', opacity: 0.5,
+                display: 'flex', alignItems: 'center', gap: 12,
+                marginBottom: 24,
+              }}
             >
-              <span className="flex items-center gap-2">
-                Apply for Membership <ArrowUpRight size={16} />
-              </span>
-            </Button>
-          </Link>
+              <span style={{ display: 'block', width: 32, height: 2, background: 'rgba(255,255,255,0.4)' }} />
+              Membership
+            </div>
+            <h2 className="hv2-join__headline font-heading">
+              Ready to make a difference?
+            </h2>
+            <p className="hv2-join__sub">
+              Join a global network of 350,000+ young leaders taking action in their
+              communities every single day.
+            </p>
+            <div className="hv2-join__chips">
+              {['Leadership', 'Fellowship', 'Service', 'Community'].map((c) => (
+                <span key={c} className="hv2-join__chip">{c}</span>
+              ))}
+            </div>
+            <Link to="/join" className="hv2-btn-white">
+              Apply for Membership <ArrowUpRight size={14} />
+            </Link>
+          </div>
+
+          {/* Right — decorative info cards */}
+          <div className="hv2-join__right">
+            <div
+              style={{
+                position: 'absolute', inset: 0,
+                background: 'rgba(0,0,0,0.15)',
+                backdropFilter: 'blur(40px)',
+              }}
+            />
+            <div className="hv2-join__right-content">
+              {[
+                { icon: <Users size={18} color="white" />, label: 'Global Members', value: '350K+' },
+                { icon: <Globe size={18} color="white" />, label: 'Countries', value: '200+' },
+                { icon: <Heart size={18} color="white" />, label: 'Projects Yearly', value: '75K+' },
+                { icon: <Calendar size={18} color="white" />, label: 'Est.', value: tenant.foundedYear || '2015' },
+              ].map((card, i) => (
+                <div key={i} className="hv2-join__card">
+                  <div className="hv2-join__card-icon">{card.icon}</div>
+                  <div className="hv2-join__card-label">{card.label}</div>
+                  <div className="hv2-join__card-value font-heading">{card.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════════
-          LIGHTBOX  (unchanged logic, refined visuals)
-      ══════════════════════════════════════════════════════════════ */}
+      {/* ════════════════════════════════════════
+          LIGHTBOX (unchanged behavior)
+      ════════════════════════════════════════ */}
       {lightboxIndex !== null && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.96)' }}
-          onClick={() => setLightboxIndex(null)}
-        >
-          <GrainOverlay opacity={0.04} />
-
-          {/* Close */}
-          <button
-            aria-label="Close"
-            className="absolute top-5 right-5 z-50 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors backdrop-blur-sm"
-            onClick={() => setLightboxIndex(null)}
-          >
-            <X size={20} className="text-white" />
+        <div className="hv2-lightbox" onClick={() => setLightboxIndex(null)}>
+          <button className="hv2-lightbox__close" onClick={() => setLightboxIndex(null)}>
+            <X size={20} />
           </button>
 
-          {/* Prev */}
           <button
-            aria-label="Previous"
+            className="hv2-lightbox__nav"
+            style={{ left: 24 }}
             disabled={lightboxIndex === 0}
-            className="absolute left-4 md:left-8 z-50 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors backdrop-blur-sm disabled:opacity-20 disabled:cursor-not-allowed"
-            onClick={e => { e.stopPropagation(); setLightboxIndex(lightboxIndex - 1); }}
+            onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex - 1); }}
           >
-            <ChevronLeft size={22} className="text-white" />
+            <ChevronLeft size={24} />
           </button>
 
-          {/* Image */}
           <img
             src={galleryPhotos[lightboxIndex]?.url}
             alt={galleryPhotos[lightboxIndex]?.caption || 'Gallery photo'}
-            className="max-h-[85vh] max-w-[85vw] object-contain rounded-xl"
-            style={{ boxShadow: '0 40px 100px -20px rgba(0,0,0,0.8)' }}
-            onClick={e => e.stopPropagation()}
+            style={{ maxHeight: '85vh', maxWidth: '85vw', objectFit: 'contain', borderRadius: 12 }}
+            onClick={(e) => e.stopPropagation()}
           />
 
-          {/* Next */}
           <button
-            aria-label="Next"
+            className="hv2-lightbox__nav"
+            style={{ right: 24 }}
             disabled={lightboxIndex === galleryPhotos.length - 1}
-            className="absolute right-4 md:right-8 z-50 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors backdrop-blur-sm disabled:opacity-20 disabled:cursor-not-allowed"
-            onClick={e => { e.stopPropagation(); setLightboxIndex(lightboxIndex + 1); }}
+            onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex + 1); }}
           >
-            <ChevronRight size={22} className="text-white" />
+            <ChevronRight size={24} />
           </button>
 
-          {/* Caption */}
           {galleryPhotos[lightboxIndex]?.caption && (
-            <div className="absolute bottom-10 left-1/2 -translate-x-1/2 px-5 py-2 rounded-full backdrop-blur-md bg-white/10 text-white/90 text-sm font-medium text-center max-w-sm whitespace-nowrap overflow-hidden text-ellipsis">
+            <div className="hv2-lightbox__caption">
               {galleryPhotos[lightboxIndex].caption}
             </div>
           )}
 
-          {/* Counter */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/30 text-xs font-bold tracking-widest">
+          <div className="hv2-lightbox__counter">
             {lightboxIndex + 1} / {galleryPhotos.length}
           </div>
         </div>
