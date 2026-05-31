@@ -47,6 +47,20 @@ export default function ProjectDetail() {
     </div>;
   }
 
+  let isJsonBlocks = false;
+  let parsedBlocks: any[] = [];
+  try {
+    const parsed = JSON.parse(project.description || '');
+    if (Array.isArray(parsed)) {
+      isJsonBlocks = true;
+      parsedBlocks = parsed;
+    }
+  } catch (e) {}
+
+  const nestedUrl = (arr: any[], index: number) => {
+    return arr && arr.length > index ? arr[index] : null;
+  };
+
   return (
     <div className="bg-white min-h-screen pt-24 pb-32">
       <article>
@@ -77,10 +91,90 @@ export default function ProjectDetail() {
 
         {/* Content */}
         <div className="max-w-3xl mx-auto px-6 py-16">
-          <div 
-            className="prose prose-lg max-w-none prose-headings:font-heading prose-headings:font-bold prose-headings:text-primary prose-a:text-accent prose-a:no-underline hover:prose-a:underline prose-p:text-gray-700 prose-p:leading-relaxed prose-img:rounded-xl"
-            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked(project.description || '') as string) }} 
-          />
+          {isJsonBlocks ? (
+            <div className="after:content-[''] after:table after:clear-both space-y-8">
+              {parsedBlocks.map((block: any, idx: number) => {
+                if (block.type === 'text') {
+                  return (
+                    <div 
+                      key={block.id || idx}
+                      className="prose prose-lg max-w-none prose-headings:font-heading prose-headings:font-bold prose-headings:text-primary prose-a:text-accent prose-a:no-underline hover:prose-a:underline prose-p:text-gray-700 prose-p:leading-relaxed"
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked(block.content || '') as string) }} 
+                    />
+                  );
+                }
+                
+                if (block.type === 'image') {
+                  const floatClass = block.style === 'left' ? 'md:float-left md:mr-8 md:max-w-[45%] w-full mb-6' :
+                                     block.style === 'right' ? 'md:float-right md:ml-8 md:max-w-[45%] w-full mb-6' :
+                                     block.style === 'full' ? 'w-full max-w-none mb-8' :
+                                     'max-w-xl mx-auto w-full flex flex-col items-center justify-center text-center mb-8';
+                  return (
+                    <div key={block.id || idx} className={floatClass}>
+                      <img src={block.url || 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=600&auto=format&fit=crop&q=60'} alt={block.caption || ""} className="rounded-xl shadow-md border border-gray-100 object-cover w-full" />
+                      {block.caption && (
+                        <span className="text-xs text-gray-500 mt-2 font-medium tracking-wide">
+                          {block.caption}
+                        </span>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (block.type === 'collage') {
+                  const urls = block.urls || [];
+                  if (urls.length === 0) return null;
+                  return (
+                    <div key={block.id || idx} className="my-10 clear-both">
+                      {block.layout === 'grid2' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {urls.map((url: string, index: number) => (
+                            <img key={index} src={url} alt="" className="rounded-xl object-cover aspect-video w-full shadow-sm border border-gray-100" />
+                          ))}
+                        </div>
+                      )}
+                      {block.layout === 'grid3' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          {urls.map((url: string, index: number) => (
+                            <img key={index} src={url} alt="" className="rounded-xl object-cover aspect-video w-full shadow-sm border border-gray-100" />
+                          ))}
+                        </div>
+                      )}
+                      {block.layout === 'mosaic' && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          {nestedUrl(urls, 0) && (
+                            <div className="sm:col-span-2">
+                              <img src={urls[0]} alt="" className="rounded-xl object-cover h-full min-h-[220px] w-full shadow-sm border border-gray-100" />
+                            </div>
+                          )}
+                          <div className="flex flex-col gap-4">
+                            {urls.slice(1, 3).map((url: string, index: number) => (
+                              <img key={index} src={url} alt="" className="rounded-xl object-cover aspect-video w-full shadow-sm border border-gray-100 flex-1" />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {block.layout === 'masonry' && (
+                        <div className="columns-1 sm:columns-2 gap-4 space-y-4">
+                          {urls.map((url: string, index: number) => (
+                            <div key={index} className="break-inside-avoid">
+                              <img src={url} alt="" className="rounded-xl object-cover w-full shadow-sm border border-gray-100" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                return null;
+              })}
+            </div>
+          ) : (
+            <div 
+              className="prose prose-lg max-w-none prose-headings:font-heading prose-headings:font-bold prose-headings:text-primary prose-a:text-accent prose-a:no-underline hover:prose-a:underline prose-p:text-gray-700 prose-p:leading-relaxed prose-img:rounded-xl"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked(project.description || '') as string) }} 
+            />
+          )}
         </div>
 
         {project.gallery && project.gallery.length > 0 && (
