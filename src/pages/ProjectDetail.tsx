@@ -83,8 +83,8 @@ export default function ProjectDetail() {
             <h1 className="text-4xl md:text-6xl lg:text-7xl font-heading font-bold text-white leading-tight mb-4">
               {project.name}
             </h1>
-            <div className="text-white/80 text-lg">
-              Started: <strong>{project.startDate || 'TBD'}</strong>
+            <div className="text-white/80 text-lg font-mono">
+              Date: <strong>{project.executionDate || project.startDate || 'TBD'}</strong>
             </div>
           </div>
         </div>
