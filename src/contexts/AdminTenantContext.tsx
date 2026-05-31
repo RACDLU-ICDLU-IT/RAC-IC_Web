@@ -27,10 +27,19 @@ export function AdminTenantProvider({ children }: { children: React.ReactNode })
 
   const [adminTenant, setAdminTenantState] = useState<TenantConfig>(getInitial);
 
-  // When profile loads or changes, ensuring state is correct
+  // When profile loads or changes, ensuring state is correct and regular admins are strictly restricted to their club
   useEffect(() => {
-    setAdminTenantState(getInitial());
-  }, [profile?.role]);
+    if (profile) {
+      if (profile.role === 'admin') {
+        const forcedTenant = profile.tenant_id === 'racdlu' ? racdluConfig : icdluConfig;
+        setAdminTenantState(forcedTenant);
+      } else {
+        setAdminTenantState(getInitial());
+      }
+    } else {
+      setAdminTenantState(getInitial());
+    }
+  }, [profile]);
 
   const setAdminTenant = (id: 'icdlu' | 'racdlu') => {
     if (profile?.role !== 'master_admin') return;
