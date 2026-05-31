@@ -3,13 +3,20 @@ import React, { useEffect, useState } from 'react';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { Users, UserCheck, CalendarDays, Presentation, Plus, Megaphone, Inbox, Image as ImageIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { CloudinaryUpload } from '../../components/CloudinaryUpload';
+import { useToast } from '../../hooks/useToast';
 
 export default function AdminOverview() {
   const { adminTenant: tenant } = useAdminTenant();
+  const { addToast } = useToast();
   const [stats, setStats] = useState({ activeMembers: 0, pendingApps: 0, eventsThisMonth: 0, ongoingProjects: 0 });
   const [activityFeed, setActivityFeed] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [clubName, setClubName] = useState(tenant.shortName);
+  
+  // Dashboard Image Management
+  const [dashboardImage, setDashboardImage] = useState<string>('');
+  const [isSavingImage, setIsSavingImage] = useState(false);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -18,6 +25,12 @@ export default function AdminOverview() {
         setClubName(data.data.clubName);
       } else {
         setClubName(tenant.shortName);
+      }
+
+      // Also fetch pageContent for home image
+      const { data: pageData } = await supabase.from('page_content').select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
+      if (pageData?.data?.homeAboutImage) {
+        setDashboardImage(pageData.data.homeAboutImage);
       }
     };
     fetchSettings();
@@ -65,6 +78,29 @@ export default function AdminOverview() {
     };
     fetchStats();
   }, [tenant.id]);
+
+  const handleImageUpload = async (url: string) => {
+    setIsSavingImage(true);
+    setDashboardImage(url);
+    try {
+      const { data: currentData } = await supabase.from('page_content').select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
+      const updatedData = { ...(currentData?.data || {}), homeAboutImage: url };
+      
+      const { error } = await supabase.from('page_content').upsert({ 
+        id: 'pageContent', 
+        tenant_id: tenant.id, 
+        data: updatedData 
+      }, { onConflict: 'id, tenant_id' });
+      
+      if (error) throw error;
+      addToast('Dashboard image updated successfully', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to update image', 'error');
+    } finally {
+      setIsSavingImage(false);
+    }
+  };
 
   const statCards = [
     { label: 'Active Members', value: stats.activeMembers, icon: Users, route: '/admin/members', color: 'text-blue-500' },
@@ -127,6 +163,27 @@ export default function AdminOverview() {
                   </div>
                 </Link>
               ))}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="font-heading font-bold text-lg text-gray-900 mb-4">Master Image Settings</h3>
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h4 className="font-bold text-gray-900">Public Dashboard Image</h4>
+                  <p className="text-sm text-gray-500">Update the primary visual on public-facing master pages.</p>
+                </div>
+                {isSavingImage && <span className="text-sm text-gray-400 font-bold animate-pulse">Saving...</span>}
+              </div>
+              <div className="w-full max-w-sm">
+                <CloudinaryUpload 
+                  onUpload={handleImageUpload} 
+                  currentUrl={dashboardImage} 
+                  aspectRatio="landscape"
+                  label="Change Storefront Image"
+                />
+              </div>
             </div>
           </section>
         </div>

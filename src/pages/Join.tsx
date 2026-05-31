@@ -7,15 +7,18 @@ import { Button } from '../components/ui/Button';
 import { useToast } from '../hooks/useToast';
 import { useTenant } from '../hooks/useTenant';
 import SEOHead from '../components/SEOHead';
+import { CloudinaryUpload } from '../components/CloudinaryUpload';
 
 // Validation Schema
 const joinSchema = z.object({
-  name: z.string().min(2, 'Name is required'),
-  email: z.string().email('Valid email is required'),
+  name: z.string().min(2, 'Full name is required (min 2 characters)'),
+  email: z.string().email('A valid email address is required'),
   dob: z.string().min(1, 'Date of birth is required'),
-  phone: z.string().min(5, 'Valid phone is required'),
-  school: z.string().min(2, 'School name is required'),
-  grade: z.string().min(1, 'Grade/Class is required')
+  gender: z.string().min(1, 'Please select your gender'),
+  phone: z.string().min(5, 'A valid phone number is required'),
+  emergencyContact: z.string().min(3, 'Emergency contact information is required'),
+  address: z.string().min(5, 'Residential address is required'),
+  referredBy: z.string().optional(),
 });
 
 type JoinFormData = z.infer<typeof joinSchema>;
@@ -27,10 +30,16 @@ export default function Join() {
   const rejectionMessage = tenant.id === 'racdlu' 
     ? 'Rotaract is for young adults aged 18-30. If you are under 18, consider joining Interact instead.'
     : 'Interact is specifically for youth aged 12-18. If you\'re older, consider joining Rotaract (ages 18+) or a local Rotary club.';
-  const [step, setStep] = useState<'eligibility' | 'form' | 'success' | 'ineligible'>('eligibility');
+  const [step, setStep] = useState<'eligibility' | 'code-check' | 'form' | 'success' | 'ineligible'>('eligibility');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [content, setContent] = useState<any>({});
   const { addToast } = useToast();
+
+  const [inviteCode, setInviteCode] = useState('');
+  const [codeError, setCodeError] = useState('');
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [photoPublicId, setPhotoPublicId] = useState('');
 
   const isLight = tenant.brand.primaryColor === '#FFFFFF';
 
@@ -47,25 +56,64 @@ export default function Join() {
   });
 
   const checkEligibility = (isEligible: boolean) => {
-    if (isEligible) setStep('form');
+    if (isEligible) setStep('code-check');
     else setStep('ineligible');
   };
 
   const onSubmit = async (data: JoinFormData) => {
     setIsSubmitting(true);
     try {
-      await supabase.from('applications').insert({
-        ...data,
+      const { error } = await supabase.from('applications').insert({
+        name: data.name,
+        email: data.email,
+        dob: data.dob,
+        gender: data.gender,
+        phone: data.phone,
+        emergencyContact: data.emergencyContact,
+        address: data.address,
+        referredBy: data.referredBy || '',
+        photo: photoUrl,
+        codeUsed: inviteCode.trim().toUpperCase(),
         tenant_id: tenant.id,
         status: 'pending',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       });
+      if (error) throw error;
       setStep('success');
     } catch (err: any) {
-      console.error(err);
+      console.error('Application submit error:', err);
       addToast('Failed to submit application. Please try again.', 'error');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    const trimmed = inviteCode.trim().toUpperCase();
+    if (trimmed.length !== 12) {
+      setCodeError('Please enter a complete 12-character code.');
+      return;
+    }
+    setIsVerifyingCode(true);
+    setCodeError('');
+    try {
+      const { data, error } = await supabase.rpc('verify_application_code', {
+        p_code: trimmed,
+        p_tenant_id: tenant.id,
+      });
+      if (error) throw error;
+      if (data && data.valid === true) {
+        setStep('form');
+      } else {
+        setCodeError(
+          data?.message || 'Invalid code. Please contact us to receive a valid invitation code.'
+        );
+      }
+    } catch (err: any) {
+      console.error('Code verification error:', err);
+      setCodeError('Verification failed. Please try again or contact us.');
+    } finally {
+      setIsVerifyingCode(false);
     }
   };
 
@@ -110,50 +158,215 @@ export default function Join() {
           </div>
         )}
 
+        {step === 'code-check' && (
+          <div className="text-center animate-fade-in-up max-w-md mx-auto">
+            <div className="bg-white/5 border border-white/10 rounded-3xl p-10 space-y-6">
+              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto">
+                <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+
+              <div>
+                <h2 className="text-3xl font-heading font-bold text-white mb-2">Invitation Required</h2>
+                <p className="text-gray-300 text-sm leading-relaxed">
+                  Applications are by invitation only. Enter the 12-character code you received from the club to continue.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={e => {
+                    setInviteCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''));
+                    setCodeError('');
+                  }}
+                  maxLength={12}
+                  placeholder="XXXXXXXXXXXX"
+                  className="w-full px-4 py-4 bg-white/10 border border-white/20 rounded-xl text-white text-center text-xl font-mono tracking-[0.4em] placeholder-white/25 focus:outline-none focus:border-white/60 focus:bg-white/15 transition-all uppercase"
+                  onKeyDown={e => { if (e.key === 'Enter') handleVerifyCode(); }}
+                  autoFocus
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+
+                {codeError && (
+                  <div className="bg-red-500/20 border border-red-400/30 rounded-xl p-4 text-left">
+                    <p className="text-red-200 text-sm mb-3">{codeError}</p>
+                    <a
+                      href="/contact"
+                      className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors border border-white/20"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      Contact Us for a Code
+                    </a>
+                  </div>
+                )}
+
+                <Button
+                  size="lg"
+                  variant="secondary"
+                  className="w-full !rounded-xl"
+                  onClick={handleVerifyCode}
+                  disabled={isVerifyingCode || inviteCode.trim().length < 12}
+                >
+                  {isVerifyingCode ? (
+                    <span className="flex items-center gap-2">
+                      <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Verifying...
+                    </span>
+                  ) : 'Verify Code & Continue'}
+                </Button>
+
+                <button
+                  onClick={() => { setStep('eligibility'); setCodeError(''); setInviteCode(''); }}
+                  className="block w-full text-center text-white/50 hover:text-white text-sm transition-colors mt-2"
+                >
+                  ← Go Back
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {step === 'form' && (
           <div className="bg-white text-gray-900 p-8 md:p-12 rounded-3xl shadow-2xl animate-fade-in-up">
             <div className="text-center mb-10">
               <h2 className="text-3xl font-heading font-bold mb-2">Application Form</h2>
-              <p className="text-gray-500">Tell us a bit about yourself. We'll review and get back to you shortly.</p>
+              <p className="text-gray-500 text-sm">Please fill in all details carefully. We will review and contact you shortly.</p>
             </div>
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Full Name</label>
-                  <input {...register('name')} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900" placeholder="John Doe" />
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+
+              {/* Formal Picture */}
+              <div className="flex flex-col items-center gap-3">
+                <label className="text-sm font-bold text-gray-700">Formal Picture <span className="text-red-500">*</span></label>
+                <div className="w-36">
+                  <CloudinaryUpload
+                    onUpload={(url, publicId) => { setPhotoUrl(url); setPhotoPublicId(publicId); }}
+                    currentUrl={photoUrl}
+                    currentPublicId={photoPublicId}
+                    label="Upload Photo"
+                    aspectRatio="portrait"
+                  />
+                </div>
+                <p className="text-xs text-gray-400 text-center">Upload a clear, formal/passport-style photo</p>
+              </div>
+
+              <div className="border-t border-gray-100 pt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Full Name */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Full Name <span className="text-red-500">*</span></label>
+                  <input
+                    {...register('name')}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                    placeholder="Your full name as per official ID"
+                  />
                   {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
                 </div>
+
+                {/* Date of Birth */}
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Email Address</label>
-                  <input {...register('email')} type="email" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900" placeholder="john@example.com" />
-                  {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Date of Birth</label>
-                  <input {...register('dob')} type="date" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-700" />
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Date of Birth <span className="text-red-500">*</span></label>
+                  <input
+                    {...register('dob')}
+                    type="date"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-700"
+                  />
                   {errors.dob && <p className="text-red-500 text-xs mt-1">{errors.dob.message}</p>}
                 </div>
+
+                {/* Gender */}
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Phone Number</label>
-                  <input {...register('phone')} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900" placeholder="+880..." />
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Gender <span className="text-red-500">*</span></label>
+                  <select
+                    {...register('gender')}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                  >
+                    <option value="">Select gender...</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                  </select>
+                  {errors.gender && <p className="text-red-500 text-xs mt-1">{errors.gender.message}</p>}
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Email Address <span className="text-red-500">*</span></label>
+                  <input
+                    {...register('email')}
+                    type="email"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                    placeholder="your@email.com"
+                  />
+                  {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
+                </div>
+
+                {/* Phone */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Phone Number <span className="text-red-500">*</span></label>
+                  <input
+                    {...register('phone')}
+                    type="tel"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                    placeholder="+880 01XXX XXXXXX"
+                  />
                   {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>}
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">School Name</label>
-                  <input {...register('school')} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900" placeholder="Dhaka High School" />
-                  {errors.school && <p className="text-red-500 text-xs mt-1">{errors.school.message}</p>}
+
+                {/* Emergency Contact */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Emergency Contact <span className="text-red-500">*</span></label>
+                  <input
+                    {...register('emergencyContact')}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                    placeholder="Parent/Guardian name and phone number"
+                  />
+                  {errors.emergencyContact && <p className="text-red-500 text-xs mt-1">{errors.emergencyContact.message}</p>}
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Grade / Class</label>
-                  <input {...register('grade')} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900" placeholder="10th Grade" />
-                  {errors.grade && <p className="text-red-500 text-xs mt-1">{errors.grade.message}</p>}
+
+                {/* Residential Address */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">Residential Address <span className="text-red-500">*</span></label>
+                  <textarea
+                    {...register('address')}
+                    rows={2}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900 resize-none"
+                    placeholder="House/Road/Block, Area, City"
+                  />
+                  {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address.message}</p>}
+                </div>
+
+                {/* Referred By */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    Referred By <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    {...register('referredBy')}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                    placeholder="Name of the member who referred you (if any)"
+                  />
                 </div>
               </div>
-              
-              <div className="pt-6">
-                <Button type="submit" variant="primary" size="lg" className="w-full !rounded-xl" disabled={isSubmitting}>
-                  {isSubmitting ? 'Submitting...' : 'Submit Application'}
+
+              <div className="pt-2">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="lg"
+                  className="w-full !rounded-xl"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? 'Submitting Application...' : 'Submit Application →'}
                 </Button>
               </div>
             </form>

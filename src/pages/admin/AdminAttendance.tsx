@@ -4,16 +4,24 @@ import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../contexts/AuthContext';
 import { Download, CalendarPlus, Search, List, CalendarDays } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { Modal } from '../../components/ui/Modal';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 export default function AdminAttendance() {
   const { adminTenant: tenant } = useAdminTenant();
   const { user } = useAuth();
-  const [mode, setMode] = useState<'mark'|'history'>('mark');
+  const [mode, setMode] = useState<'mark'|'history'|'member'>('mark');
   const [events, setEvents] = useState<any[]>([]);
   const [activeMembers, setActiveMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [searchParams] = useSearchParams();
+  const targetMemberId = searchParams.get('memberId');
+
+  const [memberHistoryRecords, setMemberHistoryRecords] = useState<any[]>([]);
+  const [memberHistoryLoading, setMemberHistoryLoading] = useState(false);
+  const [targetMember, setTargetMember] = useState<any>(null);
   
   // Mark Attendance state
   const [selectedEventId, setSelectedEventId] = useState('');
@@ -83,6 +91,73 @@ export default function AdminAttendance() {
       loadEventAttendance(historyEventId, false).then(recs => setHistoryRecords(recs));
     }
   }, [historyEventId, mode, tenant.id]);
+
+  const fetchMemberHistory = async (memberId: string) => {
+    setMemberHistoryLoading(true);
+    try {
+      const { data: snap } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('userId', memberId)
+        .eq('tenant_id', tenant.id);
+
+      const records = snap || [];
+
+      // Enrich with event data from already-loaded events state
+      const enriched = records.map((r: any) => ({
+        ...r,
+        eventTitle:
+          events.find((e: any) => e.id === r.eventId)?.title ||
+          r.eventTitle ||
+          'Unknown Event',
+        eventDate:
+          events.find((e: any) => e.id === r.eventId)?.date ||
+          r.eventDate ||
+          '',
+        eventType:
+          events.find((e: any) => e.id === r.eventId)?.type ||
+          r.eventType ||
+          '',
+      }));
+
+      // Sort by date descending (most recent first)
+      enriched.sort((a: any, b: any) =>
+        b.eventDate > a.eventDate ? 1 : b.eventDate < a.eventDate ? -1 : 0
+      );
+
+      setMemberHistoryRecords(enriched);
+    } catch (err) {
+      console.error('fetchMemberHistory error:', err);
+      addToast('Failed to load member attendance history', 'error');
+    } finally {
+      setMemberHistoryLoading(false);
+    }
+  };
+
+  // Auto-switch to member history view when memberId URL param is present
+  useEffect(() => {
+    if (!targetMemberId || loading) return;
+    
+    // Find or set a placeholder for the member
+    const found = activeMembers.find((m: any) => m.id === targetMemberId);
+    if (found) {
+      setTargetMember(found);
+    } else {
+      // Member might be inactive; try a direct lookup
+      supabase
+        .from('users')
+        .select('*')
+        .eq('id', targetMemberId)
+        .eq('tenant_id', tenant.id)
+        .single()
+        .then(({ data }) => {
+          if (data) setTargetMember(data);
+        });
+    }
+    
+    setMode('member');
+    fetchMemberHistory(targetMemberId);
+  }, [targetMemberId, loading, activeMembers.length]);
 
   const handleSaveAttendance = async () => {
     if (!selectedEventId) return;
@@ -217,12 +292,32 @@ export default function AdminAttendance() {
         </div>
       </div>
 
-      <div className="flex gap-2 border-b border-gray-200">
-        {[ {id:'mark', label:'Mark Attendance'}, {id:'history', label:'View History'} ].map(t => (
+      <div className="flex gap-0 border-b border-gray-200">
+        {[
+          { id: 'mark', label: 'Mark Attendance' },
+          { id: 'history', label: 'Event History' },
+          ...(targetMemberId
+            ? [{
+                id: 'member',
+                label: targetMember?.name
+                  ? `${targetMember.name}'s History`
+                  : 'Member History',
+              }]
+            : []),
+        ].map(t => (
           <button
             key={t.id}
-            onClick={() => setMode(t.id as any)}
-            className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${mode === t.id ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            onClick={() => {
+              setMode(t.id as any);
+              if (t.id === 'member' && targetMemberId) {
+                fetchMemberHistory(targetMemberId);
+              }
+            }}
+            className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${
+              mode === t.id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
           >
             {t.label}
           </button>
@@ -354,6 +449,162 @@ export default function AdminAttendance() {
                  </div>
                </div>
              )}
+          </div>
+        </div>
+      )}
+
+      {mode === 'member' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          {/* Member Header */}
+          <div className="p-6 border-b border-gray-100 flex items-center gap-4">
+            {targetMember?.photo ? (
+              <img
+                src={targetMember.photo}
+                alt={targetMember?.name}
+                className="w-14 h-14 rounded-full object-cover border-2 border-gray-200 shrink-0"
+              />
+            ) : (
+              <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg shrink-0">
+                {targetMember?.name?.substring(0, 2)?.toUpperCase() || '??'}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl font-bold text-gray-900 truncate">
+                {targetMember?.name || 'Loading member...'}
+              </h2>
+              <p className="text-sm text-gray-500 truncate">{targetMember?.email || ''}</p>
+              {(targetMember?.school || targetMember?.grade) && (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {targetMember.school}{targetMember.grade ? ` · Grade ${targetMember.grade}` : ''}
+                </p>
+              )}
+            </div>
+            <a
+              href="/admin/members"
+              className="text-sm text-primary hover:text-primary/80 font-medium whitespace-nowrap flex items-center gap-1 shrink-0"
+            >
+              ← Members
+            </a>
+          </div>
+
+          <div className="p-6">
+            {memberHistoryLoading ? (
+              <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin mb-3" />
+                <p className="text-sm">Loading attendance history...</p>
+              </div>
+            ) : (
+              <>
+                {/* Stats Row */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  {[
+                    {
+                      label: 'Total Events',
+                      value: memberHistoryRecords.length,
+                      color: 'text-gray-800',
+                      bg: 'bg-gray-50',
+                    },
+                    {
+                      label: 'Present',
+                      value: memberHistoryRecords.filter((r: any) => r.status === 'P' || r.status === 'L').length,
+                      color: 'text-green-600',
+                      bg: 'bg-green-50',
+                    },
+                    {
+                      label: 'Absent',
+                      value: memberHistoryRecords.filter((r: any) => r.status === 'A').length,
+                      color: 'text-red-500',
+                      bg: 'bg-red-50',
+                    },
+                    {
+                      label: 'Attendance Rate',
+                      value: memberHistoryRecords.length > 0
+                        ? `${Math.round(
+                            (memberHistoryRecords.filter((r: any) => r.status === 'P' || r.status === 'L').length /
+                              memberHistoryRecords.length) *
+                              100
+                          )}%`
+                        : 'N/A',
+                      color: 'text-blue-600',
+                      bg: 'bg-blue-50',
+                    },
+                  ].map(stat => (
+                    <div key={stat.label} className={`${stat.bg} rounded-xl p-4 text-center border border-gray-100`}>
+                      <p className={`text-3xl font-bold font-heading ${stat.color}`}>{stat.value}</p>
+                      <p className="text-xs text-gray-400 uppercase tracking-wide mt-1">{stat.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Export + Records */}
+                {memberHistoryRecords.length > 0 && (
+                  <div className="flex justify-end mb-4">
+                    <Button
+                      variant="outline-dark"
+                      size="sm"
+                      onClick={() => {
+                        let csv = 'Event Title,Date,Type,Status\n';
+                        memberHistoryRecords.forEach((r: any) => {
+                          const statusLabel =
+                            r.status === 'P' ? 'Present' :
+                            r.status === 'A' ? 'Absent' :
+                            r.status === 'E' ? 'Excused' : 'Late';
+                          csv += `"${r.eventTitle || ''}","${r.eventDate || ''}","${r.eventType || ''}","${statusLabel}"\n`;
+                        });
+                        const blob = new Blob([csv], { type: 'text/csv' });
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = `Attendance_${(targetMember?.name || 'member').replace(/\s+/g, '_')}.csv`;
+                        a.click();
+                      }}
+                    >
+                      <Download size={14} className="mr-1.5" /> Export CSV
+                    </Button>
+                  </div>
+                )}
+
+                {/* Records List */}
+                {memberHistoryRecords.length === 0 ? (
+                  <div className="text-center py-14 text-gray-400">
+                    <CalendarDays size={44} className="mx-auto mb-3 opacity-25" />
+                    <p className="font-medium">No attendance records found for this member.</p>
+                    <p className="text-sm mt-1 text-gray-400">Records appear here after an admin marks attendance for an event.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-50 max-h-[520px] overflow-y-auto">
+                    {memberHistoryRecords.map((r: any, i: number) => (
+                      <div key={i} className="py-3.5 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm text-gray-900 truncate">{r.eventTitle}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {r.eventDate
+                              ? new Date(r.eventDate + 'T00:00:00').toLocaleDateString('en-US', {
+                                  weekday: 'short',
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                })
+                              : 'Date not recorded'}
+                            {r.eventType ? ` · ${r.eventType}` : ''}
+                          </p>
+                        </div>
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-bold uppercase border shrink-0 ${getStatusColor(r.status)}`}
+                        >
+                          {r.status === 'P'
+                            ? 'Present'
+                            : r.status === 'A'
+                            ? 'Absent'
+                            : r.status === 'E'
+                            ? 'Excused'
+                            : 'Late'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       )}

@@ -5,8 +5,9 @@ import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
-import { UserCheck, CheckCircle2, XCircle, Eye, Loader2 } from 'lucide-react';
+import { UserCheck, CheckCircle2, XCircle, Eye, Loader2, KeyRound, Copy, Check, Plus, Download } from 'lucide-react';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
+import * as XLSX from 'xlsx';
 
 export default function AdminApplications() {
   const { adminTenant: tenant } = useAdminTenant();
@@ -14,6 +15,18 @@ export default function AdminApplications() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('pending');
   const [selectedApp, setSelectedApp] = useState<any | null>(null);
+  
+  // Code management
+  const [codes, setCodes] = useState<any[]>([]);
+  const [codesLoading, setCodesLoading] = useState(false);
+  const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
+  const [newCodeLabel, setNewCodeLabel] = useState('');
+  const [generatedCode, setGeneratedCode] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [codeCopied, setCopiedCode] = useState<string | null>(null);
+
+  // Application selection for export
+  const [selectedAppIds, setSelectedAppIds] = useState<string[]>([]);
   
   const [confirmApprove, setConfirmApprove] = useState<any | null>(null);
   const [confirmReject, setConfirmReject] = useState<any | null>(null);
@@ -38,8 +51,84 @@ export default function AdminApplications() {
     }
   };
 
+  const fetchCodes = async () => {
+    setCodesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('application_codes')
+        .select('*')
+        .eq('tenant_id', tenant.id)
+        .order('created_at', { ascending: false });
+      if (!error) setCodes(data || []);
+    } catch (err) {
+      console.error('fetchCodes error:', err);
+    } finally {
+      setCodesLoading(false);
+    }
+  };
+
+  const generateRandomCode = (): string => {
+    // Excludes confusable characters: 0, O, 1, I
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 12; i++) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return code;
+  };
+
+  const handleGenerateCode = async () => {
+    setIsGenerating(true);
+    try {
+      const code = generateRandomCode();
+      const { data: { session } } = await supabase.auth.getSession();
+      const { error } = await supabase.from('application_codes').insert({
+        code,
+        tenant_id: tenant.id,
+        created_by: session?.user?.id || null,
+        label: newCodeLabel.trim() || 'Invitation Code',
+        is_active: true,
+        used_count: 0,
+        max_uses: 1,
+      });
+      if (error) throw error;
+      setGeneratedCode(code);
+      setNewCodeLabel('');
+      fetchCodes();
+      addToast('Invitation code generated successfully!', 'success');
+    } catch (err: any) {
+      console.error('generateCode error:', err);
+      addToast(err.message || 'Failed to generate code', 'error');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleCopyCode = (code: string) => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopiedCode(code);
+      setTimeout(() => setCopiedCode(null), 2500);
+    });
+  };
+
+  const handleDeactivateCode = async (codeId: string) => {
+    try {
+      const { error } = await supabase
+        .from('application_codes')
+        .update({ is_active: false })
+        .eq('id', codeId)
+        .eq('tenant_id', tenant.id);
+      if (error) throw error;
+      addToast('Code deactivated', 'success');
+      fetchCodes();
+    } catch (err) {
+      addToast('Failed to deactivate code', 'error');
+    }
+  };
+
   useEffect(() => {
     fetchApplications();
+    fetchCodes();
   }, [tenant.id]);
 
   const handleApprove = async () => {
@@ -103,14 +192,54 @@ export default function AdminApplications() {
     return age;
   };
 
+  const handleSelectApp = (id: string) => {
+    setSelectedAppIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllApps = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) setSelectedAppIds(filteredApps.map((a: any) => a.id));
+    else setSelectedAppIds([]);
+  };
+
+  const exportApplicationsExcel = (dataToExport: any[]) => {
+    if (dataToExport.length === 0) {
+      addToast('No applications to export', 'error');
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+    const rows = dataToExport.map((app: any) => ({
+      'Name': app.name || '',
+      'Email': app.email || '',
+      'Date of Birth': app.dob || '',
+      'Gender': app.gender || '',
+      'Phone': app.phone || '',
+      'Emergency Contact': app.emergencyContact || '',
+      'Residential Address': app.address || '',
+      'Referred By': app.referredBy || '',
+      'Status': app.status || 'pending',
+      'Applied On': app.createdAt ? new Date(app.createdAt).toLocaleDateString() : '',
+      'Code Used': app.codeUsed || '',
+      'Photo URL': app.photo || '',
+      'Rejection Note': app.rejectionNote || '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const colWidths = Object.keys(rows[0] || {}).map(() => ({ wch: 22 }));
+    ws['!cols'] = colWidths;
+    XLSX.utils.book_append_sheet(wb, ws, 'Applications');
+    const fileName = `applications_${tenant.id}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  };
+
   const filteredApps = applications.filter(a => activeTab === 'all' || a.status === activeTab);
 
   const pendingCount = applications.filter(a => a.status === 'pending').length;
 
   return (
     <div className="space-y-8 pb-12">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-heading font-bold text-gray-900">Applications</h1>
             <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
@@ -122,6 +251,31 @@ export default function AdminApplications() {
               {pendingCount} Pending
             </span>
           )}
+        </div>
+        <div className="flex gap-3 flex-wrap items-center">
+          <Button
+            variant="outline-dark"
+            size="sm"
+            onClick={() =>
+              exportApplicationsExcel(
+                selectedAppIds.length > 0
+                  ? applications.filter((a: any) => selectedAppIds.includes(a.id))
+                  : filteredApps
+              )
+            }
+          >
+            <Download size={15} className="mr-1.5" />
+            {selectedAppIds.length > 0
+              ? `Export ${selectedAppIds.length} Selected`
+              : 'Export All'} (Excel)
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => { setIsCodeModalOpen(true); setGeneratedCode(''); }}
+          >
+            <KeyRound size={15} className="mr-1.5" />
+            Manage Codes
+          </Button>
         </div>
       </div>
 
@@ -139,10 +293,24 @@ export default function AdminApplications() {
 
       <Table
         columns={[
+          {
+            key: 'select',
+            label: (
+              <input
+                type="checkbox"
+                className="w-4 h-4 rounded cursor-pointer"
+                onChange={handleSelectAllApps}
+                checked={selectedAppIds.length > 0 && selectedAppIds.length === filteredApps.length}
+                ref={el => {
+                  if (el) el.indeterminate = selectedAppIds.length > 0 && selectedAppIds.length < filteredApps.length;
+                }}
+              />
+            )
+          },
           { key: 'name', label: 'Name' },
           { key: 'email', label: 'Email' },
           { key: 'age', label: 'Age' },
-          { key: 'school', label: 'School' },
+          { key: 'gender', label: 'Gender' },
           { key: 'date', label: 'Applied On' },
           { key: 'status', label: 'Status' },
           { key: 'actions', label: 'Actions' },
@@ -156,7 +324,15 @@ export default function AdminApplications() {
           const validAge = tenant.id === 'racdlu' ? age >= 18 && age <= 30 : age >= 12 && age <= 18;
           const rangeLabel = tenant.id === 'racdlu' ? '18-30' : '12-18';
           return (
-            <tr key={app.id}>
+            <tr key={app.id} className={selectedAppIds.includes(app.id) ? 'bg-primary/5' : ''}>
+              <td className="px-6 py-4">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 rounded cursor-pointer"
+                  onChange={() => handleSelectApp(app.id)}
+                  checked={selectedAppIds.includes(app.id)}
+                />
+              </td>
               <td className="px-6 py-4 font-medium text-gray-900">{app.name}</td>
               <td className="px-6 py-4 text-gray-500">{app.email}</td>
               <td className="px-6 py-4">
@@ -169,7 +345,7 @@ export default function AdminApplications() {
                   )}
                 </div>
               </td>
-              <td className="px-6 py-4 text-gray-500">{app.school}</td>
+              <td className="px-6 py-4 text-gray-500 text-sm">{app.gender || '-'}</td>
               <td className="px-6 py-4 text-gray-500">
                 {app.createdAt ? new Date(app.createdAt).toLocaleDateString() : 'N/A'}
               </td>
@@ -230,6 +406,15 @@ export default function AdminApplications() {
       <Modal isOpen={!!selectedApp} onClose={() => setSelectedApp(null)} title="Application Details" size="md">
         {selectedApp && (
           <div className="space-y-4">
+            {selectedApp.photo && (
+              <div className="flex justify-center mb-2">
+                <img
+                  src={selectedApp.photo}
+                  alt={selectedApp.name}
+                  className="w-28 h-36 object-cover rounded-xl border-4 border-gray-100 shadow"
+                />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <span className="text-xs text-gray-500 uppercase font-bold">Name</span>
@@ -237,7 +422,7 @@ export default function AdminApplications() {
               </div>
               <div>
                 <span className="text-xs text-gray-500 uppercase font-bold">Email</span>
-                <p className="font-medium">{selectedApp.email}</p>
+                <p className="font-medium text-sm">{selectedApp.email}</p>
               </div>
               <div>
                 <span className="text-xs text-gray-500 uppercase font-bold">Phone</span>
@@ -248,17 +433,25 @@ export default function AdminApplications() {
                 <p className="font-medium">{selectedApp.dob || '-'}</p>
               </div>
               <div>
-                <span className="text-xs text-gray-500 uppercase font-bold">School</span>
-                <p className="font-medium">{selectedApp.school || '-'}</p>
+                <span className="text-xs text-gray-500 uppercase font-bold">Gender</span>
+                <p className="font-medium">{selectedApp.gender || '-'}</p>
               </div>
               <div>
-                <span className="text-xs text-gray-500 uppercase font-bold">Grade</span>
-                <p className="font-medium">{selectedApp.grade || '-'}</p>
+                <span className="text-xs text-gray-500 uppercase font-bold">Code Used</span>
+                <p className="font-mono font-medium text-sm">{selectedApp.codeUsed || '-'}</p>
               </div>
-            </div>
-            <div>
-              <span className="text-xs text-gray-500 uppercase font-bold">Why do you want to join?</span>
-              <p className="mt-1 text-sm text-gray-700 bg-gray-50 p-3 rounded">{selectedApp.reason || 'No reason provided.'}</p>
+              <div className="col-span-2">
+                <span className="text-xs text-gray-500 uppercase font-bold">Emergency Contact</span>
+                <p className="font-medium">{selectedApp.emergencyContact || '-'}</p>
+              </div>
+              <div className="col-span-2">
+                <span className="text-xs text-gray-500 uppercase font-bold">Residential Address</span>
+                <p className="font-medium">{selectedApp.address || '-'}</p>
+              </div>
+              <div className="col-span-2">
+                <span className="text-xs text-gray-500 uppercase font-bold">Referred By</span>
+                <p className="font-medium">{selectedApp.referredBy || '-'}</p>
+              </div>
             </div>
             {selectedApp.rejectionNote && (
               <div>
@@ -268,6 +461,146 @@ export default function AdminApplications() {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={isCodeModalOpen}
+        onClose={() => { setIsCodeModalOpen(false); setGeneratedCode(''); setNewCodeLabel(''); }}
+        title="Invitation Code Manager"
+        size="lg"
+      >
+        <div className="space-y-6">
+
+          {/* --- Generate New Code Section --- */}
+          <div className="bg-gray-50 rounded-xl border border-gray-200 p-5">
+            <h3 className="font-bold text-gray-800 text-sm uppercase tracking-wide mb-4 flex items-center gap-2">
+              <KeyRound size={15} className="text-primary" /> Generate New Code
+            </h3>
+            <div className="flex gap-3 items-end">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                  Label <span className="text-gray-400">(optional, for your reference)</span>
+                </label>
+                <input
+                  value={newCodeLabel}
+                  onChange={e => setNewCodeLabel(e.target.value)}
+                  placeholder="e.g. For Ahmed Rafi"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+              <Button onClick={handleGenerateCode} disabled={isGenerating} size="sm">
+                {isGenerating ? (
+                  <span className="flex items-center gap-1.5">
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Generating...
+                  </span>
+                ) : (
+                  <><Plus size={14} className="mr-1" /> Generate</>
+                )}
+              </Button>
+            </div>
+
+            {/* Newly generated code display */}
+            {generatedCode && (
+              <div className="mt-5 bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-2">✓ New Code Ready</p>
+                <div className="flex items-center gap-3">
+                  <div className="font-mono text-2xl font-bold tracking-[0.35em] text-emerald-800 bg-white px-4 py-2 rounded-lg border border-emerald-200 select-all">
+                    {generatedCode}
+                  </div>
+                  <button
+                    onClick={() => handleCopyCode(generatedCode)}
+                    className="flex items-center gap-1.5 text-emerald-700 hover:text-emerald-900 font-medium text-sm transition-colors"
+                  >
+                    {codeCopied === generatedCode ? (
+                      <><Check size={15} /> Copied!</>
+                    ) : (
+                      <><Copy size={15} /> Copy</>
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-emerald-600 mt-2">
+                  Share this with the applicant. Each code is single-use only.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* --- Existing Codes List --- */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-gray-800 text-sm uppercase tracking-wide">
+                All Generated Codes
+              </h3>
+              <span className="text-xs text-gray-400">{codes.length} total</span>
+            </div>
+
+            {codesLoading ? (
+              <div className="text-center py-8 text-gray-400 text-sm">Loading codes...</div>
+            ) : codes.length === 0 ? (
+              <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl text-gray-400 text-sm">
+                No codes generated yet. Generate your first one above.
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {codes.map((c: any) => {
+                  const isExhausted = c.used_count >= c.max_uses;
+                  const isInactive = !c.is_active;
+                  const isDimmed = isExhausted || isInactive;
+                  return (
+                    <div
+                      key={c.id}
+                      className={`flex items-center justify-between px-4 py-3 rounded-lg border transition-colors ${isDimmed ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-gray-200 hover:border-gray-300'}`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={`font-mono font-bold tracking-widest text-sm ${isDimmed ? 'text-gray-400' : 'text-gray-800'}`}>
+                          {c.code}
+                        </span>
+                        {c.label && (
+                          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded truncate max-w-[120px]">
+                            {c.label}
+                          </span>
+                        )}
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${
+                          isInactive ? 'bg-gray-200 text-gray-500' :
+                          isExhausted ? 'bg-red-100 text-red-600' :
+                          'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {isInactive ? 'Deactivated' : isExhausted ? 'Used' : 'Active'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <span className="text-xs text-gray-400">
+                          {c.created_at ? new Date(c.created_at).toLocaleDateString() : ''}
+                        </span>
+                        {!isInactive && !isExhausted && (
+                          <>
+                            <button
+                              onClick={() => handleCopyCode(c.code)}
+                              className="p-1 text-gray-400 hover:text-gray-700 transition-colors"
+                              title="Copy code"
+                            >
+                              {codeCopied === c.code ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                            </button>
+                            <button
+                              onClick={() => handleDeactivateCode(c.id)}
+                              className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors"
+                            >
+                              Deactivate
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </Modal>
 
     </div>

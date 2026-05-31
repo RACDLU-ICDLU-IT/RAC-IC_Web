@@ -9,6 +9,7 @@ import { Users, Pencil, Trash, Eye, Download } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
+import * as XLSX from 'xlsx';
 
 export default function AdminMembers() {
   const { profile, user } = useAuth();
@@ -152,35 +153,37 @@ export default function AdminMembers() {
     }
   };
 
-  const sanitizeCsvField = (value: string): string => {
-    // Prevent CSV formula injection — Excel/LibreOffice executes cells starting with = + - @ tab CR
-    const str = String(value || '');
-    return /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
-  };
-
-  const exportCSV = (dataToExport: any[]) => {
-    const csvRows = [];
-    const headers = ['Name', 'Email', 'Role', 'Status', 'School', 'Grade', 'Phone', 'Dues Paid', 'Member ID'];
-    csvRows.push(headers.join(','));
-    for (const m of dataToExport) {
-      csvRows.push([
-        `"${sanitizeCsvField(m.name)}"`,
-        `"${sanitizeCsvField(m.email)}"`,
-        `"${sanitizeCsvField(m.role)}"`,
-        `"${sanitizeCsvField(m.status)}"`,
-        `"${sanitizeCsvField(m.school)}"`,
-        `"${sanitizeCsvField(m.grade)}"`,
-        `"${sanitizeCsvField(m.phone)}"`,
-        m.duesPaid ? 'Yes' : 'No',
-        `"${sanitizeCsvField(m.memberId)}"`,
-      ].join(','));
+  const exportExcel = (dataToExport: any[]) => {
+    if (dataToExport.length === 0) {
+      addToast('No members to export', 'error');
+      return;
     }
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'members_export.csv';
-    a.click();
+    const wb = XLSX.utils.book_new();
+    const rows = dataToExport.map((m: any) => ({
+      'Member ID': m.memberId || '',
+      'Full Name': m.name || '',
+      'Email': m.email || '',
+      'Role': m.role || 'member',
+      'Status': m.status || 'pending',
+      'Phone': m.phone || '',
+      'Date of Birth': m.dob || '',
+      'Gender': m.gender || '',
+      'Blood Group': m.bloodGroup || '',
+      'School': m.school || '',
+      'Grade': m.grade || '',
+      'Emergency Contact': m.emergencyContact || m.parentPhone || '',
+      'Residential Address': m.address || '',
+      'Referred By': m.referredBy || '',
+      'Dues Paid': m.duesPaid ? 'Yes' : 'No',
+      'Rotary Year': m.rotaryYear || '',
+      'Bio': m.bio || '',
+      'Photo URL': m.photo || '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = Object.keys(rows[0] || {}).map(() => ({ wch: 22 }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Members');
+    const fileName = `members_${tenant.id}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
   };
 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors bg-white";
@@ -229,7 +232,7 @@ export default function AdminMembers() {
           {schools.map(s => <option key={s as string} value={s as string}>{s as string}</option>)}
         </select>
         <div className="md:ml-auto">
-          <Button variant="outline" onClick={() => exportCSV(filteredMembers)}><Download size={16} className="mr-2" /> Export CSV</Button>
+          <Button variant="outline" onClick={() => exportExcel(filteredMembers)}><Download size={16} className="mr-2" /> Export Excel (.xlsx)</Button>
         </div>
       </div>
 
@@ -305,7 +308,7 @@ export default function AdminMembers() {
           <div className="flex gap-3">
             <Button variant="outline" onClick={() => handleBulkStatus('active')}>Set Active</Button>
             <Button variant="outline" onClick={() => handleBulkStatus('inactive')}>Set Inactive</Button>
-            <Button variant="outline" onClick={() => exportCSV(members.filter(m => selectedIds.includes(m.id)))}>Export Selected</Button>
+            <Button variant="outline" onClick={() => exportExcel(members.filter(m => selectedIds.includes(m.id)))}>Export Selected (.xlsx)</Button>
           </div>
         </div>
       )}
