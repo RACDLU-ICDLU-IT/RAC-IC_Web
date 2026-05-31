@@ -105,7 +105,7 @@ export default function Projects() {
                       </span>
                     </div>
                     <h3 className="text-xl font-bold font-heading text-primary mb-2 line-clamp-2">{project.name}</h3>
-                    <p className="text-sm text-gray-500 mb-6">{project.startDate || 'TBD'}</p>
+                    <p className="text-sm text-gray-500 mb-6 font-mono">Date: {project.executionDate || project.startDate || 'TBD'}</p>
                     
                     {/* Hover Button */}
                     <div className="mt-auto pt-4 border-t border-gray-50 transform translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
