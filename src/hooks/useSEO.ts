@@ -108,7 +108,7 @@ export function useSEO({
     }
 
     return () => {
-      document.title = tenant.shortName;
+      document.title = tenant.fullName;
       if (scriptElement) {
         scriptElement.textContent = '{}';
       }
