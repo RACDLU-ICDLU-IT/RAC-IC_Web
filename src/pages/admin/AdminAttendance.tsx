@@ -183,6 +183,10 @@ export default function AdminAttendance() {
       });
       await Promise.all(batch);
       addToast('Attendance saved', 'success');
+      
+      // Update local state instantly so everything is in sync across tabs!
+      const updatedRecs = await loadEventAttendance(selectedEventId, true);
+      setHistoryRecords(updatedRecs);
     } catch (err) {
       console.error(err);
       addToast('Failed to save attendance', 'error');
@@ -241,29 +245,38 @@ export default function AdminAttendance() {
        const { data: snap } = await supabase.from('attendance').select('*').eq('tenant_id', tenant.id);
        const allRecs = snap || [];
        
-       const userTotals: Record<string, { present: number, total: number }> = {};
+       const userTotals: Record<string, { present: number, late: number, absent: number, excused: number }> = {};
        
-       // Build map of user -> {present, totalEventsTheyWereMarkedIn}
-       // Better: total events is events array length (approximation)
-       // Let's do simple: total = total past events. 
-       const pastEvents = events.filter(e => new Date(e.date) <= new Date()).length;
+       // Calculate the exact set of events that actually have attendance records
+       const markedEventsSet = new Set<string>();
+       allRecs.forEach(r => {
+         markedEventsSet.add(r.eventId);
+       });
+       const totalMarkedEvents = markedEventsSet.size;
 
        allRecs.forEach(r => {
-         if (!userTotals[r.userId]) userTotals[r.userId] = { present: 0, total: 0 };
-         if (r.status === 'P' || r.status === 'L') userTotals[r.userId].present++;
+         if (!userTotals[r.userId]) {
+           userTotals[r.userId] = { present: 0, late: 0, absent: 0, excused: 0 };
+         }
+         const stats = userTotals[r.userId];
+         if (r.status === 'P') stats.present++;
+         else if (r.status === 'L') stats.late++;
+         else if (r.status === 'A') stats.absent++;
+         else if (r.status === 'E') stats.excused++;
        });
 
-       let csv = 'Member Name,Role,School,Present Count,Attendance Rate %\n';
+       let csv = 'Member Name,Role,School,Present,Late,Absent,Excused,Total Marked Events,Attendance Rate %\n';
        activeMembers.forEach(m => {
-          const u = userTotals[m.id] || { present: 0 };
-          const rate = pastEvents > 0 ? Math.round((u.present / pastEvents) * 100) : 0;
-          csv += `"${m.name}","${m.role}","${m.school}",${u.present},${rate}%\n`;
+          const u = userTotals[m.id] || { present: 0, late: 0, absent: 0, excused: 0 };
+          const attended = u.present + u.late;
+          const rate = totalMarkedEvents > 0 ? Math.round((attended / totalMarkedEvents) * 100) : 0;
+          csv += `"${m.name || ''}","${m.role || ''}","${m.school || ''}",${u.present},${u.late},${u.absent},${u.excused},${totalMarkedEvents},${rate}%\n`;
        });
        
        const blob = new Blob([csv], { type: 'text/csv' });
        const a = document.createElement('a');
        a.href = URL.createObjectURL(blob);
-       a.download = 'Attendance_Summary.csv';
+       a.download = `Attendance_Summary_${new Date().toISOString().split('T')[0]}.csv`;
        a.click();
     } catch(err) {
       addToast('Export failed', 'error');
