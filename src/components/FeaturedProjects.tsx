@@ -55,7 +55,7 @@ export default function FeaturedProjects() {
                 </div>
                 <h3 className="text-2xl md:text-3xl font-heading font-bold text-white mb-2">{project.name}</h3>
                 <Link to={`/projects/${project.id}`} className="text-white hover:text-accent font-medium mt-4 flex items-center gap-2 opacity-0 -translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300">
-                  View Case Study &rarr;
+                  View Details &rarr;
                 </Link>
               </div>
             </div>
