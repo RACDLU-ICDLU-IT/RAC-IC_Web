@@ -42,6 +42,7 @@ export interface LedgerEntry {
     role: string;
     status: string;
     joinDate?: string;
+    tenant_id?: string;
   };
   fee_templates?: {
     name: string;
@@ -180,7 +181,7 @@ export function useDues() {
     try {
       let query = supabase.from('fee_ledger').select(`
         *,
-        users!member_id(id,name,email,photo,role,status,"joinDate"),
+        users!member_id(id,name,email,photo,role,status,"joinDate",tenant_id),
         fee_templates!template_id(name,type)
       `).eq('tenant_id', tenant.id).order('due_date', { ascending: false }).range(0, 499);
 
@@ -197,6 +198,9 @@ export function useDues() {
       if (filters?.type) {
         results = results.filter((r) => r.fee_templates?.type === filters.type);
       }
+      
+      // Filter out any results where the associated user does not belong to the current active tenant
+      results = results.filter((r) => !r.users || r.users.tenant_id === tenant.id);
       
       return results as LedgerEntry[];
     } catch (err) {
@@ -215,12 +219,17 @@ export function useDues() {
     try {
       const { data, error } = await supabase.from('fee_ledger').select(`
         *,
-        users!member_id(id,name,email,photo,role,status,"joinDate"),
+        users!member_id(id,name,email,photo,role,status,"joinDate",tenant_id),
         fee_templates!template_id(name,type)
       `).eq('member_id', memberId).eq('tenant_id', tenant.id).order('due_date', { ascending: false });
 
       if (error) handleSupabaseError(error);
-      return data as LedgerEntry[];
+      
+      let results = data as any[];
+      // Filter out any entries where user belongs to another tenant
+      results = results.filter((r) => !r.users || r.users.tenant_id === tenant.id);
+      
+      return results as LedgerEntry[];
     } catch (err) {
       return [];
     } finally {
