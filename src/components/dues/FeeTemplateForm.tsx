@@ -50,7 +50,7 @@ export function FeeTemplateForm({ isOpen, onClose, onSubmit, editingTemplate }: 
         setAppliesTo('all');
         setDueDate('');
         setEventId('');
-        setIsActive(true);
+        setIsActive(false);
         setSpecificMembers([]);
       }
     }
