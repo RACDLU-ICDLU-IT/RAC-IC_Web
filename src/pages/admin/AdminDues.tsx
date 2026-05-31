@@ -28,6 +28,8 @@ export default function AdminDues() {
     generateMonthlyFees,
     bulkSendReminders,
     bulkMarkPaid,
+    markAsWaived,
+    sendReminder,
   } = useDues();
 
   const [stats, setStats] = useState<DuesStats | null>(null);
@@ -83,6 +85,7 @@ export default function AdminDues() {
     const map = new Map<string, { user: any, entries: LedgerEntry[], outstanding: number }>();
     ledger.forEach(entry => {
       if (!entry.users) return;
+      if (entry.users.tenant_id !== tenant.id) return; // Strict tenant isolation filter
       if (!map.has(entry.member_id)) {
         map.set(entry.member_id, { user: entry.users, entries: [], outstanding: 0 });
       }
@@ -95,7 +98,7 @@ export default function AdminDues() {
     return Array.from(map.values()).filter(m => 
       m.user.name.toLowerCase().includes(memberSearch.toLowerCase())
     );
-  }, [ledger, memberSearch]);
+  }, [ledger, memberSearch, tenant.id]);
 
   const selectedMemberData = membersWithLedgers.find(m => m.user.id === selectedMemberId);
 
@@ -235,8 +238,16 @@ export default function AdminDues() {
             selectedIds={selectedIds} 
             onSelectChange={setSelectedIds}
             onMarkPaid={(e) => { setSelectedIds([e.id]); setShowBulkMarkPaid(true); }}
-            onMarkWaived={(e) => {}}
-            onSendReminder={(e) => {}}
+            onMarkWaived={async (e) => {
+              if (window.confirm(`Are you sure you want to waive this fee: "${e.label}" for ${e.users?.name || 'Unknown'}?`)) {
+                await markAsWaived(e.id);
+                loadAllData();
+              }
+            }}
+            onSendReminder={async (e) => {
+              await sendReminder(e.id);
+              loadAllData();
+            }}
           />
         </TabsContent>
 
@@ -347,8 +358,16 @@ export default function AdminDues() {
                          selectedIds={selectedIds}
                          onSelectChange={setSelectedIds}
                          onMarkPaid={(e) => { setSelectedIds([e.id]); setShowBulkMarkPaid(true); }}
-                         onMarkWaived={(e) => {}}
-                         onSendReminder={(e) => {}}
+                         onMarkWaived={async (e) => {
+                           if (window.confirm(`Are you sure you want to waive this fee: "${e.label}" for ${e.users?.name || 'Unknown'}?`)) {
+                             await markAsWaived(e.id);
+                             loadAllData();
+                           }
+                         }}
+                         onSendReminder={async (e) => {
+                           await sendReminder(e.id);
+                           loadAllData();
+                         }}
                          showMemberColumn={false}
                       />
                     </>
