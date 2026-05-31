@@ -29,7 +29,12 @@ export default function AdminProjects() {
   const fetchProjects = async () => {
     setLoading(true);
     try {
-      const { data: snap } = await supabase.from('projects').select('*').eq('tenant_id', tenant.id).order('startDate', { ascending: false });
+      const { data: snap } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('tenant_id', tenant.id)
+        .order('executionDate', { ascending: false })
+        .order('startDate', { ascending: false });
       setProjects(snap || []);
     } catch (err) {
       console.error(err);
@@ -106,7 +111,8 @@ export default function AdminProjects() {
 
   const handleSave = async () => {
     const isNew = !formData.id;
-    const docId = isNew ? crypto.randomUUID() : formData.id;
+    const { id, ...formDataWithoutId } = formData;
+    const docId = isNew ? crypto.randomUUID() : id;
     
     // Convert tags string back to array if modified text, otherwise keep array
     let finalTags = formData.tags || [];
@@ -119,14 +125,17 @@ export default function AdminProjects() {
       : (formData.description || '');
 
     const currentGallery = formData.gallery || formData.galleryImages || [];
+    const finalDate = formData.executionDate || formData.startDate || '';
 
     const dataToSave = { 
-      ...formData, 
+      ...formDataWithoutId, 
       description: finalDescription,
       tags: finalTags,
       memberIds: formData.memberIds || [],
       gallery: currentGallery,
       galleryImages: currentGallery,
+      executionDate: finalDate,
+      startDate: finalDate,
       tenant_id: tenant.id
     };
     
