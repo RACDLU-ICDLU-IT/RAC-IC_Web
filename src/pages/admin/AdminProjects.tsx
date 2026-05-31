@@ -21,6 +21,9 @@ export default function AdminProjects() {
   const [formData, setFormData] = useState<any>({});
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  const [activeTab, setActiveTab] = useState<'rich' | 'raw'>('rich');
+  const [blocks, setBlocks] = useState<any[]>([]);
+
   const { addToast } = useToast();
 
   const fetchProjects = async () => {
@@ -48,6 +51,59 @@ export default function AdminProjects() {
     fetchMembers();
   }, [tenant.id]);
 
+  useEffect(() => {
+    if (isFormOpen) {
+      const desc = formData.description || '';
+      try {
+        const parsed = JSON.parse(desc);
+        if (Array.isArray(parsed)) {
+          setBlocks(parsed);
+          setActiveTab('rich');
+          return;
+        }
+      } catch (e) {}
+
+      // Fallback: create a single text block with description content
+      setBlocks([
+        { id: crypto.randomUUID(), type: 'text', content: desc }
+      ]);
+      setActiveTab('rich');
+    }
+  }, [isFormOpen, formData.id]);
+
+  const addBlock = (type: 'text' | 'image' | 'collage') => {
+    const newId = crypto.randomUUID();
+    let newBlock: any;
+    if (type === 'text') {
+      newBlock = { id: newId, type: 'text', content: '' };
+    } else if (type === 'image') {
+      newBlock = { id: newId, type: 'image', url: '', style: 'center', caption: '' };
+    } else {
+      newBlock = { id: newId, type: 'collage', urls: [], layout: 'grid2' };
+    }
+    setBlocks([...blocks, newBlock]);
+  };
+
+  const updateBlock = (id: string, updatedFields: any) => {
+    setBlocks(blocks.map(b => b.id === id ? { ...b, ...updatedFields } : b));
+  };
+
+  const moveBlock = (index: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === blocks.length - 1) return;
+    
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    const updated = [...blocks];
+    const temp = updated[index];
+    updated[index] = updated[targetIndex];
+    updated[targetIndex] = temp;
+    setBlocks(updated);
+  };
+
+  const deleteBlock = (id: string) => {
+    setBlocks(blocks.filter(b => b.id !== id));
+  };
+
   const handleSave = async () => {
     const isNew = !formData.id;
     const docId = isNew ? crypto.randomUUID() : formData.id;
@@ -58,11 +114,19 @@ export default function AdminProjects() {
        finalTags = formData.tags.split(',').map((t:string) => t.trim()).filter(Boolean);
     }
 
+    const finalDescription = activeTab === 'rich'
+      ? JSON.stringify(blocks)
+      : (formData.description || '');
+
+    const currentGallery = formData.gallery || formData.galleryImages || [];
+
     const dataToSave = { 
       ...formData, 
+      description: finalDescription,
       tags: finalTags,
       memberIds: formData.memberIds || [],
-      galleryImages: formData.galleryImages || [],
+      gallery: currentGallery,
+      galleryImages: currentGallery,
       tenant_id: tenant.id
     };
     
@@ -98,6 +162,19 @@ export default function AdminProjects() {
        return m ? m.name : 'Unknown Member';
     }).join(', ');
     
+    let descText = project.description || '';
+    try {
+      const parsed = JSON.parse(descText);
+      if (Array.isArray(parsed)) {
+        descText = parsed.map((b: any) => {
+          if (b.type === 'text') return b.content;
+          if (b.type === 'image') return `[Image: ${b.url} ${b.caption ? `(${b.caption})` : ''}]`;
+          if (b.type === 'collage') return `[Collage of ${b.urls?.length || 0} images: ${(b.urls || []).join(', ')}]`;
+          return '';
+        }).join('\n\n');
+      }
+    } catch (e) {}
+
     const text = `PROJECT REPORT
 =====================
 Name: ${project.name}
@@ -107,7 +184,7 @@ Dates: ${project.startDate || 'TBD'} to ${project.endDate || 'TBD'}
 Volunteer Hours Contributed: ${project.volunteerHours || 0}
 
 Description:
-${project.description}
+${descText}
 
 Participants (${(project.memberIds||[]).length}):
 ${particip}`;
@@ -125,7 +202,14 @@ ${particip}`;
 
   const renderDescriptionPreview = () => {
     try {
-      return { __html: DOMPurify.sanitize(marked(formData.description || '*No description yet*') as string) };
+      const descVal = activeTab === 'rich' ? JSON.stringify(blocks) : (formData.description || '');
+      try {
+        const parsed = JSON.parse(descVal);
+        if (Array.isArray(parsed)) {
+          return { __html: '*Visual layout builder content represents custom styled elements*' };
+        }
+      } catch (e) {}
+      return { __html: DOMPurify.sanitize(marked(descVal || '*No description yet*') as string) };
     } catch (e) {
       return { __html: '' };
     }
@@ -255,10 +339,260 @@ ${particip}`;
               />
             </div>
             
-            <div>
-               <label className={labelClass}>Description (Markdown)</label>
-               <textarea value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} className={inputClass} rows={6} />
-               <div className="mt-2 p-4 bg-gray-50 border border-gray-100 rounded-lg max-h-40 overflow-y-auto prose prose-sm text-gray-700" dangerouslySetInnerHTML={renderDescriptionPreview()} />
+            {/* Description Tab Builder */}
+            <div className="space-y-3">
+              <div className="flex border-b border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('rich')}
+                  className={`py-2 px-4 text-xs font-bold uppercase border-b-2 transition-all ${activeTab === 'rich' ? 'border-accent text-accent' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                >
+                  Rich Section Builder
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('raw')}
+                  className={`py-2 px-4 text-xs font-bold uppercase border-b-2 transition-all ${activeTab === 'raw' ? 'border-accent text-accent' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                >
+                  Raw Markdown Text
+                </button>
+              </div>
+
+              {activeTab === 'rich' ? (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-2 items-center p-2.5 bg-gray-50 border border-gray-200 rounded-xl">
+                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-2">Add Content Section:</span>
+                    <button
+                      type="button"
+                      onClick={() => addBlock('text')}
+                      className="px-3 py-1 bg-white border border-gray-200 hover:border-accent text-xs font-medium text-gray-700 hover:text-accent rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+                    >
+                      + Text block
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addBlock('image')}
+                      className="px-3 py-1 bg-white border border-gray-200 hover:border-accent text-xs font-medium text-gray-700 hover:text-accent rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+                    >
+                      + Single Image
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addBlock('collage')}
+                      className="px-3 py-1 bg-white border border-gray-200 hover:border-accent text-xs font-medium text-gray-700 hover:text-accent rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+                    >
+                      + Photo Collage
+                    </button>
+                  </div>
+
+                  {blocks.length === 0 ? (
+                    <div className="border border-dashed border-gray-200 rounded-xl py-12 text-center text-gray-400 text-xs italic">
+                      No blocks added yet. Click above to add text blocks, images, or photo collages!
+                    </div>
+                  ) : (
+                    <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                      {blocks.map((block, index) => (
+                        <div key={block.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative group/block">
+                          {/* Header bar of block */}
+                          <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-3 select-none">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                                block.type === 'text' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' :
+                                block.type === 'image' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                                'bg-purple-50 text-purple-700 border border-purple-100'
+                              }`}>
+                                {block.type} section
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => moveBlock(index, 'up')}
+                                disabled={index === 0}
+                                className="p-1 hover:bg-gray-100 disabled:opacity-30 rounded text-gray-500 font-bold"
+                                title="Move Up"
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveBlock(index, 'down')}
+                                disabled={index === blocks.length - 1}
+                                className="p-1 hover:bg-gray-100 disabled:opacity-30 rounded text-gray-500 font-bold"
+                                title="Move Down"
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteBlock(block.id)}
+                                className="p-1 hover:bg-red-50 text-red-600 rounded ml-2 font-bold"
+                                title="Delete Section"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Content block editor body */}
+                          {block.type === 'text' && (
+                            <div className="space-y-2">
+                              <textarea
+                                value={block.content || ''}
+                                onChange={e => updateBlock(block.id, { content: e.target.value })}
+                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent bg-white"
+                                rows={4}
+                                placeholder="Type markdown description text here..."
+                              />
+                            </div>
+                          )}
+
+                          {block.type === 'image' && (
+                            <div className="space-y-3">
+                              {/* Selected Image Preview / Upload */}
+                              <div className="flex gap-4 items-start">
+                                <div className="w-24 aspect-video bg-gray-50 rounded border border-gray-200 overflow-hidden shrink-0">
+                                  {block.url ? (
+                                    <img src={block.url} alt="Selected" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-gray-300 text-xs">No img</div>
+                                  )}
+                                </div>
+                                <div className="flex-1 space-y-2">
+                                  <div>
+                                    <label className="text-[11px] font-bold text-gray-500 block mb-1">Upload directly or select from Project Library below</label>
+                                    <CloudinaryUpload 
+                                      onUpload={(url) => updateBlock(block.id, { url })} 
+                                      currentUrl={block.url} 
+                                      aspectRatio="landscape"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Quick selection from library items */}
+                              {((formData.gallery || formData.galleryImages || []).length > 0) && (
+                                <div>
+                                  <p className="text-[10px] font-bold text-gray-400 mb-1 uppercase tracking-wider">Select from Project Image Library:</p>
+                                  <div className="flex flex-wrap gap-1.5 p-1 bg-gray-50 rounded border border-gray-100 max-h-24 overflow-y-auto">
+                                    {(formData.gallery || formData.galleryImages || []).map((url: string, assetIdx: number) => {
+                                      const isSelected = block.url === url;
+                                      return (
+                                        <button
+                                          type="button"
+                                          key={assetIdx}
+                                          onClick={() => updateBlock(block.id, { url })}
+                                          className={`relative w-8 h-8 rounded border overflow-hidden shrink-0 transition-all ${isSelected ? 'border-accent ring-2 ring-accent/30 scale-95' : 'border-gray-200 hover:border-gray-400'}`}
+                                        >
+                                          <img src={url} className="w-full h-full object-cover" />
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-2 gap-3 pt-1">
+                                <div>
+                                  <label className="block text-xs font-bold text-gray-700 mb-1">Display Style</label>
+                                  <select
+                                    value={block.style || 'center'}
+                                    onChange={e => updateBlock(block.id, { style: e.target.value })}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none bg-white"
+                                  >
+                                    <option value="center">Centered (Standard)</option>
+                                    <option value="full">Full Width</option>
+                                    <option value="left">Left Floating Wrap</option>
+                                    <option value="right">Right Floating Wrap</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-bold text-gray-700 mb-1">Caption / Subtitle</label>
+                                  <input
+                                    type="text"
+                                    value={block.caption || ''}
+                                    onChange={e => updateBlock(block.id, { caption: e.target.value })}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none bg-white"
+                                    placeholder="e.g. Distribution event"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {block.type === 'collage' && (
+                            <div className="space-y-3">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs font-bold text-gray-700 mb-1">Collage Layout Style</label>
+                                  <select
+                                    value={block.layout || 'grid2'}
+                                    onChange={e => updateBlock(block.id, { layout: e.target.value })}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none bg-white"
+                                  >
+                                    <option value="grid2">2-Columns Side-by-Side</option>
+                                    <option value="grid3">3-Columns Side-by-Side</option>
+                                    <option value="mosaic">Mosaic Layout (1 large + 2 small)</option>
+                                    <option value="masonry">Flexible Column Flow</option>
+                                  </select>
+                                </div>
+                                <div className="flex flex-col justify-end">
+                                  <span className="text-xs font-bold text-gray-500">
+                                    Selected Photo(s): {(block.urls || []).length}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Interactive Collage selector from gallery library */}
+                              <div>
+                                <p className="text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider font-mono">
+                                  Choose library images for this collage (click to toggle):
+                                </p>
+                                {((formData.gallery || formData.galleryImages || []).length > 0) ? (
+                                  <div className="flex flex-wrap gap-2 p-2 bg-gray-50 rounded border border-gray-100 max-h-32 overflow-y-auto">
+                                    {(formData.gallery || formData.galleryImages || []).map((url: string, assetIdx: number) => {
+                                      const currentUrls = block.urls || [];
+                                      const index = currentUrls.indexOf(url);
+                                      const isSelected = index !== -1;
+                                      return (
+                                        <button
+                                          type="button"
+                                          key={assetIdx}
+                                          onClick={() => {
+                                            const nextUrls = isSelected
+                                              ? currentUrls.filter((u: string) => u !== url)
+                                              : [...currentUrls, url];
+                                            updateBlock(block.id, { urls: nextUrls });
+                                          }}
+                                          className={`relative w-12 h-12 rounded border overflow-hidden shrink-0 transition-all ${isSelected ? 'border-purple-600 ring-4 ring-purple-100 scale-95' : 'border-gray-200 hover:border-gray-400'}`}
+                                        >
+                                          <img src={url} className="w-full h-full object-cover" />
+                                          {isSelected && (
+                                            <div className="absolute top-0.5 right-0.5 w-4 h-4 bg-purple-600 rounded-full text-[9px] font-bold text-white flex items-center justify-center select-none">
+                                              {index + 1}
+                                            </div>
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-gray-400 italic">No images in Project Image Library. Please upload some library photos on the right first!</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                   <textarea value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} className={inputClass} rows={6} />
+                   <div className="mt-2 p-4 bg-gray-50 border border-gray-100 rounded-lg max-h-40 overflow-y-auto prose prose-sm text-gray-700" dangerouslySetInnerHTML={renderDescriptionPreview()} />
+                </div>
+              )}
             </div>
           </div>
 
@@ -270,8 +604,59 @@ ${particip}`;
             </div>
 
             <div>
+              <label className={labelClass}>Project Image Library</label>
+              <div className="space-y-3">
+                <CloudinaryUpload 
+                  onUpload={(url) => {
+                    if (url) {
+                      const currentGallery = formData.gallery || formData.galleryImages || [];
+                      const updated = [...currentGallery, url];
+                      setFormData({
+                        ...formData,
+                        gallery: updated,
+                        galleryImages: updated
+                      });
+                    }
+                  }} 
+                  buttonText="Upload Image to Library"
+                  multiple={true}
+                />
+                
+                {/* Grid of gallery assets */}
+                {((formData.gallery || formData.galleryImages || []).length > 0) ? (
+                  <div className="grid grid-cols-4 gap-2 bg-gray-50 border border-gray-200 rounded-lg p-2 max-h-48 overflow-y-auto">
+                    {(formData.gallery || formData.galleryImages || []).map((url: string, index: number) => (
+                      <div key={index} className="relative aspect-square bg-gray-100 rounded overflow-hidden group border border-gray-200">
+                        <img src={url} alt={`Asset ${index}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentGallery = formData.gallery || formData.galleryImages || [];
+                            const updated = currentGallery.filter((_: any, i: number) => i !== index);
+                            setFormData({
+                              ...formData,
+                              gallery: updated,
+                              galleryImages: updated
+                            });
+                          }}
+                          className="absolute inset-0 bg-red-600/85 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity text-[10px] font-bold"
+                          title="Remove image"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 italic">No images in library yet</p>
+                )}
+                <p className="text-[10px] text-gray-400 leading-normal">Upload images here, then use them in your dynamic sections or collages below.</p>
+              </div>
+            </div>
+
+            <div>
               <label className={labelClass}>Participants</label>
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-2 max-h-64 overflow-y-auto">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-2 max-h-48 overflow-y-auto">
                 {activeMembers.map(m => (
                   <label key={m.id} className="flex items-center gap-2 p-1.5 hover:bg-gray-100 rounded cursor-pointer">
                      <input type="checkbox" checked={(formData.memberIds || []).includes(m.id)} onChange={() => toggleMember(m.id)} />
