@@ -62,7 +62,7 @@ export default function DashboardProjects() {
             <div className="p-6 flex flex-col flex-grow relative overflow-hidden">
               <span className="text-xs font-bold text-accent uppercase tracking-widest mb-2">{project.type}</span>
               <h3 className="text-xl font-bold font-heading text-primary mb-2 line-clamp-2">{project.name}</h3>
-              <p className="text-sm text-gray-500 mb-6">{project.startDate || 'TBD'}</p>
+              <p className="text-sm text-gray-500 mb-6 font-mono">Date: {project.executionDate || project.startDate || 'TBD'}</p>
               
               <div className="mt-auto pt-4 border-t border-gray-50">
                 <Link to={`/projects/${project.id}`} className="text-primary font-bold hover:text-accent transition-colors text-sm">
