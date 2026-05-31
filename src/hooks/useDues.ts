@@ -315,7 +315,7 @@ export function useDues() {
     }
   }, [user, addToast, tenant.id]);
 
-  const generateMonthlyFees = useCallback(async (templateId: string, month: number, year: number): Promise<number> => {
+  const generateMonthlyFees = useCallback(async (templateId: string, month: number, year: number, overrideAmount?: number): Promise<number> => {
     requireAdmin();
     
     // Validation
@@ -334,7 +334,9 @@ export function useDues() {
       if (tmplErr) handleSupabaseError(tmplErr);
       if (!template) return 0;
       
-      if (template.amount <= 0) {
+      const finalAmount = (overrideAmount !== undefined && overrideAmount !== null && overrideAmount > 0) ? overrideAmount : template.amount;
+      
+      if (finalAmount <= 0) {
          addToast('Amount must be > 0', 'error');
          return 0;
       }
@@ -346,7 +348,7 @@ export function useDues() {
         p_month: month,
         p_year: year,
         p_label: p_label,
-        p_amount: template.amount,
+        p_amount: finalAmount,
         p_currency: template.currency || 'BDT'
       });
       
