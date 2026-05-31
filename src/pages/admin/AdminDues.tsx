@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useDues, FeeTemplate, LedgerEntry, DuesStats } from '../../hooks/useDues';
-import { exportSelectedMembers, exportMemberDues } from '../../utils/duesExport';
+import { exportSelectedMembers, exportMemberDues, exportDuesSummaryFile } from '../../utils/duesExport';
 import { useToast } from '../../hooks/useToast';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
@@ -43,6 +43,8 @@ export default function AdminDues() {
   const [showConfirmGen, setShowConfirmGen] = useState(false);
   const [genMonth, setGenMonth] = useState<number>(new Date().getMonth() + 1);
   const [genYear, setGenYear] = useState<number>(new Date().getFullYear());
+  const [genTemplateId, setGenTemplateId] = useState<string>('all');
+  const [genAmount, setGenAmount] = useState<string>('');
 
   // Per Member Tab State
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
@@ -126,6 +128,14 @@ export default function AdminDues() {
           </div>
           <div className="flex flex-wrap gap-4 mt-4">
              <Button onClick={() => setShowConfirmGen(true)}>Generate This Month's Fees</Button>
+             <Button variant="outline" className="border-indigo-200 text-indigo-700 hover:bg-slate-50 font-bold" onClick={async () => {
+                if (stats) {
+                  await exportDuesSummaryFile(ledger, stats);
+                  addToast('Summary file downloaded successfully', 'success');
+                } else {
+                  addToast('Payment stats are loading', 'error');
+                }
+             }}>Download Dues Summary Report</Button>
              <Button variant="outline" onClick={async () => {
                 if (window.confirm('Send reminders to all members with overdue fees?')) {
                   const overdue = ledger.filter(l => l.status === 'overdue' || l.status === 'unpaid').map(l => l.id);
@@ -155,12 +165,12 @@ export default function AdminDues() {
           
           <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-gray-50 border-b border-gray-200">
+               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3 text-right">Amount</th>
-                  <th className="px-4 py-3 text-center">Active</th>
+                  <th className="px-4 py-3 text-center">Status</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -170,10 +180,30 @@ export default function AdminDues() {
                     <td className="px-4 py-3 font-medium">{t.name}</td>
                     <td className="px-4 py-3"><span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{t.type}</span></td>
                     <td className="px-4 py-3 text-right">{t.amount} {t.currency}</td>
-                    <td className="px-4 py-3 text-center">{t.is_active ? 'Yes' : 'No'}</td>
-                    <td className="px-4 py-3 text-right">
-                       <Button size="sm" variant="ghost" onClick={() => { setEditingTemplate(t); setIsTemplateFormOpen(true); }}>Edit</Button>
-                       <Button size="sm" variant="ghost" className="text-red-500" onClick={async () => {
+                    <td className="px-4 py-3 text-center">
+                      {t.is_active ? (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200">Published</span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">Draft</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right flex items-center justify-end gap-2">
+                       {!t.is_active && (
+                         <Button 
+                           size="sm" 
+                           variant="outline" 
+                           className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200 font-bold py-1 px-2.5 text-xs" 
+                           onClick={async () => {
+                             await updateTemplate(t.id, { is_active: true });
+                             loadAllData();
+                             addToast('Template published successfully!', 'success');
+                           }}
+                         >
+                           Publish
+                         </Button>
+                       )}
+                       <Button size="sm" variant="ghost" className="font-bold" onClick={() => { setEditingTemplate(t); setIsTemplateFormOpen(true); }}>Edit</Button>
+                       <Button size="sm" variant="ghost" className="text-red-500 font-bold" onClick={async () => {
                           if (window.confirm('Are you sure you want to delete this template?')) {
                              await deleteTemplate(t.id);
                              loadAllData();
@@ -366,34 +396,76 @@ export default function AdminDues() {
         />
       )}
       
-      {showConfirmGen && (
+       {showConfirmGen && (
         <Modal isOpen={true} onClose={() => setShowConfirmGen(false)} title="Generate Monthly Fees">
           <div className="space-y-4">
-            <p className="text-sm text-gray-500">Select the month and year to generate fees for all active monthly templates.</p>
+            <p className="text-sm text-gray-500 font-medium">Configure date, template, and custom amount to generate monthly dues entries.</p>
+            
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Month</label>
-                <select value={genMonth} onChange={e => setGenMonth(Number(e.target.value))} className="w-full px-3 py-2 border rounded">
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Month</label>
+                <select value={genMonth} onChange={e => setGenMonth(Number(e.target.value))} className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-500">
                   {Array.from({length: 12}, (_, i) => i + 1).map(m => (
                     <option key={m} value={m}>{new Date(2000, m - 1).toLocaleString('default', { month: 'long' })}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Year</label>
-                <input type="number" min="2000" max="2100" value={genYear} onChange={e => setGenYear(Number(e.target.value))} className="w-full px-3 py-2 border rounded" />
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Year</label>
+                <input type="number" min="2000" max="2100" value={genYear} onChange={e => setGenYear(Number(e.target.value))} className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-500" />
               </div>
             </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Fee Template</label>
+              <select 
+                value={genTemplateId} 
+                onChange={e => setGenTemplateId(e.target.value)} 
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm"
+              >
+                <option value="all">All Active Monthly Templates</option>
+                {templates.filter(t => t.type === 'monthly' && t.is_active).map(t => (
+                  <option key={t.id} value={t.id}>{t.name} (Default: {t.amount} {t.currency})</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Custom Amount (Optional Override)</label>
+              <input 
+                type="number" 
+                min="0"
+                step="0.01"
+                placeholder="Leave blank to use default template amount" 
+                value={genAmount} 
+                onChange={e => setGenAmount(e.target.value)} 
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm" 
+              />
+            </div>
+
             <div className="flex justify-end gap-3 pt-4">
               <Button variant="outline" onClick={() => setShowConfirmGen(false)}>Cancel</Button>
-              <Button onClick={async () => {
+              <Button className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold" onClick={async () => {
                 const activeMonthly = templates.filter(t => t.type === 'monthly' && t.is_active);
                 let count = 0;
-                for (const t of activeMonthly) {
-                  count += await generateMonthlyFees(t.id, genMonth, genYear);
+                
+                const overrideAmt = genAmount !== '' && !isNaN(Number(genAmount)) ? Number(genAmount) : undefined;
+
+                if (genTemplateId === 'all') {
+                  if (activeMonthly.length === 0) {
+                    addToast('No active monthly templates found.', 'error');
+                    return;
+                  }
+                  for (const t of activeMonthly) {
+                    count += await generateMonthlyFees(t.id, genMonth, genYear, overrideAmt);
+                  }
+                } else {
+                  count += await generateMonthlyFees(genTemplateId, genMonth, genYear, overrideAmt);
                 }
+                
                 addToast(`Generated fees for ${count} entries locally.`, 'success');
                 setShowConfirmGen(false);
+                setGenAmount('');
                 loadAllData();
               }}>Generate Now</Button>
             </div>
