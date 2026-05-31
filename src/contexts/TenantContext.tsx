@@ -112,14 +112,17 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
 
   // Set document context
   useEffect(() => {
-    document.title = tenant.shortName;
-    let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
-    if (!link) {
-      link = document.createElement('link');
-      link.rel = 'icon';
-      document.head.appendChild(link);
-    }
-    link.href = settings.logoUrl || tenant.brand.faviconPath;
+    document.title = tenant.fullName;
+    const faviconHref = settings.logoUrl || tenant.brand.faviconPath;
+    ['icon', 'shortcut icon', 'apple-touch-icon'].forEach(rel => {
+      let link = document.querySelector(`link[rel~='${rel}']`) as HTMLLinkElement;
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = rel;
+        document.head.appendChild(link);
+      }
+      link.href = faviconHref;
+    });
   }, [tenant, settings.logoUrl]);
 
   return (
