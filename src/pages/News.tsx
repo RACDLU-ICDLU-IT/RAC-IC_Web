@@ -1,31 +1,45 @@
+import { supabase } from '../supabase';
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getDocs, query, collection, where, orderBy } from 'firebase/firestore';
-import { db } from '../firebase';
 import { formatDate } from '../utils/format';
 import { Newspaper } from 'lucide-react';
+import { useTenant } from '../hooks/useTenant';
+import SEOHead from '../components/SEOHead';
 
 export default function News() {
+  const { tenant } = useTenant();
   const [articles, setArticles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getDocs(
-      query(collection(db, 'news'), where('status', '==', 'Published'), orderBy('publishedAt', 'desc'))
-    ).then(snap => {
-      setArticles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setLoading(false);
-    }).catch(err => {
-      console.error(err);
-      setLoading(false);
-    });
-  }, []);
+    supabase.from('news')
+      .select('*')
+      .eq('tenant_id', tenant.id)
+      .eq('status', 'Published')
+      .order('publishedAt', { ascending: false })
+      .then(({ data: snap }) => {
+        setArticles(snap || []);
+        setLoading(false);
+      }, err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, [tenant.id]);
+
+  const isLight = tenant.brand.primaryColor === '#FFFFFF';
+  const headingColor = isLight ? 'text-[var(--color-accent)]' : 'text-[var(--color-primary)]';
+  const borderColor = isLight ? 'border-[var(--color-accent)]/30' : 'border-[var(--color-primary)]/20';
 
   return (
-    <div className="bg-[#F7F5F0] min-h-screen pt-24 pb-32">
-      <section className="py-16 md:py-24 px-6 max-w-7xl mx-auto border-b-2 border-primary">
+    <div className="bg-[var(--color-page-bg)] min-h-screen pt-24 pb-32">
+      <SEOHead 
+        title="News & Updates"
+        description={`Read the latest news, stories, and updates from ${tenant.fullName}.`}
+        canonicalPath="/news"
+      />
+      <section className={`py-16 md:py-24 px-6 max-w-7xl mx-auto border-b-2 ${borderColor}`}>
         <div className="flex flex-col md:flex-row justify-between items-end gap-6">
-          <h1 className="text-7xl md:text-[120px] font-heading font-bold text-primary leading-none">
+          <h1 className={`text-7xl md:text-[120px] font-heading font-bold ${headingColor} leading-none`}>
             News.
           </h1>
           <p className="text-gray-500 max-w-xs text-right text-lg">
@@ -53,7 +67,7 @@ export default function News() {
       ) : articles.length > 0 ? (
         <>
           <section className="max-w-7xl mx-auto px-6 mt-12">
-            <Link to={`/news/${articles[0].id}`}>
+            <Link to={`/news/${articles[0].slug || articles[0].id}`}>
               <div className="group relative aspect-[16/7] rounded-2xl overflow-hidden bg-gray-200 cursor-pointer">
                 {articles[0].coverImage ? (
                   <img src={articles[0].coverImage} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
@@ -87,7 +101,7 @@ export default function News() {
           <section className="max-w-7xl mx-auto px-6 mt-16">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {articles.slice(1).map(article => (
-                <Link to={`/news/${article.id}`} key={article.id}>
+                <Link to={`/news/${article.slug || article.id}`} key={article.id}>
                   <div className="group bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-xl transition-all duration-300 flex flex-col h-full cursor-pointer">
                     <div className="aspect-video overflow-hidden bg-gray-100">
                       {article.coverImage ? (
@@ -112,7 +126,7 @@ export default function News() {
                         {article.body?.replace(/[#*`_\[\]]/g, '').substring(0, 150)}...
                       </p>
                       <div className="flex items-center justify-between mt-auto pt-4 border-t border-gray-100">
-                        <span className="text-xs text-gray-400">By {article.author || 'Interact Club'}</span>
+                        <span className="text-xs text-gray-400">By {article.author || tenant.shortName}</span>
                         <span className="text-accent font-bold text-sm group-hover:translate-x-1 transition-transform inline-block">→</span>
                       </div>
                     </div>

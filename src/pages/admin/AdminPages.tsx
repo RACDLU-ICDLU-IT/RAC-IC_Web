@@ -1,23 +1,40 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
-import { LayoutTemplate } from 'lucide-react';
+import { LayoutTemplate, Trash, Plus } from 'lucide-react';
+import { CloudinaryUpload } from '../../components/CloudinaryUpload';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 export default function AdminPages() {
+  const { adminTenant: tenant } = useAdminTenant();
   const [content, setContent] = useState<any>({
-    homeHeroTitle: 'Service\nAbove Self.',
-    homeHeroSubtitle: 'INTERACT CLUB OF DHAKA LUMINOUS — District 64',
-    homeMissionText: 'We are a generation of action. Bridging continents, uplifting communities.',
-    homeStatMembers: 120,
-    homeStatProjects: 45,
-    homeStatHours: 1000,
-    aboutMission: 'To empower youth to take action, develop leadership skills, and create positive change.',
-    aboutVision: 'A world where young people are actively leading toward sustainable, equitable futures.',
-    aboutValues: 'Integrity, Compassion, Innovation, and Service Above Self.',
-    sponsorshipIntro: 'Partner with us to support youth service and community impact in Dhaka.',
-    contactAddress: '',
+    homeHeroTitle: tenant.id === 'racdlu'
+      ? 'Fellowship\nThrough Service.'
+      : 'Service\nAbove Self.',
+    homeHeroSubtitle: `${tenant.fullName.toUpperCase()} — ${tenant.district}`,
+    homeMissionText: tenant.id === 'racdlu'
+      ? 'We are young professionals united by fellowship, leadership, and service.'
+      : 'We are a generation of action. Bridging continents, uplifting communities.',
+    homeStatMembers: 80,
+    homeStatProjects: 30,
+    homeStatHours: 500,
+    homeAboutImage: '',
+    aboutHeroImage: '',
+    aboutRotaryImage: '',
+    aboutMission: tenant.tagline,
+    aboutVision: `A world where ${tenant.shortName} members lead meaningful, sustainable change.`,
+    aboutValues: 'Fellowship, Integrity, Leadership, and Service.',
+    aboutJourney: [
+      { year: '2021', text: 'Club chartered with 20 founding members.' },
+      { year: '2022', text: 'Reached 100 members and launched our first international exchange.' },
+      { year: '2023', text: 'Awarded Presidential Citation by Rotary International for outstanding community impact.' },
+      { year: '2024', text: 'Expanded community projects and focused on local sustainability.' },
+      { year: '2025', text: 'Hosted the largest district conference for youth leaders.' },
+      { year: '2026', text: 'Launching the digital platform to expand our reach entirely.' }
+    ],
+    sponsorshipIntro: 'We are deeply grateful for the generous support of our community sponsors who make our service projects possible.',
+    contactAddress: tenant.contact.address,
     contactMapEmbed: '',
     joinSuccessMessage: "You're in! We'll review your application and be in touch within 48 hours.",
   });
@@ -28,9 +45,9 @@ export default function AdminPages() {
   const fetchContent = async () => {
     setLoading(true);
     try {
-      const snap = await getDoc(doc(db, 'settings', 'pageContent'));
-      if (snap.exists()) {
-        setContent((prev: any) => ({ ...prev, ...snap.data() }));
+      const { data } = await supabase.from('page_content').select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
+      if (data && data.data) {
+        setContent((prev: any) => ({ ...prev, ...data.data }));
       }
     } catch (err) {
       console.error(err);
@@ -42,12 +59,12 @@ export default function AdminPages() {
 
   useEffect(() => {
     fetchContent();
-  }, []);
+  }, [tenant.id]);
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await setDoc(doc(db, 'settings', 'pageContent'), content);
+      await supabase.from('page_content').upsert({ id: 'pageContent', tenant_id: tenant.id, data: content }, { onConflict: 'id, tenant_id' });
       addToast('Page content saved successfully', 'success');
     } catch (err) {
       console.error(err);
@@ -70,7 +87,12 @@ export default function AdminPages() {
         <div>
           <h1 className="text-2xl font-heading font-bold text-gray-900 flex items-center gap-2">
             <LayoutTemplate size={24} className="text-primary" />
-            Page Content
+            <div className="flex items-center gap-3">
+              Page Content
+              <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+                {tenant.id}
+              </span>
+            </div>
           </h1>
           <p className="text-gray-500 text-sm mt-1">Manage static text blocks across the public site</p>
         </div>
@@ -107,12 +129,26 @@ export default function AdminPages() {
                     <input type="number" value={content.homeStatHours || 0} onChange={e => setContent({...content, homeStatHours: parseInt(e.target.value) || 0})} className={inputClass} />
                   </div>
                </div>
+               <div>
+                  <label className={labelClass}>Home About Image</label>
+                  <div className="w-48"><CloudinaryUpload onUpload={(url) => setContent({...content, homeAboutImage: url})} currentUrl={content.homeAboutImage} aspectRatio="landscape" /></div>
+               </div>
             </div>
          </section>
 
          <section>
             <h2 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-100 pb-2">About Page</h2>
             <div className="space-y-4">
+               <div className="grid grid-cols-2 gap-4">
+                 <div>
+                    <label className={labelClass}>About Hero Image</label>
+                    <div className="w-full"><CloudinaryUpload onUpload={(url) => setContent({...content, aboutHeroImage: url})} currentUrl={content.aboutHeroImage} aspectRatio="landscape" /></div>
+                 </div>
+                 <div>
+                    <label className={labelClass}>Rotary Collaboration Image</label>
+                    <div className="w-full"><CloudinaryUpload onUpload={(url) => setContent({...content, aboutRotaryImage: url})} currentUrl={content.aboutRotaryImage} aspectRatio="landscape" /></div>
+                 </div>
+               </div>
                <div>
                    <label className={labelClass}>Mission Statement</label>
                    <textarea value={content.aboutMission || ''} onChange={e => setContent({...content, aboutMission: e.target.value})} className={inputClass} rows={3} />
@@ -124,6 +160,59 @@ export default function AdminPages() {
                <div>
                    <label className={labelClass}>Core Values</label>
                    <textarea value={content.aboutValues || ''} onChange={e => setContent({...content, aboutValues: e.target.value})} className={inputClass} rows={3} />
+               </div>
+               
+               <div className="pt-4 border-t border-gray-100 mt-6">
+                 <div className="flex items-center justify-between mb-4">
+                   <label className={labelClass} style={{ marginBottom: 0 }}>The Journey Steps</label>
+                   <Button size="sm" variant="secondary" onClick={() => setContent({...content, aboutJourney: [...(content.aboutJourney || []), { year: '', text: '' }]})}>
+                     <Plus size={16} className="text-gray-600 mr-2" /> Add Step
+                   </Button>
+                 </div>
+                 <div className="space-y-4">
+                   {(content.aboutJourney || []).map((step: any, index: number) => (
+                     <div key={index} className="flex gap-4 items-start bg-gray-50 p-4 rounded-xl border border-gray-200">
+                       <div className="w-24 shrink-0">
+                         <input
+                           placeholder="Year"
+                           value={step.year}
+                           onChange={(e) => {
+                             const newJourney = [...content.aboutJourney];
+                             newJourney[index].year = e.target.value;
+                             setContent({...content, aboutJourney: newJourney});
+                           }}
+                           className={inputClass}
+                         />
+                       </div>
+                       <div className="flex-1">
+                         <textarea
+                           placeholder="Milestone description"
+                           value={step.text}
+                           onChange={(e) => {
+                             const newJourney = [...content.aboutJourney];
+                             newJourney[index].text = e.target.value;
+                             setContent({...content, aboutJourney: newJourney});
+                           }}
+                           className={inputClass}
+                           rows={2}
+                         />
+                       </div>
+                       <button
+                         onClick={() => {
+                           const newJourney = [...content.aboutJourney];
+                           newJourney.splice(index, 1);
+                           setContent({...content, aboutJourney: newJourney});
+                         }}
+                         className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                       >
+                         <Trash size={18} />
+                       </button>
+                     </div>
+                   ))}
+                   {(content.aboutJourney || []).length === 0 && (
+                     <p className="text-gray-400 text-sm text-center py-4">No journey steps added yet.</p>
+                   )}
+                 </div>
                </div>
             </div>
          </section>

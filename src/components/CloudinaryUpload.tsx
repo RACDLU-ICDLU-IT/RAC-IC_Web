@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { UploadCloud, X, Loader2 } from 'lucide-react';
 import { useToast } from '../hooks/useToast';
+import { supabase } from '../supabase';
 
 interface CloudinaryUploadProps {
   onUpload: (url: string, publicId: string) => void;
   currentUrl?: string;
+  currentPublicId?: string;  // Store and pass this alongside currentUrl for reliable deletion
   label?: string;
   buttonText?: string;
   aspectRatio?: 'square' | 'landscape' | 'portrait';
@@ -14,6 +16,7 @@ interface CloudinaryUploadProps {
 export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
   onUpload,
   currentUrl,
+  currentPublicId,
   label,
   buttonText,
   aspectRatio = 'square',
@@ -24,6 +27,14 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
   const { addToast } = useToast();
 
   const handleOpenWidget = () => {
+    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+    const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+
+    if (!cloudName || !uploadPreset || cloudName === 'demo') {
+      addToast('Cloudinary is not configured. Please set VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET in your .env file.', 'error');
+      return;
+    }
+
     if (typeof window === 'undefined' || !(window as any).cloudinary) {
       addToast('Cloudinary widget not loaded', 'error');
       return;
@@ -33,8 +44,8 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
 
     const widget = (window as any).cloudinary.createUploadWidget(
       {
-        cloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'demo',
-        uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'docs_upload_example_us_preset',
+        cloudName: cloudName,
+        uploadPreset: uploadPreset,
         multiple: multiple,
         maxFiles: multiple ? 20 : 1,
         cropping: true,
@@ -44,8 +55,12 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
       (error: any, result: any) => {
         if (!error && result && result.event === 'success') {
           onUpload(result.info.secure_url, result.info.public_id);
+          setIsUploading(false);
         }
-        if (error || result?.event === 'close') {
+        if (error) {
+          addToast(error.message || 'Upload failed. Check your Cloudinary preset is set to Unsigned.', 'error');
+          setIsUploading(false);
+        } else if (result?.event === 'close') {
           setIsUploading(false);
         }
       }
@@ -84,26 +99,27 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
               type="button"
               onClick={async (e) => {
                 e.stopPropagation();
-                
-                if (currentUrl.includes('cloudinary.com')) {
-                  // Attempt to extract the public_id, which usually comes after /v[0-9]+/ or /upload/
-                  // e.g. https://res.cloudinary.com/demo/image/upload/v1234/folder/file.jpg -> folder/file
+
+                // Use the stored publicId prop — reliable; the regex approach fails on many URL formats
+                const idToDelete = currentPublicId || null;
+
+                if (idToDelete && currentUrl && currentUrl.includes('cloudinary.com')) {
                   try {
-                    const match = currentUrl.match(/(?:upload\/(?:v\d+\/)?)(.+?)(?:\.[^.]+)?$/);
-                    const publicId = match ? match[1] : null;
-                    
-                    if (publicId) {
-                      await fetch('/api/delete-image', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ publicId })
-                      });
-                    }
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const token = session?.access_token;
+                    await fetch('/api/delete-image', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                      },
+                      body: JSON.stringify({ publicId: idToDelete }),
+                    });
                   } catch (err) {
                     console.error('Failed to call delete API', err);
                   }
                 }
-                
+
                 onUpload('', '');
               }}
               className="p-2 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors shadow-lg"

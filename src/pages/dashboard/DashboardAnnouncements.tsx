@@ -1,22 +1,23 @@
+import { supabase } from '../../supabase';
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { Megaphone, Pin } from 'lucide-react';
+import { useTenant } from '../../hooks/useTenant';
 
 export default function DashboardAnnouncements() {
+  const { tenant } = useTenant();
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getDocs(query(collection(db, 'announcements'), orderBy('createdAt', 'desc')))
-      .then(snap => {
-        setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    supabase.from('announcements').select('*').eq('tenant_id', tenant.id).order('createdAt', { ascending: false })
+      .then(({ data: snap }) => {
+        setAnnouncements(snap || []);
         setLoading(false);
-      }).catch(err => {
+      }, err => {
         console.error(err);
         setLoading(false);
       });
-  }, []);
+  }, [tenant.id]);
 
   if (loading) {
     return <div className="p-12 flex justify-center"><div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin" /></div>;
@@ -54,12 +55,12 @@ export default function DashboardAnnouncements() {
             
             <div className="flex flex-col gap-1 mb-4">
               <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                {ann.createdAt ? new Date(ann.createdAt.toDate()).toLocaleDateString() : 'Recent'}
+                {ann.createdAt ? new Date(ann.createdAt.toDate ? ann.createdAt.toDate() : ann.createdAt).toLocaleDateString() : 'Recent'}
               </span>
               <h2 className="text-2xl font-heading font-bold text-primary">{ann.title}</h2>
             </div>
             
-            <p className="text-gray-600 leading-relaxed whitespace-pre-wrap">{ann.content}</p>
+            <p className="text-gray-600 leading-relaxed whitespace-pre-wrap">{ann.body || ann.content}</p>
           </div>
         ))}
 

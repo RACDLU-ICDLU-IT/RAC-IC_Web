@@ -1,12 +1,13 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, updateDoc, deleteDoc, orderBy, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Inbox, Mail, MailOpen, Trash, Reply, Circle } from 'lucide-react';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 export default function AdminContactInbox() {
+  const { adminTenant: tenant } = useAdminTenant();
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMsg, setSelectedMsg] = useState<any | null>(null);
@@ -17,8 +18,8 @@ export default function AdminContactInbox() {
   const fetchMessages = async () => {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'contact_messages'), orderBy('createdAt', 'desc')));
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: snap } = await supabase.from('contact_messages').select('*').eq('tenant_id', tenant.id).order('createdAt', { ascending: false });
+      setMessages(snap || []);
     } catch (err) {
       console.error(err);
       addToast('Failed to load messages', 'error');
@@ -27,16 +28,16 @@ export default function AdminContactInbox() {
     }
   };
 
-  useEffect(() => { fetchMessages(); }, []);
+  useEffect(() => { fetchMessages(); }, [tenant.id]);
 
   const handleSelect = async (msg: any) => {
     setSelectedMsg(msg);
     if (!msg.read) {
       try {
-        await updateDoc(doc(db, 'contact_messages', msg.id), {
+        await supabase.from('contact_messages').update({
           read: true,
-          readAt: serverTimestamp(),
-        });
+          readAt: new Date().toISOString(),
+        }).eq('id', msg.id).eq('tenant_id', tenant.id);
         setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, read: true } : m));
       } catch (err) { console.error(err); }
     }
@@ -46,7 +47,7 @@ export default function AdminContactInbox() {
     const unread = messages.filter(m => !m.read);
     if (unread.length === 0) return;
     try {
-      await Promise.all(unread.map(m => updateDoc(doc(db, 'contact_messages', m.id), { read: true })));
+      await Promise.all(unread.map(m => supabase.from('contact_messages').update({ read: true }).eq('id', m.id).eq('tenant_id', tenant.id)));
       setMessages(prev => prev.map(m => ({ ...m, read: true })));
       addToast('All messages marked as read', 'success');
     } catch { addToast('Failed to update', 'error'); }
@@ -55,7 +56,7 @@ export default function AdminContactInbox() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'contact_messages', deleteId));
+      await supabase.from('contact_messages').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
       addToast('Message deleted', 'success');
       if (selectedMsg?.id === deleteId) setSelectedMsg(null);
       setDeleteId(null);
@@ -77,7 +78,12 @@ export default function AdminContactInbox() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-heading font-bold text-gray-900 flex items-center gap-2">
-            <Inbox size={24} className="text-accent" /> Contact Inbox
+            <div className="flex items-center gap-3">
+              <Inbox size={24} className="text-accent" /> Contact Inbox
+              <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+                {tenant.id}
+              </span>
+            </div>
             {unreadCount > 0 && (
               <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">{unreadCount} new</span>
             )}

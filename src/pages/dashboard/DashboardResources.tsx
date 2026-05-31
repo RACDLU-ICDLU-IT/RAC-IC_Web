@@ -1,23 +1,24 @@
+import { supabase } from '../../supabase';
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { FolderOpen, FileText, Download, ExternalLink } from 'lucide-react';
+import { useTenant } from '../../hooks/useTenant';
 
 export default function DashboardResources() {
+  const { tenant } = useTenant();
   const [resources, setResources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('All');
 
   useEffect(() => {
-    getDocs(query(collection(db, 'resources'), orderBy('createdAt', 'desc')))
-      .then(snap => {
-        setResources(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    supabase.from('resources').select('*').eq('tenant_id', tenant.id).order('createdAt', { ascending: false })
+      .then(({ data: snap }) => {
+        setResources(snap || []);
         setLoading(false);
-      }).catch(err => {
+      }, err => {
         console.error(err);
         setLoading(false);
       });
-  }, []);
+  }, [tenant.id]);
 
   const categories = ['All', ...Array.from(new Set(resources.map(r => r.category).filter(Boolean)))];
 

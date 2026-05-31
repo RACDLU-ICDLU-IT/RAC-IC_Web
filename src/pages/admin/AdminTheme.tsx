@@ -1,10 +1,9 @@
+import { supabase } from '../../supabase';
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
-import { useTheme } from '../../contexts/ThemeContext';
 import { Palette, RotateCcw, Check, Loader2 } from 'lucide-react';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 const GOOGLE_FONTS = [
   { name: 'Clash Display', value: "'Clash Display', sans-serif", import: 'https://api.fontshare.com/v2/css?f[]=clash-display@700,600,500&display=swap' },
@@ -17,7 +16,7 @@ const GOOGLE_FONTS = [
 
 const DEFAULTS = {
   primary: '#0A0E1A',
-  accent: '#F4A928',
+  accent: '#00A2E0',
   heroStart: '#05070d',
   buttonRadius: '0.5rem',
   fontHeading: "'Clash Display', sans-serif",
@@ -31,17 +30,38 @@ const RADIUS_OPTIONS = [
 ];
 
 export default function AdminTheme() {
+  const { adminTenant: tenant } = useAdminTenant();
   const { addToast } = useToast();
-  const [theme, setTheme] = useState({ ...DEFAULTS });
+  const [theme, setTheme] = useState({ 
+    ...DEFAULTS, 
+    primary: tenant.brand.primaryColor,
+    accent: tenant.brand.accentColor,
+    heroStart: tenant.brand.heroStart || DEFAULTS.heroStart
+  });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getDoc(doc(db, 'settings', 'theme')).then(snap => {
-      if (snap.exists()) setTheme({ ...DEFAULTS, ...snap.data() });
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, []);
+    supabase.from('settings').select('data').eq('id', `${tenant.id}-theme`).single().then(({ data }) => {
+        if (data && data.data) {
+          setTheme({ 
+            ...DEFAULTS, 
+            primary: tenant.brand.primaryColor,
+            accent: tenant.brand.accentColor,
+            heroStart: tenant.brand.heroStart || DEFAULTS.heroStart,
+            ...data.data 
+          });
+        } else {
+          setTheme({
+            ...DEFAULTS, 
+            primary: tenant.brand.primaryColor,
+            accent: tenant.brand.accentColor,
+            heroStart: tenant.brand.heroStart || DEFAULTS.heroStart,
+          });
+        }
+        setLoading(false);
+      }, () => setLoading(false));
+  }, [tenant.id]);
 
   // Live preview: inject CSS variables as theme changes
   useEffect(() => {
@@ -71,7 +91,7 @@ export default function AdminTheme() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await setDoc(doc(db, 'settings', 'theme'), theme);
+      await supabase.from('settings').upsert({ id: `${tenant.id}-theme`, data: theme }, { onConflict: 'id' });
       addToast('Theme saved! Your site is updated.', 'success');
     } catch {
       addToast('Failed to save theme', 'error');
@@ -81,7 +101,12 @@ export default function AdminTheme() {
   };
 
   const handleReset = () => {
-    setTheme({ ...DEFAULTS });
+    setTheme({ 
+      ...DEFAULTS,
+      primary: tenant.brand.primaryColor,
+      accent: tenant.brand.accentColor,
+      heroStart: tenant.brand.heroStart || DEFAULTS.heroStart,
+    });
     addToast('Reset to defaults. Save to apply.', 'success');
   };
 
@@ -118,9 +143,14 @@ export default function AdminTheme() {
     <div className="space-y-8 pb-12">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900 flex items-center gap-2">
-            <Palette className="text-accent" size={24} /> Theme Customizer
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900 flex items-center gap-2">
+              <Palette className="text-accent" size={24} /> Theme Customizer
+            </h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">Changes preview live on this page. Save to apply to the whole site.</p>
         </div>
         <div className="flex gap-3">
@@ -196,7 +226,7 @@ export default function AdminTheme() {
 
             {/* Mini Navbar */}
             <div className="px-6 py-4 flex items-center justify-between" style={{ backgroundColor: theme.primary }}>
-              <span className="font-bold text-white text-sm" style={{ fontFamily: theme.fontHeading }}>Interact Club</span>
+              <span className="font-bold text-white text-sm" style={{ fontFamily: theme.fontHeading }}>{tenant.shortName}</span>
               <div className="flex gap-4">
                 <span className="text-white/60 text-xs">About</span>
                 <span className="text-white/60 text-xs">Events</span>

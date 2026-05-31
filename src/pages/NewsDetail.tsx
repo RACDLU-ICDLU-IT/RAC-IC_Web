@@ -1,12 +1,14 @@
+import { supabase } from '../supabase';
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { formatDate } from '../utils/format';
+import { useTenant } from '../hooks/useTenant';
 
 export default function NewsDetail() {
   const { id } = useParams();
+  const { tenant } = useTenant();
   const [article, setArticle] = useState<any>(null);
   const [related, setRelated] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -14,26 +16,36 @@ export default function NewsDetail() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    getDoc(doc(db, 'news', id)).then(snap => {
-      if (snap.exists()) {
-        setArticle({ id: snap.id, ...snap.data() });
-      }
-      setLoading(false);
-    }).catch(err => {
-      console.error(err);
-      setLoading(false);
-    });
-  }, [id]);
+    let query = supabase.from('news').select('*').eq('tenant_id', tenant.id);
+    if (id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      query = query.eq('id', id);
+    } else {
+      query = query.eq('slug', id);
+    }
+    query.single().then(({ data }) => {
+        if (data) {
+          setArticle(data);
+        }
+        setLoading(false);
+      }, err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, [id, tenant.id]);
 
   useEffect(() => {
     if (article) {
-      getDocs(
-        query(collection(db, 'news'), where('status', '==', 'Published'), orderBy('publishedAt', 'desc'), limit(4))
-      ).then(snap => {
-        setRelated(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.id !== id).slice(0, 3));
+      supabase.from('news')
+        .select('*')
+        .eq('tenant_id', tenant.id)
+        .eq('status', 'Published')
+        .order('publishedAt', { ascending: false })
+        .limit(4)
+        .then(({ data: snap }) => {
+        setRelated((snap || []).filter((d: any) => d.id !== id).slice(0, 3));
       });
     }
-  }, [article, id]);
+  }, [article, id, tenant.id]);
 
   if (loading) {
     return <div className="min-h-screen pt-32 pb-24 flex items-center justify-center">
@@ -71,7 +83,7 @@ export default function NewsDetail() {
               {article.title}
             </h1>
             <div className="flex items-center gap-3 text-white/80">
-              <span>By <strong className="text-white">{article.author || 'Interact Club'}</strong></span>
+              <span>By <strong className="text-white">{article.author || tenant.shortName.toUpperCase()}</strong></span>
             </div>
           </div>
         </div>
@@ -80,7 +92,7 @@ export default function NewsDetail() {
         <div className="max-w-3xl mx-auto px-6 py-16">
           <div 
             className="prose prose-lg max-w-none prose-headings:font-heading prose-headings:font-bold prose-headings:text-primary prose-a:text-accent prose-a:no-underline hover:prose-a:underline prose-p:text-gray-700 prose-p:leading-relaxed prose-blockquote:border-l-accent prose-blockquote:bg-gray-50 prose-blockquote:py-1 prose-blockquote:px-6 prose-blockquote:rounded-r-lg prose-img:rounded-xl"
-            dangerouslySetInnerHTML={{ __html: marked(article.body || '') }} 
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked(article.body || '') as string) }} 
           />
         </div>
 
@@ -93,9 +105,9 @@ export default function NewsDetail() {
 
       {/* More stuff */}
       {related.length > 0 && (
-        <section className="bg-[#F7F5F0] py-20 px-6">
+        <section className="bg-[var(--color-page-bg)] py-20 px-6">
           <div className="max-w-7xl mx-auto">
-            <h2 className="text-3xl font-heading font-bold text-primary mb-12">More from our club</h2>
+            <h2 className="text-3xl font-heading font-bold text-primary mb-12">More from {tenant.shortName.toUpperCase()}</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               {related.map((rel: any) => (
                 <Link to={`/news/${rel.id}`} key={rel.id}>

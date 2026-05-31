@@ -1,9 +1,10 @@
+import { supabase } from '../supabase';
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
 import { List, CalendarDays, MapPin, ChevronRight, X, Clock } from 'lucide-react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
+import { useTenant } from '../hooks/useTenant';
+import SEOHead from '../components/SEOHead';
 
 function getTypeStyle(type: string) {
   switch(type) {
@@ -26,23 +27,31 @@ function getTypeColor(type: string) {
 }
 
 export default function Events() {
+  const { tenant } = useTenant();
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'list' | 'calendar'>('list');
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
   const [typeFilter, setTypeFilter] = useState('all');
 
+  const isLight = tenant.brand.primaryColor === '#FFFFFF';
+  const headingColor = isLight ? 'text-[var(--color-accent)]' : 'text-[var(--color-primary)]';
+  const borderColor = isLight ? 'border-[var(--color-accent)]/30' : 'border-[var(--color-primary)]/20';
+
   useEffect(() => {
-    getDocs(
-      query(collection(db, 'events'), where('isPublic', '==', true), orderBy('date', 'asc'))
-    ).then(snap => {
-      setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setLoading(false);
-    }).catch(err => {
-      console.error(err);
-      setLoading(false);
-    });
-  }, []);
+    supabase.from('events')
+      .select('*')
+      .eq('tenant_id', tenant.id)
+      .eq('isPublic', true)
+      .order('date', { ascending: true })
+      .then(({ data: snap }) => {
+        setEvents(snap || []);
+        setLoading(false);
+      }, err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, [tenant.id]);
 
   const today = new Date().toISOString().split('T')[0];
   const filtered = typeFilter === 'all' ? events : events.filter(e => e.type === typeFilter);
@@ -50,11 +59,16 @@ export default function Events() {
   const past = filtered.filter(e => e.date < today);
 
   return (
-    <div className="bg-[#F7F5F0] min-h-screen pt-24 pb-32 relative">
-      <section className="py-20 px-6 max-w-7xl mx-auto border-b border-gray-200">
+    <div className="bg-[var(--color-page-bg)] min-h-screen pt-24 pb-32 relative">
+      <SEOHead 
+        title="Events & Calendar"
+        description={`Stay updated with upcoming meetings, social events, and community projects of the ${tenant.fullName}.`}
+        canonicalPath="/events"
+      />
+      <section className={`py-20 px-6 max-w-7xl mx-auto border-b ${borderColor}`}>
         <div className="flex flex-col md:flex-row justify-between items-end gap-6">
           <div>
-            <h1 className="text-6xl md:text-8xl font-heading font-bold text-primary">Events.</h1>
+            <h1 className={`text-6xl md:text-8xl font-heading font-bold ${headingColor}`}>Events.</h1>
             <p className="text-gray-500 mt-2 text-lg">What's happening in the club.</p>
           </div>
           <div className="flex items-center gap-2">
@@ -62,13 +76,13 @@ export default function Events() {
             <div className="flex bg-gray-100 p-1 rounded-xl">
               <button 
                 onClick={() => setView('list')} 
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${view === 'list' ? 'bg-white shadow text-primary' : 'text-gray-500'}`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${view === 'list' ? `bg-white shadow ${headingColor}` : 'text-gray-500'}`}
               >
                 <List size={16} /> List
               </button>
               <button 
                 onClick={() => setView('calendar')} 
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${view === 'calendar' ? 'bg-white shadow text-primary' : 'text-gray-500'}`}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${view === 'calendar' ? `bg-white shadow ${headingColor}` : 'text-gray-500'}`}
               >
                 <CalendarDays size={16} /> Calendar
               </button>
@@ -81,7 +95,7 @@ export default function Events() {
             <button 
               key={type} 
               onClick={() => setTypeFilter(type)}
-              className={`px-5 py-2 rounded-full text-sm font-bold transition-all ${typeFilter === type ? 'bg-primary text-white' : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+              className={`px-5 py-2 rounded-full text-sm font-bold transition-all cursor-pointer ${typeFilter === type ? 'bg-[var(--color-accent)] text-white shadow-md' : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'}`}
             >
               {type === 'all' ? 'All Events' : type}
             </button>
@@ -112,7 +126,7 @@ export default function Events() {
                       <span className="text-accent font-bold text-sm uppercase tracking-wide">
                         {new Date((event.date || today) + 'T00:00:00').toLocaleDateString('en-US', { month: 'short' })}
                       </span>
-                      <span className="text-5xl font-heading font-bold text-primary leading-none">
+                      <span className={`text-5xl font-heading font-bold ${headingColor} leading-none`}>
                         {new Date((event.date || today) + 'T00:00:00').getDate()}
                       </span>
                       <span className="text-gray-400 text-xs">
@@ -129,7 +143,7 @@ export default function Events() {
                         </span>
                         {event.time && <span className="text-gray-400 text-sm">{event.time}</span>}
                       </div>
-                      <h3 className="text-xl md:text-2xl font-heading font-bold text-primary group-hover:text-accent transition-colors">
+                      <h3 className={`text-xl md:text-2xl font-heading font-bold ${headingColor} group-hover:text-accent transition-colors`}>
                         {event.title}
                       </h3>
                       {event.venue && (
@@ -161,13 +175,13 @@ export default function Events() {
                         <span className="text-gray-500 font-bold text-xs uppercase tracking-wide">
                           {new Date((event.date || today) + 'T00:00:00').toLocaleDateString('en-US', { month: 'short' })}
                         </span>
-                        <span className="text-3xl font-heading font-bold text-gray-400 leading-none group-hover:text-primary transition-colors">
+                        <span className={`text-3xl font-heading font-bold ${isLight ? 'text-gray-500' : 'text-gray-400'} leading-none group-hover:text-accent transition-colors`}>
                           {new Date((event.date || today) + 'T00:00:00').getDate()}
                         </span>
                       </div>
                       <div className="w-px bg-gray-200 shrink-0" />
                       <div className="flex-1 flex flex-col justify-center">
-                        <h3 className="text-lg font-heading font-bold text-gray-600 group-hover:text-primary transition-colors">
+                        <h3 className="text-lg font-heading font-bold text-gray-600 group-hover:text-accent transition-colors">
                           {event.title}
                         </h3>
                         <div className="flex items-center gap-3 mt-1">
@@ -183,7 +197,7 @@ export default function Events() {
             )}
           </div>
         ) : (
-          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm text-gray-900">
             <FullCalendar
               plugins={[dayGridPlugin]}
               initialView="dayGridMonth"
@@ -216,13 +230,13 @@ export default function Events() {
 
       {/* Panel */}
       <div className={`fixed right-0 top-0 bottom-0 w-full max-w-md bg-white z-50 shadow-2xl transition-transform duration-500 ease-in-out flex flex-col ${selectedEvent ? 'translate-x-0' : 'translate-x-full'}`}>
-        <div className="flex items-center justify-between p-6 border-b">
+        <div className="flex items-center justify-between p-6 border-b text-gray-900">
           <h2 className="text-xl font-heading font-bold line-clamp-1">{selectedEvent?.title}</h2>
           <button onClick={() => setSelectedEvent(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
             <X size={20} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="flex-1 overflow-y-auto p-6 space-y-4 text-gray-900">
           {selectedEvent?.coverImage && (
             <img src={selectedEvent.coverImage} className="w-full rounded-xl object-cover aspect-video mb-6 shadow-sm" alt="" />
           )}

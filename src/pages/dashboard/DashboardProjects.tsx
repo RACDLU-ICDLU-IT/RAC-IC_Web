@@ -1,8 +1,8 @@
+import { supabase } from '../../supabase';
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { Presentation } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useTenant } from '../../hooks/useTenant';
 
 function getStatusStyle(status: string) {
   switch(status) {
@@ -14,19 +14,20 @@ function getStatusStyle(status: string) {
 }
 
 export default function DashboardProjects() {
+  const { tenant } = useTenant();
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getDocs(query(collection(db, 'projects'), orderBy('startDate', 'desc')))
-      .then(snap => {
-        setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    supabase.from('projects').select('*').eq('tenant_id', tenant.id).order('startDate', { ascending: false })
+      .then(({ data: snap }) => {
+        setProjects(snap || []);
         setLoading(false);
-      }).catch(err => {
+      }, err => {
         console.error(err);
         setLoading(false);
       });
-  }, []);
+  }, [tenant.id]);
 
   if (loading) {
     return <div className="p-12 flex justify-center"><div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin" /></div>;

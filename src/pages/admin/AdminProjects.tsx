@@ -1,7 +1,5 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, setDoc, deleteDoc, orderBy } from 'firebase/firestore';
-import { db } from '../../firebase';
-import { fetchAndBake } from '../../utils/bake';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -9,8 +7,11 @@ import { Modal } from '../../components/ui/Modal';
 import { Presentation, Pencil, Trash, Users } from 'lucide-react';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 export default function AdminProjects() {
+  const { adminTenant: tenant } = useAdminTenant();
   const [projects, setProjects] = useState<any[]>([]);
   const [activeMembers, setActiveMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,8 +26,8 @@ export default function AdminProjects() {
   const fetchProjects = async () => {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'projects'), orderBy('startDate', 'desc')));
-      setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: snap } = await supabase.from('projects').select('*').eq('tenant_id', tenant.id).order('startDate', { ascending: false });
+      setProjects(snap || []);
     } catch (err) {
       console.error(err);
       addToast('Failed to load projects', 'error');
@@ -37,19 +38,19 @@ export default function AdminProjects() {
 
   const fetchMembers = async () => {
     try {
-      const snap = await getDocs(collection(db, 'users'));
-      setActiveMembers(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter((m: any) => m.status === 'active'));
+      const { data: snap } = await supabase.from('users').select('*').eq('tenant_id', tenant.id);
+      setActiveMembers(snap || [].filter((m: any) => m.status === 'active'));
     } catch(err) { console.error(err); }
   };
 
   useEffect(() => {
     fetchProjects();
     fetchMembers();
-  }, []);
+  }, [tenant.id]);
 
   const handleSave = async () => {
     const isNew = !formData.id;
-    const docId = isNew ? doc(collection(db, 'projects')).id : formData.id;
+    const docId = isNew ? crypto.randomUUID() : formData.id;
     
     // Convert tags string back to array if modified text, otherwise keep array
     let finalTags = formData.tags || [];
@@ -61,14 +62,15 @@ export default function AdminProjects() {
       ...formData, 
       tags: finalTags,
       memberIds: formData.memberIds || [],
-      galleryImages: formData.galleryImages || []
+      galleryImages: formData.galleryImages || [],
+      tenant_id: tenant.id
     };
     
     try {
-      await setDoc(doc(db, 'projects', docId), dataToSave, { merge: true });
+      await supabase.from('projects').upsert({ id: docId, ...dataToSave }, { onConflict: 'id' });
       addToast('Project saved', 'success');
       setIsFormOpen(false);
-      await fetchAndBake('projects');
+      
       fetchProjects();
     } catch (err) {
       console.error(err);
@@ -79,10 +81,10 @@ export default function AdminProjects() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'projects', deleteId));
+      await supabase.from('projects').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
       addToast('Project deleted', 'success');
       setDeleteId(null);
-      await fetchAndBake('projects');
+      
       fetchProjects();
     } catch (err) {
       console.error(err);
@@ -114,7 +116,7 @@ ${particip}`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Project_Report_${project.name.replace(/\\s+/g, '_')}.txt`;
+    a.download = `Project_Report_${project.name.replace(/\s+/g, '_')}.txt`;
     a.click();
   };
 
@@ -123,7 +125,7 @@ ${particip}`;
 
   const renderDescriptionPreview = () => {
     try {
-      return { __html: marked(formData.description || '*No description yet*') };
+      return { __html: DOMPurify.sanitize(marked(formData.description || '*No description yet*') as string) };
     } catch (e) {
       return { __html: '' };
     }
@@ -144,7 +146,12 @@ ${particip}`;
     <div className="space-y-8 pb-32">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900">Projects</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">Projects</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">Manage community service and initiatives</p>
         </div>
         <div className="flex items-center gap-4">
@@ -175,7 +182,7 @@ ${particip}`;
           {filteredProjects.map(p => (
             <div key={p.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col group">
               <div className="relative h-48 bg-gray-200">
-                {p.coverImage && <img src={p.coverImage} className="w-full h-full object-cover" />}
+                {p.coverImage && <img src={p.coverImage} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-full h-full object-cover" />}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex flex-col justify-end p-4">
                    <h3 className="text-white font-heading font-bold text-xl drop-shadow-md">{p.name}</h3>
                 </div>

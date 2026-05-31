@@ -1,24 +1,30 @@
+import { supabase } from '../supabase';
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
-import { useSettings } from '../contexts/SettingsContext';
 import { useToast } from '../hooks/useToast';
 import { Mail, Phone, MapPin, Clock, Loader2, CheckCircle2 } from 'lucide-react';
+import { useTenant } from '../hooks/useTenant';
+import SEOHead from '../components/SEOHead';
 
 export default function Contact() {
-  const { settings } = useSettings();
+  const { tenant, settings } = useTenant();
   const { addToast } = useToast();
   
   const [formData, setFormData] = useState({ name: '', email: '', message: '' });
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [content, setContent] = useState<any>(null);
+  const [content, setContent] = useState<any>({});
+
+  const isLight = tenant.brand.primaryColor === '#FFFFFF';
+  const headingColor = isLight ? 'text-[var(--color-accent)]' : 'text-[var(--color-primary)]';
+  const borderColor = isLight ? 'border-[var(--color-accent)]/30' : 'border-[var(--color-primary)]/20';
 
   useEffect(() => {
-    getDoc(doc(db, 'settings', 'pageContent')).then(snap => {
-      if (snap.exists()) setContent(snap.data());
+    supabase.from('page_content').select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single().then(({ data }) => {
+      if (data && data.data) {
+        setContent(data.data);
+      }
     });
-  }, []);
+  }, [tenant.id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,10 +34,11 @@ export default function Contact() {
     }
     setSubmitting(true);
     try {
-      await addDoc(collection(db, 'contact_messages'), {
+      await supabase.from('contact_messages').insert({
         ...formData,
+        tenant_id: tenant.id,
         read: false,
-        createdAt: serverTimestamp(),
+        createdAt: new Date().toISOString(),
       });
       setSubmitted(true);
       addToast('Message sent! We\'ll get back to you soon.', 'success');
@@ -43,9 +50,14 @@ export default function Contact() {
   };
 
   return (
-    <div className="bg-[#F7F5F0] min-h-screen pt-24 pb-32">
-      <section className="py-16 md:py-24 px-6 max-w-7xl mx-auto border-b-2 border-primary mb-16">
-        <h1 className="text-7xl md:text-[120px] font-heading font-bold text-primary leading-none">
+    <div className="bg-[var(--color-page-bg)] min-h-screen pt-24 pb-32">
+      <SEOHead 
+        title="Contact Us"
+        description={`Get in touch with ${tenant.fullName}. Find our meeting venue, schedule, and contact details in Dhaka.`}
+        canonicalPath="/contact"
+      />
+      <section className={`py-16 md:py-24 px-6 max-w-7xl mx-auto border-b-2 ${borderColor} mb-16`}>
+        <h1 className={`text-7xl md:text-[120px] font-heading font-bold ${headingColor} leading-none`}>
           Contact.
         </h1>
         <p className="text-gray-500 mt-4 text-xl max-w-2xl">
@@ -58,7 +70,7 @@ export default function Contact() {
           
           {/* Left Column - Form */}
           <div className="lg:col-span-3">
-            <h2 className="text-3xl font-heading font-bold mb-8">Send a message</h2>
+            <h2 className="text-3xl font-heading font-bold mb-8 text-gray-900">Send a message</h2>
             
             {submitted ? (
               <div className="bg-green-50 border border-green-100 p-12 rounded-3xl text-center flex flex-col items-center">
@@ -80,7 +92,7 @@ export default function Contact() {
                     type="text"
                     value={formData.name}
                     onChange={e => setFormData({...formData, name: e.target.value})}
-                    className="peer w-full px-4 pt-6 pb-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent bg-white transition-colors placeholder-transparent"
+                    className="peer w-full px-4 pt-6 pb-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-[var(--color-accent)] bg-white transition-colors placeholder-transparent text-gray-900"
                     placeholder="Full Name"
                   />
                   <label htmlFor="name" className="absolute left-4 top-4 text-gray-400 text-sm transition-all duration-200 peer-focus:top-2 peer-focus:text-xs peer-focus:text-accent peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-placeholder-shown:text-gray-400 peer-not-placeholder-shown:top-2 peer-not-placeholder-shown:text-xs">
@@ -94,7 +106,7 @@ export default function Contact() {
                     type="email"
                     value={formData.email}
                     onChange={e => setFormData({...formData, email: e.target.value})}
-                    className="peer w-full px-4 pt-6 pb-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent bg-white transition-colors placeholder-transparent"
+                    className="peer w-full px-4 pt-6 pb-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-[var(--color-accent)] bg-white transition-colors placeholder-transparent text-gray-900"
                     placeholder="Email Address"
                   />
                   <label htmlFor="email" className="absolute left-4 top-4 text-gray-400 text-sm transition-all duration-200 peer-focus:top-2 peer-focus:text-xs peer-focus:text-accent peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-placeholder-shown:text-gray-400 peer-not-placeholder-shown:top-2 peer-not-placeholder-shown:text-xs">
@@ -108,7 +120,7 @@ export default function Contact() {
                     rows={6}
                     value={formData.message}
                     onChange={e => setFormData({...formData, message: e.target.value})}
-                    className="peer w-full px-4 pt-6 pb-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent bg-white transition-colors resize-none placeholder-transparent"
+                    className="peer w-full px-4 pt-6 pb-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-[var(--color-accent)] bg-white transition-colors resize-none placeholder-transparent text-gray-900"
                     placeholder="Your Message"
                   />
                   <label htmlFor="message" className="absolute left-4 top-4 text-gray-400 text-sm transition-all duration-200 peer-focus:top-2 peer-focus:text-xs peer-focus:text-accent peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-placeholder-shown:text-gray-400 peer-not-placeholder-shown:top-2 peer-not-placeholder-shown:text-xs">
@@ -119,7 +131,8 @@ export default function Contact() {
                 <button 
                   type="submit" 
                   disabled={submitting}
-                  className="w-full bg-primary text-white py-4 rounded-xl font-bold hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                  className="w-full text-white py-4 rounded-xl font-bold hover:opacity-90 transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-lg"
+                  style={{ backgroundColor: 'var(--color-accent)' }}
                 >
                   {submitting ? <Loader2 className="animate-spin" size={20} /> : 'Send Message'}
                 </button>
@@ -129,7 +142,7 @@ export default function Contact() {
 
           {/* Right Column - Info */}
           <div className="lg:col-span-2">
-            <h2 className="text-3xl font-heading font-bold mb-8">Get in touch</h2>
+            <h2 className="text-3xl font-heading font-bold mb-8 text-gray-900">Get in touch</h2>
             
             <div className="space-y-4">
               {[

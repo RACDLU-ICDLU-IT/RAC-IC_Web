@@ -1,7 +1,5 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, setDoc, deleteDoc, orderBy } from 'firebase/firestore';
-import { db } from '../../firebase';
-import { fetchAndBake } from '../../utils/bake';
 import { Table } from '../../components/ui/Table';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
@@ -9,8 +7,10 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
 import { CalendarDays, Pencil, Trash, Image as ImageIcon } from 'lucide-react';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 export default function AdminEvents() {
+  const { adminTenant: tenant } = useAdminTenant();
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -24,8 +24,8 @@ export default function AdminEvents() {
   const fetchEvents = async () => {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'events'), orderBy('date', 'desc')));
-      setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: snap } = await supabase.from('events').select('*').eq('tenant_id', tenant.id).order('date', { ascending: false });
+      setEvents(snap || []);
     } catch (err) {
       console.error(err);
       addToast('Failed to load events', 'error');
@@ -36,20 +36,20 @@ export default function AdminEvents() {
 
   useEffect(() => {
     fetchEvents();
-  }, []);
+  }, [tenant.id]);
 
   const handleSave = async () => {
     const isNew = !formData.id;
-    const docId = isNew ? doc(collection(db, 'events')).id : formData.id;
+    const docId = isNew ? crypto.randomUUID() : formData.id;
     
     // Fallback for public if not touched
-    const dataToSave = { ...formData, isPublic: formData.isPublic ?? false };
+    const dataToSave = { ...formData, isPublic: formData.isPublic ?? false, tenant_id: tenant.id };
     
     try {
-      await setDoc(doc(db, 'events', docId), dataToSave, { merge: true });
+      await supabase.from('events').upsert({ id: docId, ...dataToSave }, { onConflict: 'id' });
       addToast('Event saved', 'success');
       setIsFormOpen(false);
-      await fetchAndBake('events');
+      
       fetchEvents();
     } catch (err) {
       console.error(err);
@@ -60,10 +60,10 @@ export default function AdminEvents() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'events', deleteId));
+      await supabase.from('events').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
       addToast('Event deleted', 'success');
       setDeleteId(null);
-      await fetchAndBake('events');
+      
       fetchEvents();
     } catch (err) {
       console.error(err);
@@ -88,7 +88,12 @@ export default function AdminEvents() {
     <div className="space-y-8 pb-32">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900">Events</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">Events</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">Manage club meetings and activities</p>
         </div>
         <Button onClick={() => { setFormData({ type: 'Meeting', isPublic: false }); setIsFormOpen(true); }}>
@@ -113,7 +118,7 @@ export default function AdminEvents() {
           <tr key={ev.id}>
             <td className="px-6 py-4 font-medium text-gray-900">
               <div className="flex items-center gap-3">
-                {ev.coverImage ? <img src={ev.coverImage} className="w-8 h-8 rounded object-cover" /> : <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-400"><ImageIcon size={14}/></div>}
+                {ev.coverImage ? <img src={ev.coverImage} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-8 h-8 rounded object-cover" /> : <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-400"><ImageIcon size={14}/></div>}
                 {ev.title}
               </div>
             </td>

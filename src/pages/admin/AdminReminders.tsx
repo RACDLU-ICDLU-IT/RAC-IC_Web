@@ -1,14 +1,15 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, setDoc, deleteDoc, orderBy, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
 import { Bell, Pencil, Trash, AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 export default function AdminReminders() {
+  const { adminTenant: tenant } = useAdminTenant();
   const { user, profile } = useAuth();
   const [reminders, setReminders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,8 +21,8 @@ export default function AdminReminders() {
   const fetchReminders = async () => {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'reminders'), orderBy('dueDate', 'asc')));
-      setReminders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: snap } = await supabase.from('reminders').select('*').eq('tenant_id', tenant.id).order('due_date', { ascending: true });
+      setReminders(snap || []);
     } catch (err) {
       console.error(err);
       addToast('Failed to load reminders', 'error');
@@ -30,7 +31,7 @@ export default function AdminReminders() {
     }
   };
 
-  useEffect(() => { fetchReminders(); }, []);
+  useEffect(() => { fetchReminders(); }, [tenant.id]);
 
   const handleSave = async () => {
     if (!formData.title || !formData.dueDate) {
@@ -38,18 +39,19 @@ export default function AdminReminders() {
       return;
     }
     const isNew = !formData.id;
-    const docId = isNew ? doc(collection(db, 'reminders')).id : formData.id;
+    const docId = isNew ? crypto.randomUUID() : formData.id;
     try {
-      await setDoc(doc(db, 'reminders', docId), {
+      await supabase.from('reminders').upsert({
+        id: docId,
+        tenant_id: tenant.id,
         title: formData.title,
         description: formData.description || '',
-        dueDate: formData.dueDate,
-        targetRole: formData.targetRole || 'all members',
-        createdBy: user?.uid,
-        createdByName: profile?.name,
-        ...(isNew ? { createdAt: serverTimestamp() } : {}),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
+        due_date: formData.dueDate,
+        target_role: formData.targetRole || 'all members',
+        created_by: user?.id,
+        created_by_name: profile?.name,
+        ...(isNew ? { created_at: new Date().toISOString() } : {}),
+      }, { onConflict: 'id' });
       addToast('Reminder saved', 'success');
       setIsFormOpen(false);
       setFormData({});
@@ -62,7 +64,7 @@ export default function AdminReminders() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'reminders', deleteId));
+      await supabase.from('reminders').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
       addToast('Reminder deleted', 'success');
       setDeleteId(null);
       fetchReminders();
@@ -82,14 +84,19 @@ export default function AdminReminders() {
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent bg-white";
   const labelClass = "block text-sm font-medium text-gray-700 mb-1.5";
 
-  const activeReminders = reminders.filter(r => new Date(r.dueDate) >= new Date(new Date().toDateString()));
-  const expiredReminders = reminders.filter(r => new Date(r.dueDate) < new Date(new Date().toDateString()));
+  const activeReminders = reminders.filter(r => new Date(r.dueDate || r.due_date) >= new Date(new Date().toDateString()));
+  const expiredReminders = reminders.filter(r => new Date(r.dueDate || r.due_date) < new Date(new Date().toDateString()));
 
   return (
     <div className="space-y-8 pb-12">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900">Reminders</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">Reminders</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">Create and manage club-wide reminders for members.</p>
         </div>
         <Button onClick={() => { setFormData({ targetRole: 'all members' }); setIsFormOpen(true); }}>
@@ -118,7 +125,7 @@ export default function AdminReminders() {
             ) : (
               <div className="space-y-3">
                 {activeReminders.map(r => {
-                  const badge = getDueBadge(r.dueDate);
+                  const badge = getDueBadge(r.due_date || r.dueDate);
                   return (
                     <div key={r.id} className="bg-white rounded-xl border border-gray-100 p-5 flex items-start gap-4 group hover:border-gray-200 transition-colors shadow-sm">
                       <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-accent shrink-0 mt-0.5">
@@ -215,7 +222,7 @@ export default function AdminReminders() {
               className={inputClass}
             >
               <option value="all members">All Members</option>
-              <option value="officers only">Officers Only</option>
+              <option value="admins only">Admins Only</option>
             </select>
           </div>
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">

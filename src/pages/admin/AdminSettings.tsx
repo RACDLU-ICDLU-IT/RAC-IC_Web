@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
-import { useSettings } from '../../contexts/SettingsContext';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 export default function AdminSettings() {
-  const { settings } = useSettings();
   const [formData, setFormData] = useState({
     clubName: '',
     tagline: '',
@@ -30,27 +28,47 @@ export default function AdminSettings() {
     twitterUrl: '',
     youtubeUrl: '',
     linkedinUrl: '',
-    ...settings
   });
+  const { adminTenant: tenant } = useAdminTenant();
   const [isSaving, setIsSaving] = useState(false);
   const { addToast } = useToast();
+
+  // Load tenant specific settings
+  useEffect(() => {
+    const fetchSettings = async () => {
+      const { data } = await supabase.from('settings').select('*').eq('id', `${tenant.id}-global`).single();
+      if (data && data.data) {
+        setFormData(prev => ({ ...prev, ...data.data }));
+      }
+    };
+    fetchSettings();
+  }, [tenant.id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     setFormData({ ...formData, [name]: type === 'number' ? Number(value) : value });
   };
 
-  const handleSave = async () => {
+  const handleSave = async (data = formData) => {
     setIsSaving(true);
     try {
-      await setDoc(doc(db, 'settings', 'global'), formData, { merge: true });
+      const { error } = await supabase.from('settings').upsert({ id: `${tenant.id}-global`, data: data }, { onConflict: 'id' });
+      if (error) throw error;
       addToast('Settings saved successfully', 'success');
+      // Intentionally not reloading context to avoid overriding admin state, 
+      // but the change is saved for public site
     } catch (error) {
       console.error(error);
       addToast('Failed to save settings', 'error');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleLogoUpload = async (url: string) => {
+    const updated = { ...formData, logoUrl: url };
+    setFormData(updated);
+    await handleSave(updated);
   };
 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors bg-white placeholder:text-gray-400";
@@ -61,7 +79,12 @@ export default function AdminSettings() {
     <div className="space-y-8 pb-12">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900">Global Settings</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">Global Settings</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">Manage your club's global information and branding.</p>
         </div>
       </div>
@@ -71,15 +94,25 @@ export default function AdminSettings() {
           
           <div>
              <label className={labelClass}>Club Logo</label>
+             {formData.logoUrl && (
+               <div className="mb-3">
+                 <img
+                   src={formData.logoUrl}
+                   alt="Club logo"
+                   className="h-16 w-16 object-contain rounded-lg border border-gray-200 bg-gray-50 p-1"
+                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                 />
+               </div>
+             )}
              <div className="w-48">
                <CloudinaryUpload 
-                 onUpload={(url) => setFormData({ ...formData, logoUrl: url })} 
+                 onUpload={handleLogoUpload} 
                  currentUrl={formData.logoUrl} 
                  aspectRatio="square" 
                  label="Upload Logo" 
                />
              </div>
-             <p className="text-xs text-gray-500 mt-2">Recommended: Square PNG or SVG with transparent background.</p>
+             <p className="text-xs text-gray-500 mt-2">Logo is auto-saved after upload. Recommended: Square PNG or SVG with transparent background.</p>
           </div>
 
           <div className={sectionClass}>
@@ -187,7 +220,7 @@ export default function AdminSettings() {
           </div>
           
           <div className="pt-8 flex justify-end">
-            <Button onClick={handleSave} disabled={isSaving}>
+            <Button onClick={() => handleSave()} disabled={isSaving}>
               {isSaving ? 'Saving...' : 'Save Settings'}
             </Button>
           </div>

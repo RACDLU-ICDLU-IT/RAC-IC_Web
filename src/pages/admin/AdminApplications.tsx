@@ -1,14 +1,15 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { Table } from '../../components/ui/Table';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
 import { UserCheck, CheckCircle2, XCircle, Eye, Loader2 } from 'lucide-react';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 export default function AdminApplications() {
+  const { adminTenant: tenant } = useAdminTenant();
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('pending');
@@ -23,11 +24,11 @@ export default function AdminApplications() {
   const fetchApplications = async () => {
     setLoading(true);
     try {
-      const q = query(collection(db, 'applications'));
-      const snap = await getDocs(q);
-      const apps = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const q = supabase.from('applications').select('*').eq('tenant_id', tenant.id);
+      const { data: snap } = await q;
+      const apps = snap || [];
       // sort latest first
-      apps.sort((a: any, b: any) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+      apps.sort((a: any, b: any) => (b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt||0).getTime()) - (a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt||0).getTime()));
       setApplications(apps);
     } catch (err) {
       console.error(err);
@@ -39,30 +40,29 @@ export default function AdminApplications() {
 
   useEffect(() => {
     fetchApplications();
-  }, []);
+  }, [tenant.id]);
 
   const handleApprove = async () => {
     if (!confirmApprove) return;
     setActionLoading(true);
     try {
-      // 1. Create member profile
-      // We know ID is confirmApprove.id
-      const memberId = `IC-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`;
-      await setDoc(doc(db, 'users', confirmApprove.id), {
-        name: confirmApprove.name,
-        email: confirmApprove.email,
-        phone: confirmApprove.phone || '',
-        dob: confirmApprove.dob || '',
-        school: confirmApprove.school || '',
-        grade: confirmApprove.grade || '',
-        role: 'member',
-        status: 'active',
-        memberId,
-        createdAt: serverTimestamp()
-      });
-      // 2. Update application status
-      await updateDoc(doc(db, 'applications', confirmApprove.id), { status: 'approved' });
-      addToast('Application approved. Member profile created.', 'success');
+      const { data: existingUsers } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', confirmApprove.email)
+        .eq('tenant_id', tenant.id);
+        
+      const existingUser = existingUsers && existingUsers.length > 0 ? existingUsers[0] : null;
+
+      if (existingUser) {
+        await supabase.from('users').update({ status: 'active', role: 'member' }).eq('id', existingUser.id).eq('tenant_id', tenant.id);
+        addToast('Application approved. Member profile updated.', 'success');
+      } else {
+        addToast('Application approved. Ask the member to sign up at /login — their account will be activated automatically.', 'success');
+      }
+
+      await supabase.from('applications').update({ status: 'approved' }).eq('id', confirmApprove.id).eq('tenant_id', tenant.id);
+      
       setConfirmApprove(null);
       fetchApplications();
     } catch (err) {
@@ -77,10 +77,10 @@ export default function AdminApplications() {
     if (!confirmReject) return;
     setActionLoading(true);
     try {
-      await updateDoc(doc(db, 'applications', confirmReject.id), { 
+      await supabase.from('applications').update({ 
         status: 'rejected',
         rejectionNote
-      });
+      }).eq('id', confirmReject.id).eq('tenant_id', tenant.id);
       addToast('Application rejected.', 'success');
       setConfirmReject(null);
       setRejectionNote('');
@@ -95,9 +95,11 @@ export default function AdminApplications() {
 
   const calculateAge = (dob: string) => {
     if (!dob) return 0;
-    const birthDate = new Date(dob);
-    const difference = Date.now() - birthDate.getTime();
-    const age = new Date(difference).getFullYear() - 1970;
+    const birth = new Date(dob);
+    const now = new Date();
+    let age = now.getFullYear() - birth.getFullYear();
+    const m = now.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
     return age;
   };
 
@@ -109,7 +111,12 @@ export default function AdminApplications() {
     <div className="space-y-8 pb-12">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-heading font-bold text-gray-900">Applications</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">Applications</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
           {pendingCount > 0 && (
             <span className="flex h-6 items-center px-2.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold animate-pulse">
               {pendingCount} Pending
@@ -146,7 +153,8 @@ export default function AdminApplications() {
         emptyIcon={<UserCheck size={48} />}
         renderRow={(app, i) => {
           const age = calculateAge(app.dob);
-          const validAge = age >= 12 && age <= 18;
+          const validAge = tenant.id === 'racdlu' ? age >= 18 && age <= 30 : age >= 12 && age <= 18;
+          const rangeLabel = tenant.id === 'racdlu' ? '18-30' : '12-18';
           return (
             <tr key={app.id}>
               <td className="px-6 py-4 font-medium text-gray-900">{app.name}</td>
@@ -157,12 +165,14 @@ export default function AdminApplications() {
                   {validAge ? (
                     <CheckCircle2 size={14} className="text-green-500" />
                   ) : (
-                    <span title="Outside 12-18 range"><XCircle size={14} className="text-red-500" /></span>
+                    <span title={`Outside ${rangeLabel} range`}><XCircle size={14} className="text-red-500" /></span>
                   )}
                 </div>
               </td>
               <td className="px-6 py-4 text-gray-500">{app.school}</td>
-              <td className="px-6 py-4 text-gray-500">{app.createdAt?.toDate().toLocaleDateString() || 'N/A'}</td>
+              <td className="px-6 py-4 text-gray-500">
+                {app.createdAt ? new Date(app.createdAt).toLocaleDateString() : 'N/A'}
+              </td>
               <td className="px-6 py-4">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                   app.status === 'approved' ? 'bg-green-100 text-green-800' :

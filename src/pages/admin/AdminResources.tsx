@@ -1,6 +1,5 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, setDoc, deleteDoc, orderBy } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { Table } from '../../components/ui/Table';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
@@ -8,8 +7,10 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
 import { FolderOpen, Pencil, Trash, FileText, Link as LinkIcon, Image as ImageIcon, File } from 'lucide-react';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 export default function AdminResources() {
+  const { adminTenant: tenant } = useAdminTenant();
   const [resources, setResources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -22,8 +23,8 @@ export default function AdminResources() {
   const fetchResources = async () => {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'resources'), orderBy('createdAt', 'desc')));
-      setResources(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: snap } = await supabase.from('resources').select('*').eq('tenant_id', tenant.id).order('createdAt', { ascending: false });
+      setResources(snap || []);
     } catch (err) {
       console.error(err);
       addToast('Failed to load resources', 'error');
@@ -34,14 +35,14 @@ export default function AdminResources() {
 
   useEffect(() => {
     fetchResources();
-  }, []);
+  }, [tenant.id]);
 
   const handleSave = async () => {
     const isNew = !formData.id;
-    const docId = isNew ? doc(collection(db, 'resources')).id : formData.id;
+    const docId = isNew ? crypto.randomUUID() : formData.id;
     
     try {
-      await setDoc(doc(db, 'resources', docId), { ...formData, createdAt: formData.createdAt || new Date() }, { merge: true });
+      await supabase.from('resources').upsert({ id: docId, tenant_id: tenant.id, ...{ ...formData, createdAt: formData.createdAt || new Date().toISOString() } }, { onConflict: 'id' });
       addToast('Resource saved', 'success');
       setIsFormOpen(false);
       fetchResources();
@@ -54,7 +55,7 @@ export default function AdminResources() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'resources', deleteId));
+      await supabase.from('resources').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
       addToast('Resource deleted', 'success');
       setDeleteId(null);
       fetchResources();
@@ -70,7 +71,7 @@ export default function AdminResources() {
   const getIcon = (type: string, url: string = '') => {
     if (type === 'Link') return <LinkIcon className="text-blue-500" size={20} />;
     if (url.endsWith('.pdf')) return <FileText className="text-red-500" size={20} />;
-    if (url.match(/\\.(jpeg|jpg|gif|png)$/i)) return <ImageIcon className="text-green-500" size={20} />;
+    if (url.match(/\.(jpeg|jpg|gif|png)$/i)) return <ImageIcon className="text-green-500" size={20} />;
     return <File className="text-gray-500" size={20} />;
   };
 
@@ -94,7 +95,12 @@ export default function AdminResources() {
     <div className="space-y-8 pb-32">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900">Resources</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">Resources</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">Manage files and links for members</p>
         </div>
         <div className="flex items-center gap-3">

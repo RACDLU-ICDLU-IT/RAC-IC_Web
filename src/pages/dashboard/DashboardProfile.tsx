@@ -1,30 +1,32 @@
+import { supabase } from '../../supabase';
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/useToast';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
 import { Save, Loader2, Info } from 'lucide-react';
+import { useTenant } from '../../hooks/useTenant';
 
 export default function DashboardProfile() {
   const { profile, user } = useAuth();
+  const { tenant } = useTenant();
   const { addToast } = useToast();
   const [formData, setFormData] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
-    getDoc(doc(db, 'users', user.uid)).then(snap => {
-      if (snap.exists()) {
-        setFormData(snap.data());
-      }
-      setLoading(false);
-    }).catch(err => {
-      console.error(err);
-      setLoading(false);
-    });
-  }, [user]);
+    const userId = user?.id;
+    if (!userId) return;
+    supabase.from('users').select('*').eq('id', userId).eq('tenant_id', tenant.id).single().then(({ data }) => {
+        if (data) {
+          setFormData(data);
+        }
+        setLoading(false);
+      }, err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, [user, tenant.id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -35,10 +37,10 @@ export default function DashboardProfile() {
     if (!user) return;
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
+      await supabase.from('users').update({
         ...formData,
         updatedAt: new Date().toISOString()
-      });
+      }).eq('id', user.id).eq('tenant_id', tenant.id);
       addToast('Profile updated successfully!', 'success');
     } catch (err) {
       console.error(err);

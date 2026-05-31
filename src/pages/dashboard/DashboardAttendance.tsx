@@ -1,29 +1,29 @@
+import { supabase } from '../../supabase';
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTenant } from '../../hooks/useTenant';
 import { CheckCircle2, Clock, XCircle, CalendarDays, BarChart, FileQuestion, MinusCircle } from 'lucide-react';
 
 export default function DashboardAttendance() {
   const { user } = useAuth();
+  const { tenant } = useTenant();
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    const userId = user?.id;
+    if (!userId) return;
 
     const fetchData = async () => {
       try {
         // Fetch this member's attendance records (no orderBy to avoid index requirement)
-        const attSnap = await getDocs(
-          query(collection(db, 'attendance'), where('userId', '==', user.uid))
-        );
-        const attRecords = attSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+        const { data: attSnap } = await supabase.from('attendance').select('*').eq('userId', userId).eq('tenant_id', tenant.id);
+        const attRecords = attSnap || [];
 
         // Fetch all events to join names and dates
-        const eventsSnap = await getDocs(collection(db, 'events'));
+        const { data: eventsSnap } = await supabase.from('events').select('*').eq('tenant_id', tenant.id);
         const eventsMap: Record<string, any> = {};
-        eventsSnap.docs.forEach(d => { eventsMap[d.id] = d.data(); });
+        (eventsSnap || []).forEach((d: any) => { eventsMap[d.id] = d; });
 
         // Enrich records with event data
         const enriched = attRecords.map((r: any) => ({
@@ -44,7 +44,7 @@ export default function DashboardAttendance() {
     };
 
     fetchData();
-  }, [user]);
+  }, [user, tenant.id]);
 
   if (loading) {
     return <div className="p-12 flex justify-center"><div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin" /></div>;
@@ -133,7 +133,7 @@ export default function DashboardAttendance() {
           <div className="p-16 text-center text-gray-400">
             <CalendarDays size={48} className="mx-auto mb-4 opacity-30" />
             <p className="font-medium">No attendance records yet.</p>
-            <p className="text-sm mt-1">Records appear here after an officer marks attendance.</p>
+            <p className="text-sm mt-1">Records appear here after an admin marks attendance.</p>
           </div>
         ) : (
           <div className="divide-y divide-gray-50">

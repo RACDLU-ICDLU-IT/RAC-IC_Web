@@ -8,7 +8,7 @@ export const ProtectedRoute = ({ requireAdmin = false }: { requireAdmin?: boolea
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F7F5F0]">
+      <div className="min-h-screen flex items-center justify-center bg-[var(--color-page-bg)]">
         <Loader2 className="w-10 h-10 text-accent animate-spin" />
       </div>
     );
@@ -22,7 +22,7 @@ export const ProtectedRoute = ({ requireAdmin = false }: { requireAdmin?: boolea
     return <Navigate to="/join" replace />;
   }
 
-  if (requireAdmin && profile?.role !== 'officer' && profile?.role !== 'admin') {
+  if (requireAdmin && profile?.role !== 'admin' && profile?.role !== 'master_admin') {
     return <Navigate to="/dashboard" replace />;
   }
 

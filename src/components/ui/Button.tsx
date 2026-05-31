@@ -7,7 +7,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'outline';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'outline' | 'outline-dark';
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -16,10 +16,22 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const baseStyles = 'inline-flex items-center justify-center font-medium transition-all duration-300 focus:outline-none disabled:opacity-50 disabled:pointer-events-none rounded-[var(--radius-button)]';
     
     const variants = {
-      primary: 'bg-accent text-primary hover:bg-white hover:text-primary shadow-lg',
-      secondary: 'bg-white text-primary hover:bg-gray-100',
-      outline: 'border-2 border-white/20 text-white hover:bg-white/10',
-      ghost: 'text-white hover:text-accent group relative overflow-hidden',
+      // Pink bg, white text — works on both light and dark page backgrounds
+      primary: 'bg-[var(--color-accent)] text-white hover:opacity-90 shadow-lg',
+
+      // White bg, dark text — for use on colored/dark sections
+      secondary: 'bg-white text-gray-900 hover:bg-gray-100',
+
+      // For use ON DARK/PINK backgrounds (hero, footer, join page)
+      // White border + white text, works on pink or dark bg
+      outline: 'border-2 border-white/30 text-white hover:bg-white/10',
+
+      // For use ON WHITE/LIGHT backgrounds (cards, content sections)
+      // Pink border + pink text
+      'outline-dark': 'border-2 border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-white',
+
+      // For use ON DARK/PINK backgrounds only
+      ghost: 'text-white hover:text-[var(--color-accent)]',
     };
 
     const sizes = {

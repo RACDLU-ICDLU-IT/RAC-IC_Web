@@ -1,7 +1,5 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, setDoc, deleteDoc, orderBy } from 'firebase/firestore';
-import { db } from '../../firebase';
-import { fetchAndBake } from '../../utils/bake';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -10,8 +8,11 @@ import { Pencil, Trash, Newspaper } from 'lucide-react';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
 import { useAuth } from '../../contexts/AuthContext';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 export default function AdminNews() {
+  const { adminTenant: tenant } = useAdminTenant();
   const { profile } = useAuth();
   const [articles, setArticles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,8 +27,8 @@ export default function AdminNews() {
   const fetchArticles = async () => {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'news'), orderBy('createdAt', 'desc')));
-      setArticles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: snap } = await supabase.from('news').select('*').eq('tenant_id', tenant.id).order('createdAt', { ascending: false });
+      setArticles(snap || []);
     } catch (err) {
       console.error(err);
       addToast('Failed to load news', 'error');
@@ -38,23 +39,26 @@ export default function AdminNews() {
 
   useEffect(() => {
     fetchArticles();
-  }, []);
+  }, [tenant.id]);
 
   const handleSave = async () => {
     const isNew = !formData.id;
-    const docId = isNew ? doc(collection(db, 'news')).id : formData.id;
+    const docId = isNew ? crypto.randomUUID() : formData.id;
     
+    const slug = formData.slug || formData.title?.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     const dataToSave = { 
       ...formData, 
-      createdAt: formData.createdAt || new Date(),
-      publishedAt: formData.status === 'Published' && !formData.publishedAt ? new Date() : formData.publishedAt
+      slug,
+      createdAt: formData.createdAt || new Date().toISOString(),
+      publishedAt: formData.status === 'Published' && !formData.publishedAt ? new Date().toISOString() : formData.publishedAt,
+      tenant_id: tenant.id
     };
     
     try {
-      await setDoc(doc(db, 'news', docId), dataToSave, { merge: true });
+      await supabase.from('news').upsert({ id: docId, ...dataToSave }, { onConflict: 'id' });
       addToast('Article saved', 'success');
       setIsFormOpen(false);
-      await fetchAndBake('news');
+      
       fetchArticles();
     } catch (err) {
       console.error(err);
@@ -65,10 +69,10 @@ export default function AdminNews() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'news', deleteId));
+      await supabase.from('news').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
       addToast('Article deleted', 'success');
       setDeleteId(null);
-      await fetchAndBake('news');
+      
       fetchArticles();
     } catch (err) { addToast('Failed to delete', 'error'); }
   };
@@ -91,7 +95,7 @@ export default function AdminNews() {
   const labelClass = "block text-sm font-medium text-gray-700 mb-1.5";
 
   const renderPreview = () => {
-    try { return { __html: marked(formData.body || '*No content*') }; } 
+    try { return { __html: DOMPurify.sanitize(marked(formData.body || '*No content*') as string) }; } 
     catch (e) { return { __html: '' }; }
   };
 
@@ -101,7 +105,12 @@ export default function AdminNews() {
     <div className="space-y-8 pb-32">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900">News Articles</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">News Articles</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">Publish updates to the public site</p>
         </div>
         <div className="flex items-center gap-4">
@@ -132,7 +141,7 @@ export default function AdminNews() {
           {filtered.map(a => (
             <div key={a.id} className="bg-white rounded-xl shadow-sm border border-gray-100 flex overflow-hidden">
                {a.coverImage ? (
-                 <img src={a.coverImage} className="w-1/3 object-cover bg-gray-200 shrink-0" />
+                 <img src={a.coverImage} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-1/3 object-cover bg-gray-200 shrink-0" />
                ) : (
                  <div className="w-1/3 bg-gray-100 flex items-center justify-center text-gray-300 shrink-0"><Newspaper size={32}/></div>
                )}
@@ -180,6 +189,7 @@ export default function AdminNews() {
 
             <div className="grid grid-cols-2 gap-4">
                <div><label className={labelClass}>Author Name</label><input value={formData.author || ''} onChange={e => setFormData({...formData, author: e.target.value})} className={inputClass} /></div>
+               <div><label className={labelClass}>Custom URL Slug</label><input value={formData.slug || ''} placeholder="e.g. key-project-update" onChange={e => setFormData({...formData, slug: e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')})} className={inputClass} /></div>
             </div>
 
             <div>
@@ -209,7 +219,7 @@ export default function AdminNews() {
           <div className="hidden lg:flex flex-col border-l border-gray-100 pl-8 overflow-y-auto">
              <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Live Preview</div>
              <div className="prose prose-sm prose-primary max-w-none">
-                {formData.coverImage && <img src={formData.coverImage} className="w-full rounded-lg mb-6" />}
+                {formData.coverImage && <img src={formData.coverImage} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-full rounded-lg mb-6" />}
                 <h1 className="mb-2">{formData.title || 'Untitled Article'}</h1>
                 <p className="text-gray-500 mb-8"><small>By {formData.author} • {formData.category}</small></p>
                 <div dangerouslySetInnerHTML={renderPreview()} />

@@ -1,8 +1,9 @@
+import { supabase } from '../supabase';
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
 import FeaturedProjects from '../components/FeaturedProjects';
 import { Link } from 'react-router-dom';
+import { useTenant } from '../hooks/useTenant';
+import SEOHead from '../components/SEOHead';
 
 function getStatusStyle(status: string) {
   switch(status) {
@@ -14,20 +15,21 @@ function getStatusStyle(status: string) {
 }
 
 export default function Projects() {
+  const { tenant } = useTenant();
   const [allProjects, setAllProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('All');
 
   useEffect(() => {
-    getDocs(query(collection(db, 'projects'), orderBy('startDate', 'desc')))
-      .then(snap => {
-        setAllProjects(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    supabase.from('projects').select('*').eq('tenant_id', tenant.id).order('startDate', { ascending: false })
+      .then(({ data: snap }) => {
+        setAllProjects(snap || []);
         setLoading(false);
-      }).catch(err => {
+      }, err => {
         console.error(err);
         setLoading(false);
       });
-  }, []);
+  }, [tenant.id]);
 
   const categories = ['All', ...Array.from(new Set(allProjects.map(p => p.type).filter(Boolean)))];
 
@@ -35,11 +37,19 @@ export default function Projects() {
     ? allProjects 
     : allProjects.filter(p => p.type === activeTab);
 
+  const isLight = tenant.brand.primaryColor === '#FFFFFF';
+  const headingColor = isLight ? 'text-[var(--color-accent)]' : 'text-[var(--color-primary)]';
+
   return (
-    <div className="bg-[#F7F5F0] min-h-screen pt-24 pb-32">
+    <div className="bg-[var(--color-page-bg)] min-h-screen pt-24 pb-32">
+      <SEOHead 
+        title="Our Projects"
+        description={`Explore the community service projects and initiatives undertaken by the ${tenant.fullName} in Dhaka.`}
+        canonicalPath="/projects"
+      />
       {/* Header */}
       <section className="py-16 px-6 max-w-7xl mx-auto text-center">
-        <h1 className="text-5xl md:text-7xl font-heading font-bold text-primary mb-6">Our Work</h1>
+        <h1 className={`text-5xl md:text-7xl font-heading font-bold ${headingColor} mb-6`}>Our Work</h1>
         <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-16">Creating lasting change through targeted action in our local communities and around the world.</p>
         
         {/* Filter Pills */}

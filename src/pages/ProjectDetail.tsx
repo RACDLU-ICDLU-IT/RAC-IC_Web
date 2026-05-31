@@ -1,8 +1,9 @@
+import { supabase } from '../supabase';
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
+import { useTenant } from '../hooks/useTenant';
 
 function getStatusStyle(status: string) {
   switch(status) {
@@ -15,20 +16,23 @@ function getStatusStyle(status: string) {
 
 export default function ProjectDetail() {
   const { id } = useParams();
+  const { tenant } = useTenant();
   const [project, setProject] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    getDoc(doc(db, 'projects', id)).then(snap => {
-      if (snap.exists()) setProject({ id: snap.id, ...snap.data() });
-      setLoading(false);
-    }).catch(err => {
-      console.error(err);
-      setLoading(false);
-    });
-  }, [id]);
+    supabase.from('projects').select('*').eq('id', id).eq('tenant_id', tenant.id).single().then(({ data }) => {
+        if (data) {
+          setProject(data);
+        }
+        setLoading(false);
+      }, err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, [id, tenant.id]);
 
   if (loading) {
     return <div className="min-h-screen pt-32 pb-24 flex items-center justify-center">
@@ -75,7 +79,7 @@ export default function ProjectDetail() {
         <div className="max-w-3xl mx-auto px-6 py-16">
           <div 
             className="prose prose-lg max-w-none prose-headings:font-heading prose-headings:font-bold prose-headings:text-primary prose-a:text-accent prose-a:no-underline hover:prose-a:underline prose-p:text-gray-700 prose-p:leading-relaxed prose-img:rounded-xl"
-            dangerouslySetInnerHTML={{ __html: marked(project.description || '') }} 
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked(project.description || '') as string) }} 
           />
         </div>
 

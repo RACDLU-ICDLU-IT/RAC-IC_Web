@@ -1,14 +1,14 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, setDoc, writeBatch, orderBy, where, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../contexts/AuthContext';
 import { Download, CalendarPlus, Search, List, CalendarDays } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
-import { fetchAndBake } from '../../utils/bake';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 export default function AdminAttendance() {
+  const { adminTenant: tenant } = useAdminTenant();
   const { user } = useAuth();
   const [mode, setMode] = useState<'mark'|'history'>('mark');
   const [events, setEvents] = useState<any[]>([]);
@@ -33,11 +33,11 @@ export default function AdminAttendance() {
   const loadBaseData = async () => {
     setLoading(true);
     try {
-      const eSnap = await getDocs(query(collection(db, 'events'), orderBy('date', 'desc')));
-      setEvents(eSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: eSnap } = await supabase.from('events').select('*').eq('tenant_id', tenant.id).order('date', { ascending: false });
+      setEvents(eSnap || []);
       
-      const mSnap = await getDocs(query(collection(db, 'users'), where('status', '==', 'active')));
-      setActiveMembers(mSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: mSnap } = await supabase.from('users').select('*').eq('tenant_id', tenant.id).eq('status', 'active');
+      setActiveMembers(mSnap || []);
     } catch(err) {
       console.error(err);
       addToast('Failed to load data', 'error');
@@ -48,7 +48,7 @@ export default function AdminAttendance() {
 
   useEffect(() => {
     loadBaseData();
-  }, []);
+  }, [tenant.id]);
 
   const loadEventAttendance = async (eventId: string, setSheet: boolean = true) => {
     if (!eventId) {
@@ -56,8 +56,8 @@ export default function AdminAttendance() {
       return [];
     }
     try {
-      const snap = await getDocs(query(collection(db, 'attendance'), where('eventId', '==', eventId)));
-      const records = snap.docs.map(d => d.data());
+      const { data: snap } = await supabase.from('attendance').select('*').eq('tenant_id', tenant.id).eq('eventId', eventId);
+      const records = snap || [];
       
       if (setSheet) {
         const sheet: Record<string, string> = {};
@@ -76,35 +76,37 @@ export default function AdminAttendance() {
     if (mode === 'mark') {
       loadEventAttendance(selectedEventId, true);
     }
-  }, [selectedEventId, mode]);
+  }, [selectedEventId, mode, tenant.id]);
 
   useEffect(() => {
     if (mode === 'history' && historyEventId) {
       loadEventAttendance(historyEventId, false).then(recs => setHistoryRecords(recs));
     }
-  }, [historyEventId, mode]);
+  }, [historyEventId, mode, tenant.id]);
 
   const handleSaveAttendance = async () => {
     if (!selectedEventId) return;
     setIsSaving(true);
     try {
-      const batch = writeBatch(db);
+      const batch: any[] = [];
       const eventDetails = events.find(e => e.id === selectedEventId);
       Object.entries(attendanceSheet).forEach(([userId, status]) => {
         if (!status) return;
-        const ref = doc(db, 'attendance', `${selectedEventId}_${userId}`);
-        batch.set(ref, {
+        const recordId = `${selectedEventId}_${userId}`;
+        batch.push(supabase.from('attendance').upsert({
+          id: recordId,
+          tenant_id: tenant.id,
           userId,
           eventId: selectedEventId,
           eventTitle: eventDetails?.title || 'Unknown Event',
           eventDate: eventDetails?.date || '',
           eventType: eventDetails?.type || '',
           status,
-          markedAt: serverTimestamp(),
-          markedBy: user?.uid
-        });
+          markedAt: new Date().toISOString(),
+          markedBy: user?.id
+        }, { onConflict: 'id, tenant_id' }));
       });
-      await batch.commit();
+      await Promise.all(batch);
       addToast('Attendance saved', 'success');
     } catch (err) {
       console.error(err);
@@ -134,23 +136,23 @@ export default function AdminAttendance() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Attendance_${ev?.title?.replace(/\\s+/g, '_')}.csv`;
+    a.download = `Attendance_${ev?.title?.replace(/\s+/g, '_')}.csv`;
     a.click();
   };
 
   const handleQuickAddEvent = async () => {
     if (!quickEventTitle || !quickEventDate) return;
     try {
-      const pDoc = doc(collection(db, 'events'));
-      await setDoc(pDoc, {
+      const pDoc = { table: 'events', id: crypto.randomUUID() };
+      await supabase.from(pDoc.table).upsert({ id: pDoc.id, tenant_id: tenant.id, ...{
         title: quickEventTitle,
         date: quickEventDate,
         type: 'Meeting',
         isPublic: false,
-        createdAt: serverTimestamp()
-      });
+        createdAt: new Date().toISOString()
+      } }, { onConflict: 'id' });
       addToast('Event created quickly', 'success');
-      await fetchAndBake('events');
+      
       await loadBaseData();
       setSelectedEventId(pDoc.id);
       setIsQuickAddOpen(false);
@@ -161,8 +163,8 @@ export default function AdminAttendance() {
 
   const exportSummary = async () => {
     try {
-       const snap = await getDocs(query(collection(db, 'attendance')));
-       const allRecs = snap.docs.map(d => d.data());
+       const { data: snap } = await supabase.from('attendance').select('*').eq('tenant_id', tenant.id);
+       const allRecs = snap || [];
        
        const userTotals: Record<string, { present: number, total: number }> = {};
        
@@ -205,7 +207,12 @@ export default function AdminAttendance() {
     <div className="space-y-8 pb-32">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900">Attendance</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">Attendance</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">Track member participation</p>
         </div>
       </div>

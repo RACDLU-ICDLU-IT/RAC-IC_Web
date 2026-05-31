@@ -6,10 +6,10 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import { ThemeProvider } from './contexts/ThemeContext';
-import { SettingsProvider } from './contexts/SettingsContext';
+import { TenantProvider } from './contexts/TenantContext';
 import { ToastProvider } from './hooks/useToast';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Layouts
 import MainLayout from './components/layout/MainLayout';
@@ -58,14 +58,24 @@ import AdminPages from './pages/admin/AdminPages';
 import AdminContactInbox from './pages/admin/AdminContactInbox';
 import AdminTheme from './pages/admin/AdminTheme';
 import AdminSponsors from './pages/admin/AdminSponsors';
+import AdminForms from './pages/admin/AdminForms';
+import AdminFormBuilder from './pages/admin/AdminFormBuilder';
+import AdminFormResponses from './pages/admin/AdminFormResponses';
+
+// Public Form Submitter Page
+import PublicForm from './pages/public/PublicForm';
+
+import { AdminTenantProvider } from './contexts/AdminTenantContext';
+import AdminDues from './pages/admin/AdminDues';
+import MemberDues from './pages/dashboard/MemberDues';
 
 export default function App() {
   return (
     <AuthProvider>
-      <ThemeProvider>
-        <SettingsProvider>
-          <ToastProvider>
-            <BrowserRouter>
+      <TenantProvider>
+        <ToastProvider>
+          <BrowserRouter>
+              <ErrorBoundary>
               <Routes>
                 {/* Public Routes with MainLayout */}
                 <Route element={<MainLayout />}>
@@ -95,16 +105,18 @@ export default function App() {
                     <Route path="reminders" element={<DashboardReminders />} />
                     <Route path="announcements" element={<DashboardAnnouncements />} />
                     <Route path="resources" element={<DashboardResources />} />
+                    <Route path="dues" element={<MemberDues />} />
                   </Route>
                 </Route>
 
                 {/* Secure Admin Routes */}
-                <Route element={<ProtectedRoute requireAdmin />}>
+                <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin /></AdminTenantProvider>}>
                   <Route path="/admin" element={<DashboardLayout isAdminMode />}>
                     <Route index element={<AdminOverview />} />
                     <Route path="members" element={<AdminMembers />} />
                     <Route path="applications" element={<AdminApplications />} />
                     <Route path="attendance" element={<AdminAttendance />} />
+                    <Route path="dues" element={<AdminDues />} />
                     <Route path="events" element={<AdminEvents />} />
                     <Route path="projects" element={<AdminProjects />} />
                     <Route path="board" element={<AdminBoard />} />
@@ -118,13 +130,21 @@ export default function App() {
                     <Route path="sponsors" element={<AdminSponsors />} />
                     <Route path="theme" element={<AdminTheme />} />
                     <Route path="settings" element={<AdminSettings />} />
+                    
+                    {/* Forms management system */}
+                    <Route path="forms" element={<AdminForms />} />
+                    <Route path="forms/:id/edit" element={<AdminFormBuilder />} />
+                    <Route path="forms/:id/responses" element={<AdminFormResponses />} />
                   </Route>
                 </Route>
+
+                {/* Public Form Submission Screen */}
+                <Route path="/forms/:slug" element={<PublicForm />} />
               </Routes>
-            </BrowserRouter>
-          </ToastProvider>
-        </SettingsProvider>
-      </ThemeProvider>
+              </ErrorBoundary>
+          </BrowserRouter>
+        </ToastProvider>
+      </TenantProvider>
     </AuthProvider>
   );
 }

@@ -1,3 +1,4 @@
+import { supabase } from '../supabase';
 import React, { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -7,8 +8,8 @@ import MarqueeTicker from '../components/MarqueeTicker';
 import { Link } from 'react-router-dom';
 import ScrollAnimatedNumber from '../components/ScrollAnimatedNumber';
 import FeaturedProjects from '../components/FeaturedProjects';
-import { collection, query, where, orderBy, limit, getDocs, doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { useTenant } from '../hooks/useTenant';
+import SEOHead from '../components/SEOHead';
 import imgGallery1 from '../assets/images/regenerated_image_1777783191084.jpg';
 import imgGallery2 from '../assets/images/regenerated_image_1777783192770.jpg';
 import imgGallery3 from '../assets/images/regenerated_image_1777783183004.jpg';
@@ -30,20 +31,33 @@ const defaultPhotos = [
 gsap.registerPlugin(ScrollTrigger);
 
 export default function Home() {
+  const { tenant, settings } = useTenant();
   const heroRef = useRef<HTMLDivElement>(null);
   const headlineRef = useRef<HTMLHeadingElement>(null);
   
   const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
   const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  
+  const defaultHeroTitle = tenant.brand.primaryColor === '#FFFFFF' 
+    ? 'Fellowship\nThrough Service.' 
+    : 'Service\nAbove Self.';
+    
+  const defaultMissionText = tenant.brand.primaryColor === '#FFFFFF'
+    ? 'We are young professionals united by fellowship, leadership, and service. Together, we build communities and create lasting change across Bangladesh and beyond.'
+    : 'We are a generation of action. Bridging continents, uplifting communities, and proving that youth can inspire global change.';
+
   const [content, setContent] = useState<any>({
-    homeHeroTitle: 'Service\nAbove Self.',
-    homeHeroSubtitle: 'INTERACT CLUB OF DHAKA LUMINOUS — District 64',
-    homeMissionText: 'We are a generation of action. Bridging continents, uplifting communities, and proving that youth can inspire global change.',
+    homeHeroTitle: defaultHeroTitle,
+    homeHeroSubtitle: `${tenant.fullName.toUpperCase()} — ${tenant.district}`,
+    homeMissionText: defaultMissionText,
     homeStatMembers: 120,
     homeStatProjects: 45,
     homeStatHours: 1000,
   });
+
+  const isLight = tenant.brand.primaryColor === '#FFFFFF';
+  const headingColor = isLight ? 'text-[var(--color-accent)]' : 'text-[var(--color-primary)]';
 
   useEffect(() => {
     if (!headlineRef.current) return;
@@ -64,7 +78,7 @@ export default function Home() {
     return () => {
       split.revert();
     };
-  }, []);
+  }, [content.homeHeroTitle]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -72,16 +86,22 @@ export default function Home() {
         const today = new Date().toISOString().split('T')[0];
         
         // Fetch up to 3 upcoming public events
-        const eventsSnap = await getDocs(
-          query(collection(db, 'events'), where('isPublic', '==', true), where('date', '>=', today), orderBy('date', 'asc'), limit(3))
-        );
-        setUpcomingEvents(eventsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const { data: eventsSnap } = await supabase.from('events')
+          .select('*')
+          .eq('tenant_id', tenant.id)
+          .eq('isPublic', true)
+          .gte('date', today)
+          .order('date', { ascending: true })
+          .limit(3);
+        setUpcomingEvents(eventsSnap || []);
         
         // Fetch gallery photos
-        const gallerySnap = await getDocs(
-          query(collection(db, 'gallery'), orderBy('order', 'asc'))
-        );
-        const fetchedPhotos = gallerySnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const { data: gallerySnap } = await supabase.from('gallery')
+          .select('*')
+          .eq('tenant_id', tenant.id)
+          .order('sort_order', { ascending: true });
+          
+        const fetchedPhotos = gallerySnap || [];
         if (fetchedPhotos.length > 0) {
           const featuredPhotos = fetchedPhotos.filter((p: any) => p.albumTag && p.albumTag.toLowerCase().includes('featured'));
           setGalleryPhotos(featuredPhotos);
@@ -90,9 +110,9 @@ export default function Home() {
         }
 
         // Fetch page content
-        const contentSnap = await getDoc(doc(db, 'settings', 'pageContent'));
-        if (contentSnap.exists()) {
-          setContent((prev: any) => ({ ...prev, ...contentSnap.data() }));
+        const { data } = await supabase.from('page_content').select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
+        if (data && data.data) {
+          setContent((prev: any) => ({ ...prev, ...data.data }));
         }
         
       } catch (err) {
@@ -101,7 +121,7 @@ export default function Home() {
     };
     
     fetchData();
-  }, []);
+  }, [tenant.id]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -114,12 +134,39 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handler);
   }, [lightboxIndex, galleryPhotos]);
 
+  const heroTextColor = tenant.brand.primaryColor === '#FFFFFF' ? '#ffffff' : (tenant.brand.textOnPrimary || '#ffffff');
+
+  const orgSchema = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": tenant.fullName,
+    "alternateName": tenant.id === 'icdlu' 
+      ? [tenant.shortName, "ICDL", "Interact Club Dhaka Luminous", "Interact Club of Dhaka Luminous"]
+      : [tenant.shortName, "Rotaract Dhaka Luminous", "Rotaract Club of Dhaka Luminous"],
+    "url": `https://${tenant.hostname}`,
+    "logo": `https://${tenant.hostname}${tenant.brand.logoPath}`,
+    "foundingDate": tenant.foundedYear,
+    "description": tenant.seo?.defaultDescription || tenant.tagline,
+    "address": { "@type": "PostalAddress", "addressLocality": "Dhaka", "addressCountry": "BD" },
+    "parentOrganization": { "@type": "Organization", "name": tenant.parentOrg },
+    "sameAs": [tenant.social.facebook, tenant.social.instagram, tenant.social.linkedin].filter(Boolean)
+  };
+
   return (
-    <div className="bg-[#F7F5F0]">
+    <div className="bg-[var(--color-page-bg)]">
+      <SEOHead 
+        title="Home"
+        canonicalPath="/"
+        structuredData={orgSchema}
+      />
       {/* Hero Section */}
       <section 
         ref={heroRef} 
-        className="relative min-h-[90vh] flex flex-col justify-end pb-24 bg-[#020728] text-white pt-32 overflow-hidden"
+        className="relative min-h-[90vh] flex flex-col justify-end pb-24 pt-32 overflow-hidden"
+        style={{ 
+          background: `linear-gradient(135deg, var(--color-hero-start) 0%, ${tenant.brand.heroDark || 'var(--color-primary)'} 100%)`, 
+          color: heroTextColor 
+        }}
       >
         {/* Particle/Grain Background overlay (CSS) */}
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
@@ -128,12 +175,12 @@ export default function Home() {
 
         <div className="max-w-7xl mx-auto px-6 w-full relative z-10 flex flex-col md:flex-row justify-between items-end gap-12">
           <div className="max-w-4xl">
-            <div className="inline-flex flex-col items-start gap-1 px-4 py-3 rounded-2xl border border-white/20 text-xs tracking-widest uppercase mb-8 backdrop-blur-sm">
+            <div className={`inline-flex flex-col items-start gap-1 px-4 py-3 rounded-2xl border ${heroTextColor === '#ffffff' ? 'border-white/20' : 'border-gray-900/20'} text-xs tracking-widest uppercase mb-8 backdrop-blur-sm`}>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-accent animate-pulse"></span>
-                <span className="font-bold">INTERACT CLUB OF DHAKA LUMINOUS</span>
+                <span className="w-2 h-2 rounded-full bg-[var(--color-accent)] animate-pulse"></span>
+                <span className="font-bold">{tenant.shortName.toUpperCase()}</span>
               </div>
-              <span className="text-white/70 text-[10px] pl-4">SPONSORED BY ROTARY CLUB OF DHAKA LUMINOUS</span>
+              <span className={`${heroTextColor === '#ffffff' ? 'text-white/70' : 'text-gray-600'} text-[10px] pl-4`}>{tenant.fullName.toUpperCase()}</span>
             </div>
             <h1 
               ref={headlineRef}
@@ -159,23 +206,23 @@ export default function Home() {
 
       {/* Impact Stats Overlay */}
       <section className="relative -mt-12 z-20 max-w-6xl mx-auto px-6">
-        <div className="bg-[#F7F5F0] rounded-2xl shadow-xl p-8 md:p-12 border border-gray-200">
+        <div className="bg-[var(--color-page-bg)] rounded-2xl shadow-xl p-8 md:p-12 border border-gray-200">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 divide-y md:divide-y-0 md:divide-x divide-gray-200">
             <div className="flex flex-col items-center justify-center p-4">
               <span className="text-sm font-bold tracking-widest text-gray-500 uppercase mb-2">Members</span>
-              <span className="text-6xl font-heading font-semibold text-primary">
+              <span className={`text-6xl font-heading font-semibold ${headingColor}`}>
                 <ScrollAnimatedNumber end={content.homeStatMembers} suffix="+" />
               </span>
             </div>
             <div className="flex flex-col items-center justify-center p-4">
               <span className="text-sm font-bold tracking-widest text-gray-500 uppercase mb-2">Projects</span>
-              <span className="text-6xl font-heading font-semibold text-primary">
+              <span className={`text-6xl font-heading font-semibold ${headingColor}`}>
                 <ScrollAnimatedNumber end={content.homeStatProjects} />
               </span>
             </div>
             <div className="flex flex-col items-center justify-center p-4">
               <span className="text-sm font-bold tracking-widest text-gray-500 uppercase mb-2">Vol. Hours</span>
-              <span className="text-6xl font-heading font-semibold text-primary">
+              <span className={`text-6xl font-heading font-semibold ${headingColor}`}>
                 <ScrollAnimatedNumber end={content.homeStatHours} suffix="+" />
               </span>
             </div>
@@ -184,12 +231,18 @@ export default function Home() {
       </section>
 
       {/* Mission Statement */}
-      <section className="py-32 bg-[#020728] text-white mt-32 relative">
+      <section 
+        className="py-32 mt-32 relative"
+        style={{ 
+          background: tenant.brand.secondaryColor,
+          color: tenant.brand.textOnPrimary 
+        }}
+      >
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
           style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")' }}>
         </div>
-        <div className="max-w-5xl mx-auto px-6 text-center">
-          <p className="text-3xl md:text-5xl lg:text-6xl font-heading leading-tight font-medium text-[#f0f0f0]">
+        <div className="max-w-5xl mx-auto px-6 text-center z-10 relative">
+          <p className="text-3xl md:text-5xl lg:text-6xl font-heading leading-tight font-medium" style={{ color: tenant.brand.textOnPrimary }}>
             {content.homeMissionText}
           </p>
         </div>
@@ -200,19 +253,19 @@ export default function Home() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 items-center">
           <div className="lg:col-span-5">
             <h2 className="text-sm font-bold tracking-widest text-gray-500 uppercase mb-4">Our Story</h2>
-            <h3 className="text-4xl md:text-5xl font-heading font-bold text-primary mb-6">Building leaders through service.</h3>
+            <h3 className={`text-4xl md:text-5xl font-heading font-bold ${headingColor} mb-6`}>Building leaders through service.</h3>
             <p className="text-lg text-gray-600 mb-8 leading-relaxed">
-              Founded under the guidance of Rotary International District 64, our club brings together passionate students aged 12-18 to tackle pressing local and global challenges. By joining us, you don't just volunteer—you learn how to lead.
+              Founded under the guidance of {tenant.district}, our club brings together passionate individuals to tackle pressing local and global challenges. By joining us, you don't just volunteer—you learn how to lead.
             </p>
             <Link to="/about">
-              <Button variant="outline" className="text-primary border-primary hover:bg-primary hover:text-white">Read Our History</Button>
+              <Button variant="outline-dark">Read Our History</Button>
             </Link>
           </div>
           <div className="lg:col-span-7 relative">
             <div className="aspect-[4/3] bg-gray-200 rounded-xl overflow-hidden shadow-2xl relative translate-x-0 lg:translate-x-12">
-              <img src={generatedImgAbout} alt="Interact members volunteering" className="w-full h-full object-cover" />
+              <img src={content.homeAboutImage || generatedImgAbout} alt="Club members volunteering" className="w-full h-full object-cover" />
             </div>
-            <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-accent rounded-full -z-10 mix-blend-multiply blur-2xl opacity-60 hidden md:block"></div>
+            <div className="absolute -bottom-10 -left-10 w-48 h-48 rounded-full -z-10 mix-blend-multiply blur-2xl opacity-60 hidden md:block" style={{ background: 'var(--color-accent)' }}></div>
           </div>
         </div>
       </section>
@@ -223,17 +276,17 @@ export default function Home() {
       <section className="py-24 bg-white border-y border-gray-100">
         <div className="max-w-4xl mx-auto px-6">
           <div className="flex flex-col items-center justify-center text-center mb-16 space-y-4">
-            <h2 className="text-4xl font-heading font-bold text-primary">Events</h2>
-            <Link to="/events" className="text-accent font-bold hover:underline">Full Calendar &rarr;</Link>
+            <h2 className={`text-4xl font-heading font-bold ${headingColor}`}>Events</h2>
+            <Link to="/events" className="font-bold hover:underline" style={{ color: 'var(--color-accent)' }}>Full Calendar &rarr;</Link>
           </div>
           <div className="space-y-4">
             {upcomingEvents.length > 0 ? upcomingEvents.map((event) => (
-              <Link to="/events" key={event.id} className="flex flex-col md:flex-row gap-6 md:gap-12 p-6 md:p-8 rounded-2xl hover:bg-[#F7F5F0] transition-colors border border-transparent hover:border-gray-200 group cursor-pointer block">
+              <Link to="/events" key={event.id} className="flex flex-col md:flex-row gap-6 md:gap-12 p-6 md:p-8 rounded-2xl hover:bg-[var(--color-page-bg)] transition-colors border border-transparent hover:border-gray-200 group cursor-pointer block">
                 <div className="flex flex-col md:w-32 shrink-0">
-                  <span className="text-accent font-bold text-lg uppercase tracking-wide">
+                  <span className="font-bold text-lg uppercase tracking-wide" style={{ color: 'var(--color-accent)' }}>
                     {new Date(event.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short' })}
                   </span>
-                  <span className="text-5xl font-heading font-bold text-primary">
+                  <span className={`text-5xl font-heading font-bold ${headingColor}`}>
                     {new Date(event.date + 'T00:00:00').getDate()}
                   </span>
                 </div>
@@ -241,7 +294,7 @@ export default function Home() {
                   <div className="flex gap-2 items-center mb-2">
                     <span className="text-xs font-bold text-gray-500 uppercase tracking-widest bg-gray-100 px-2 py-0.5 rounded-full">{event.type}</span>
                   </div>
-                  <h3 className="text-xl md:text-2xl font-bold text-primary mb-2 group-hover:text-accent transition-colors">{event.title}</h3>
+                  <h3 className={`text-xl md:text-2xl font-bold ${headingColor} mb-2 transition-colors`} style={{ color: 'inherit' /* let hover effect handle if modified */ }}>{event.title}</h3>
                   <p className="text-gray-500 flex items-center gap-2">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                     {event.venue || 'TBA'}
@@ -258,9 +311,9 @@ export default function Home() {
       </section>
 
       {/* Gallery Snapshot */}
-      <section className="py-24 bg-[#F7F5F0]">
+      <section className="py-24 bg-[var(--color-page-bg)]">
         <div className="max-w-7xl mx-auto px-6 mb-12 text-center">
-          <h2 className="text-4xl font-heading font-bold text-primary mb-4">Captured Moments.</h2>
+          <h2 className={`text-4xl font-heading font-bold ${headingColor} mb-4`}>Captured Moments.</h2>
           <p className="text-gray-600">Glimpses of our journey and camaraderie.</p>
         </div>
         
@@ -300,19 +353,19 @@ export default function Home() {
         
         <div className="mt-12 text-center">
           <Link to="/gallery">
-            <Button variant="outline" className="border-primary text-primary hover:bg-primary hover:text-white">Visit Full Gallery</Button>
+            <Button variant="outline-dark">Visit Full Gallery</Button>
           </Link>
         </div>
       </section>
 
       {/* Join Section */}
-      <section className="py-32 bg-primary text-white text-center px-6 relative overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-accent/20 rounded-full blur-[120px] pointer-events-none"></div>
+      <section className="py-32 text-white text-center px-6 relative overflow-hidden" style={{ backgroundColor: isLight ? 'var(--color-accent)' : '#000251' }}>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-white/20 rounded-full blur-[120px] pointer-events-none"></div>
         <div className="max-w-3xl mx-auto relative z-10">
           <h2 className="text-5xl md:text-7xl font-heading font-bold mb-6">Ready to make a difference?</h2>
-          <p className="text-xl text-gray-300 mb-10">Join a global network of 350,000+ young leaders taking action in their communities.</p>
+          <p className="text-xl text-white/90 mb-10">Join a global network of 350,000+ young leaders taking action in their communities.</p>
           <Link to="/join">
-            <Button size="lg" variant="primary">Apply for Membership</Button>
+            <Button size="lg" className="bg-white text-gray-900 border-none hover:bg-gray-100">Apply for Membership</Button>
           </Link>
         </div>
       </section>
@@ -320,12 +373,12 @@ export default function Home() {
       {/* Lightbox */}
       {lightboxIndex !== null && (
         <div className="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-4 md:p-8" onClick={() => setLightboxIndex(null)}>
-          <button className="absolute top-6 right-6 text-white hover:text-accent transition-colors z-50 bg-black/20 p-2 rounded-full" onClick={() => setLightboxIndex(null)}>
+          <button className="absolute top-6 right-6 text-white transition-colors z-50 bg-black/20 p-2 rounded-full" style={{ color: 'white' }} onClick={() => setLightboxIndex(null)}>
             <X size={32} />
           </button>
           
           <button 
-            className="absolute left-4 md:left-8 text-white hover:text-accent transition-colors z-50 disabled:opacity-30 bg-black/20 p-2 md:p-4 rounded-full"
+            className="absolute left-4 md:left-8 text-white transition-colors z-50 disabled:opacity-30 bg-black/20 p-2 md:p-4 rounded-full"
             disabled={lightboxIndex === 0} 
             onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex - 1); }}
           >
@@ -340,7 +393,7 @@ export default function Home() {
           />
           
           <button 
-            className="absolute right-4 md:right-8 text-white hover:text-accent transition-colors z-50 disabled:opacity-30 bg-black/20 p-2 md:p-4 rounded-full"
+            className="absolute right-4 md:right-8 text-white transition-colors z-50 disabled:opacity-30 bg-black/20 p-2 md:p-4 rounded-full"
             disabled={lightboxIndex === galleryPhotos.length - 1} 
             onClick={(e) => { e.stopPropagation(); setLightboxIndex(lightboxIndex + 1); }}
           >

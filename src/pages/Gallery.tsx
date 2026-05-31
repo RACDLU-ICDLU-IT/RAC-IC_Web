@@ -1,56 +1,59 @@
+import { supabase } from '../supabase';
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
 import { ZoomIn, X, ChevronLeft, ChevronRight } from 'lucide-react';
-import imgGallery1 from '../assets/images/regenerated_image_1777783191084.jpg';
-import imgGallery2 from '../assets/images/regenerated_image_1777783192770.jpg';
-import imgGallery3 from '../assets/images/regenerated_image_1777783183004.jpg';
-import imgGallery4 from '../assets/images/regenerated_image_1777783180868.jpg';
-import imgGallery5 from '../assets/images/regenerated_image_1777783189156.jpg';
-import imgGallery6 from '../assets/images/regenerated_image_1777783187022.jpg';
+import { useTenant } from '../hooks/useTenant';
+import SEOHead from '../components/SEOHead';
 
 const defaultPhotos = [
-  { id: '1', url: imgGallery1, caption: 'Service Above Self', albumTag: 'Community, Featured' },
-  { id: '2', url: imgGallery2, caption: 'Rotary Team', albumTag: 'Team, Featured' },
-  { id: '3', url: imgGallery3, caption: 'Giving Back', albumTag: 'Community, Featured' },
-  { id: '4', url: imgGallery4, caption: 'Leadership', albumTag: 'Events, Featured' },
-  { id: '5', url: imgGallery5, caption: 'Charity Walk', albumTag: 'Events, Featured' },
-  { id: '6', url: imgGallery6, caption: 'Impact', albumTag: 'Team, Featured' },
+  { id: '1', url: 'https://images.unsplash.com/photo-1593113630400-ea4288922497?w=800&q=80', caption: 'Service Above Self', albumTag: 'Community, Featured' },
+  { id: '2', url: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800&q=80', caption: 'Rotary Team', albumTag: 'Team, Featured' },
+  { id: '3', url: 'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&q=80', caption: 'Giving Back', albumTag: 'Community, Featured' },
+  { id: '4', url: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=800&q=80', caption: 'Leadership', albumTag: 'Events, Featured' },
+  { id: '5', url: 'https://images.unsplash.com/photo-1502086223501-7ea6ecd79368?w=800&q=80', caption: 'Charity Walk', albumTag: 'Events, Featured' },
+  { id: '6', url: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?w=800&q=80', caption: 'Impact', albumTag: 'Team, Featured' },
 ];
 
 export default function Gallery() {
+  const { tenant } = useTenant();
   const [photos, setPhotos] = useState<any[]>([]);
   const [albums, setAlbums] = useState<string[]>([]);
   const [albumFilter, setAlbumFilter] = useState('all');
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [content, setContent] = useState<any>(null);
+  const [content, setContent] = useState<any>({});
 
   useEffect(() => {
     const fetchData = async () => {
       let currentTags: string[] | null = null;
-      const contentSnap = await getDoc(doc(db, 'settings', 'pageContent'));
-      if (contentSnap.exists()) {
-        setContent(contentSnap.data());
-        if (contentSnap.data().galleryTags) {
-          currentTags = contentSnap.data().galleryTags;
+      try {
+        const { data } = await supabase.from('page_content').select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
+        if (data && data.data) {
+          setContent(data.data);
+          if (data.data.galleryTags) {
+            currentTags = data.data.galleryTags;
+          }
         }
-      }
+      } catch (_) {}
 
-      const snap = await getDocs(query(collection(db, 'gallery'), orderBy('order', 'asc')));
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const activePhotos = data.length > 0 ? data : defaultPhotos;
-      setPhotos(activePhotos);
-      
-      if (currentTags) {
-        setAlbums(currentTags);
-      } else {
-        const tags = activePhotos.flatMap((p: any) => p.albumTag ? p.albumTag.split(',').map((t: string) => t.trim()) : []);
-        const uniqueAlbums = Array.from(new Set(tags)).filter(t => t.toLowerCase() !== 'featured');
-        setAlbums(uniqueAlbums);
+      try {
+        const { data: snap } = await supabase.from('gallery').select('*').eq('tenant_id', tenant.id).order('sort_order', { ascending: true });
+        const galleryData = snap || [];
+        const activePhotos = galleryData.length > 0 ? galleryData : defaultPhotos;
+        setPhotos(activePhotos);
+        
+        if (currentTags) {
+          setAlbums(currentTags);
+        } else {
+          const tags = activePhotos.flatMap((p: any) => p.albumTag ? p.albumTag.split(',').map((t: string) => t.trim()) : []);
+          const uniqueAlbums = Array.from(new Set(tags)).filter((t: any) => t.toLowerCase() !== 'featured');
+          setAlbums(uniqueAlbums as string[]);
+        }
+      } catch (err) {
+        console.error('Gallery fetch error:', err);
+        setPhotos(defaultPhotos);
       }
     };
     fetchData();
-  }, []);
+  }, [tenant.id]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -67,10 +70,18 @@ export default function Gallery() {
     ? photos 
     : photos.filter(p => p.albumTag && p.albumTag.split(',').map((t: string) => t.trim()).includes(albumFilter));
 
+  const isLight = tenant.brand.primaryColor === '#FFFFFF';
+  const headingColor = isLight ? 'text-[var(--color-accent)]' : 'text-[var(--color-primary)]';
+
   return (
-    <div className="bg-[#F7F5F0] min-h-screen pt-24 pb-32">
+    <div className="bg-[var(--color-page-bg)] min-h-screen pt-24 pb-32">
+      <SEOHead 
+        title="Photo Gallery"
+        description={`View photos from events and community service activities by ${tenant.fullName}.`}
+        canonicalPath="/gallery"
+      />
       <section className="py-16 md:py-24 px-6 max-w-7xl mx-auto">
-        <h1 className="text-7xl md:text-[120px] font-heading font-bold text-primary leading-none text-center md:text-left mb-6">
+        <h1 className={`text-7xl md:text-[120px] font-heading font-bold ${headingColor} leading-none text-center md:text-left mb-6`}>
           Gallery.
         </h1>
         <p className="text-gray-500 text-xl max-w-3xl text-center md:text-left mb-12 whitespace-pre-line">

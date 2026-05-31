@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Sitemap: https://icdlu.org/sitemap.xml
+Sitemap: https://racdlu.org/sitemap.xml
+Disallow: /admin
+Disallow: /dashboard

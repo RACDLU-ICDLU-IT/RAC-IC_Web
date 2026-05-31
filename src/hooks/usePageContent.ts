@@ -1,61 +1,52 @@
 import { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabase';
+import { useTenant } from './useTenant';
 
-// This acts as a cache
+// Module-level cache keyed by `tenantId_pageId`
 const contentCache: Record<string, any> = {};
 
-export function usePageContent(pageId: string, defaultData: any) {
+export function usePageContent(pageId: string, defaultData: any, tenantIdOverride?: string) {
+  const { tenant } = useTenant();
+  // Allow admin pages to pass their active adminTenant.id as an override
+  const activeTenantId = tenantIdOverride || tenant.id;
+  const cacheKey = `${activeTenantId}_${pageId}`;
+
   const [content, setContent] = useState(defaultData);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
 
-    async function loadContent() {
-      // 1. Try memory cache
-      if (contentCache[pageId]) {
-        setContent({ ...defaultData, ...contentCache[pageId] });
-        setLoading(false);
-        return;
-      }
-
-      try {
-        // 2. Try static baked JSON file
-        const res = await fetch(`/baked/${pageId}.json`);
-        if (res.ok) {
-          const bakedData = await res.json();
-          contentCache[pageId] = bakedData;
-          if (isMounted) {
-            setContent({ ...defaultData, ...bakedData });
-            setLoading(false);
-          }
-        }
-      } catch (e) {
-        // Ignore fetch errors, fallback to Firestore
-      }
-
-      // 3. Fallback to Firestore and update cache
-      try {
-        const docSnap = await getDoc(doc(db, 'pageContent', pageId));
-        if (docSnap.exists()) {
-          const dbData = docSnap.data();
-          contentCache[pageId] = dbData;
-          if (isMounted) {
-            setContent({ ...defaultData, ...dbData });
-          }
-        }
-      } catch (e) {
-        console.error("Failed to load content for", pageId, e);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
+    if (contentCache[cacheKey]) {
+      setContent({ ...defaultData, ...contentCache[cacheKey] });
+      setLoading(false);
+      return;
     }
 
-    loadContent();
+    setLoading(true);
+
+    supabase
+      .from('page_content')
+      .select('data')
+      .eq('id', pageId)
+      .eq('tenant_id', activeTenantId)
+      .single()
+      .then(({ data }) => {
+        if (isMounted) {
+          const merged = data ? { ...defaultData, ...data.data } : defaultData;
+          contentCache[cacheKey] = data?.data ?? {};
+          setContent(merged);
+          setLoading(false);
+        }
+      });
 
     return () => { isMounted = false; };
-  }, [pageId]);
+  }, [pageId, activeTenantId]);
 
-  return { content, loading };
+  // Utility to invalidate this entry (e.g., after an admin save)
+  const invalidateCache = () => {
+    delete contentCache[cacheKey];
+  };
+
+  return { content, loading, invalidateCache };
 }

@@ -1,9 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import { Session, User } from '@supabase/supabase-js';
+import { supabase } from '../supabase';
 
-export type Role = 'member' | 'officer' | 'admin' | 'rotary_advisor' | null;
+export type Role = 'member' | 'admin' | 'master_admin' | null;
 
 interface UserProfile {
   name: string;
@@ -14,44 +13,56 @@ interface UserProfile {
 }
 
 interface AuthContextValue {
-  user: FirebaseUser | null;
+  user: User | null;
   profile: UserProfile | null;
   loading: boolean;
+  signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextValue>({ user: null, profile: null, loading: true });
+const AuthContext = createContext<AuthContextValue>({ user: null, profile: null, loading: true, signOut: async () => {} });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchProfile = async (userId: string) => {
+    const { data } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    setProfile(data as UserProfile | null);
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+  };
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          if (userDoc.exists()) {
-            setProfile(userDoc.data() as UserProfile);
-          } else {
-            // New user signed up, profile generation goes here (likely redirects to join)
-            setProfile(null);
-          }
-        } catch (error) {
-          console.error("Error fetching user profile:", error);
-        }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user.id).finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user.id);
       } else {
         setProfile(null);
       }
-      setLoading(false);
     });
 
-    return unsubscribe;
+    return () => subscription.unsubscribe();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading }}>
+    <AuthContext.Provider value={{ user, profile, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );

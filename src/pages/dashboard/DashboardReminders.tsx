@@ -1,27 +1,33 @@
+import { supabase } from '../../supabase';
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Bell, CheckCircle2, Circle, AlertCircle, Clock } from 'lucide-react';
+import { useTenant } from '../../hooks/useTenant';
 
 export default function DashboardReminders() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const { tenant } = useTenant();
   const [reminders, setReminders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !profile) return;
     
-    getDocs(
-      query(collection(db, 'reminders'), orderBy('dueDate', 'asc'))
-    ).then(snap => {
-      setReminders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setLoading(false);
-    }).catch(err => {
-      console.error(err);
-      setLoading(false);
-    });
-  }, [user]);
+    // Admins can see all reminders, members see 'all' and their specific role
+    const isAdminOrMaster = ['admin', 'master_admin'].includes(profile.role || '');
+    let q = supabase.from('reminders').select('*').eq('tenant_id', tenant.id).order('due_date', { ascending: true });
+    if (!isAdminOrMaster) {
+      q = q.in('target_role', ['all members', 'all', profile.role || 'member']);
+    }
+
+    q.then(({ data: snap }) => {
+        setReminders(snap || []);
+        setLoading(false);
+      }, err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, [user, profile, tenant.id]);
 
   if (loading) {
     return <div className="p-12 flex justify-center"><div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin" /></div>;
@@ -63,7 +69,7 @@ export default function DashboardReminders() {
           ) : (
             <div className="divide-y divide-gray-50">
               {reminders.map(reminder => {
-                const badge = getDueBadge(reminder.dueDate);
+                const badge = getDueBadge(reminder.due_date || reminder.dueDate);
                 return (
                   <div key={reminder.id} className="p-4 md:p-6 flex items-start gap-4 hover:bg-gray-50 transition-colors">
                     <div className="mt-1 shrink-0 text-accent bg-accent/10 p-2 rounded-full">

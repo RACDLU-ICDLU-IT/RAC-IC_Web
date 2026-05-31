@@ -1,14 +1,13 @@
+import { supabase } from '../../supabase';
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { useSettings } from '../../contexts/SettingsContext';
 import { Link } from 'react-router-dom';
 import { CalendarDays, Bell, Presentation, ChevronRight, User } from 'lucide-react';
+import { useTenant } from '../../hooks/useTenant';
 
 export default function DashboardHome() {
   const { profile } = useAuth();
-  const { settings } = useSettings();
+  const { settings, tenant } = useTenant();
   const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,16 +20,21 @@ export default function DashboardHome() {
         const today = new Date().toISOString().split('T')[0];
         
         // Fetch up to 3 upcoming events
-        const eventsSnap = await getDocs(
-          query(collection(db, 'events'), where('date', '>=', today), orderBy('date', 'asc'), limit(3))
-        );
-        setUpcomingEvents(eventsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const { data: eventsSnap } = await supabase.from('events')
+          .select('*')
+          .eq('tenant_id', tenant.id)
+          .gte('date', today)
+          .order('date', { ascending: true })
+          .limit(3);
+        setUpcomingEvents(eventsSnap || []);
         
         // Fetch recent announcements
-        const annSnap = await getDocs(
-          query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(3))
-        );
-        setAnnouncements(annSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const { data: annSnap } = await supabase.from('announcements')
+          .select('*')
+          .eq('tenant_id', tenant.id)
+          .order('createdAt', { ascending: false })
+          .limit(3);
+        setAnnouncements(annSnap || []);
         
         setLoading(false);
       } catch (err) {
@@ -40,17 +44,19 @@ export default function DashboardHome() {
     };
     
     fetchData();
-  }, [profile]);
+  }, [profile, tenant.id]);
 
   if (loading) {
     return <div className="p-12 flex justify-center"><div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin" /></div>;
   }
 
+  const isLight = tenant.brand.primaryColor === '#FFFFFF';
+
   return (
     <div className="space-y-8 animate-fade-in-up">
       {/* Welcome Banner */}
-      <div className="bg-primary text-white p-8 md:p-12 rounded-3xl relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-tr from-primary to-primary/80" />
+      <div className={`p-8 md:p-12 rounded-3xl relative overflow-hidden text-white`} style={{ backgroundColor: isLight ? 'var(--color-accent)' : 'var(--color-primary)' }}>
+        <div className={`absolute inset-0 bg-gradient-to-tr ${isLight ? 'from-white/10 to-transparent' : 'from-black/10 to-transparent'}`} />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
             <h1 className="text-3xl md:text-5xl font-heading font-bold mb-2">
@@ -124,7 +130,7 @@ export default function DashboardHome() {
                   <div key={ann.id} className="p-5 rounded-2xl bg-gray-50 border border-gray-100 relative">
                     {ann.isPinned && <span className="absolute top-0 right-6 -translate-y-1/2 bg-accent text-white text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded">Pinned</span>}
                     <h3 className="font-bold text-gray-900 mb-2">{ann.title}</h3>
-                    <p className="text-sm text-gray-600 line-clamp-2">{ann.content}</p>
+                    <p className="text-sm text-gray-600 line-clamp-2">{ann.body || ann.content}</p>
                   </div>
                 ))}
               </div>
@@ -161,9 +167,9 @@ export default function DashboardHome() {
             </Link>
           </div>
 
-          <Link to="/dashboard/projects" className="block bg-primary text-white p-6 rounded-3xl border border-primary hover:-translate-y-1 hover:shadow-lg transition-all group overflow-hidden relative">
+          <Link to="/dashboard/projects" className={`block hover:-translate-y-1 hover:shadow-lg transition-all group overflow-hidden relative text-white p-6 rounded-3xl ${isLight ? '' : 'border border-primary'}`} style={{ backgroundColor: isLight ? 'var(--color-accent)' : 'var(--color-primary)' }}>
             <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <Presentation className="text-accent mb-4" size={32} />
+            <Presentation className={`${isLight ? 'text-white' : 'text-accent'} mb-4`} size={32} />
             <h3 className="font-heading font-bold text-xl mb-1">Active Projects</h3>
             <p className="text-sm text-white/60">View ongoing club projects and volunteer opportunities.</p>
           </Link>

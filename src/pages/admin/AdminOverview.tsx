@@ -1,45 +1,57 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
-import { db } from '../../firebase';
-import { useSettings } from '../../contexts/SettingsContext';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { Users, UserCheck, CalendarDays, Presentation, Plus, Megaphone, Inbox, Image as ImageIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function AdminOverview() {
-  const { settings } = useSettings();
+  const { adminTenant: tenant } = useAdminTenant();
   const [stats, setStats] = useState({ activeMembers: 0, pendingApps: 0, eventsThisMonth: 0, ongoingProjects: 0 });
   const [activityFeed, setActivityFeed] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [clubName, setClubName] = useState(tenant.shortName);
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      const { data } = await supabase.from('settings').select('*').eq('id', `${tenant.id}-global`).single();
+      if (data && data.data && data.data.clubName) {
+        setClubName(data.data.clubName);
+      } else {
+        setClubName(tenant.shortName);
+      }
+    };
+    fetchSettings();
+  }, [tenant.id]);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const p1 = getDocs(query(collection(db, 'users'), where('status', '==', 'active'), where('role', '==', 'member')));
-        const p2 = getDocs(query(collection(db, 'applications'), where('status', '==', 'pending')));
+        const p1 = supabase.from('users').select('*').eq('status', 'active').eq('tenant_id', tenant.id);
+        const p2 = supabase.from('applications').select('*').eq('status', 'pending').eq('tenant_id', tenant.id);
         
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-        const p3 = getDocs(query(collection(db, 'events'), where('date', '>=', startOfMonth)));
-        const p4 = getDocs(query(collection(db, 'projects'), where('status', '==', 'ongoing')));
+        const p3 = supabase.from('events').select('*').gte('date', startOfMonth).eq('tenant_id', tenant.id);
+        const p4 = supabase.from('projects').select('*').eq('status', 'ongoing').eq('tenant_id', tenant.id);
 
         const [usersSnap, appsSnap, eventsSnap, projectsSnap] = await Promise.all([p1, p2, p3, p4]);
 
         setStats({
-          activeMembers: usersSnap.size,
-          pendingApps: appsSnap.size,
-          eventsThisMonth: eventsSnap.size,
-          ongoingProjects: projectsSnap.size
+          activeMembers: (usersSnap.data || []).length,
+          pendingApps: (appsSnap.data || []).length,
+          eventsThisMonth: (eventsSnap.data || []).length,
+          ongoingProjects: (projectsSnap.data || []).length
         });
 
-        const recentEventsSnap = await getDocs(query(collection(db, 'events'), orderBy('createdAt', 'desc'), limit(5)));
-        const recentProjectsSnap = await getDocs(query(collection(db, 'projects'), orderBy('createdAt', 'desc'), limit(5)));
+        const { data: recentEventsSnap } = await supabase.from('events').select('*').eq('tenant_id', tenant.id).order('createdAt', { ascending: false }).limit(5);
+        const { data: recentProjectsSnap } = await supabase.from('projects').select('*').eq('tenant_id', tenant.id).order('createdAt', { ascending: false }).limit(5);
         
         let feed: any[] = [];
-        recentEventsSnap.forEach(doc => {
-          feed.push({ id: doc.id, type: 'event', text: `Event "${doc.data().title}" created`, ts: doc.data().createdAt?.toMillis() || 0 });
+        (recentEventsSnap || []).forEach(doc => {
+          feed.push({ id: doc.id, type: 'event', text: `Event "${doc.title}" created`, ts: new Date(doc.created_at || doc.createdAt || 0).getTime() });
         });
-        recentProjectsSnap.forEach(doc => {
-          feed.push({ id: doc.id, type: 'project', text: `Project "${doc.data().name}" created`, ts: doc.data().createdAt?.toMillis() || 0 });
+        (recentProjectsSnap || []).forEach(doc => {
+          feed.push({ id: doc.id, type: 'project', text: `Project "${doc.name}" created`, ts: new Date(doc.created_at || doc.createdAt || 0).getTime() });
         });
         
         feed.sort((a, b) => b.ts - a.ts);
@@ -52,7 +64,7 @@ export default function AdminOverview() {
       }
     };
     fetchStats();
-  }, []);
+  }, [tenant.id]);
 
   const statCards = [
     { label: 'Active Members', value: stats.activeMembers, icon: Users, route: '/admin/members', color: 'text-blue-500' },
@@ -66,14 +78,20 @@ export default function AdminOverview() {
     { title: 'Add Announcement', desc: 'Broadcast to dashboard', icon: Megaphone, route: '/admin/communications' },
     { title: 'Review Applications', desc: 'Approve new members', icon: UserCheck, route: '/admin/applications' },
     { title: 'Upload Photos', desc: 'Add to public gallery', icon: ImageIcon, route: '/admin/gallery' },
+    { title: 'Edit Home Image', desc: 'Change the About image', icon: ImageIcon, route: '/admin/pages' },
   ];
 
   return (
     <div className="space-y-8">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900">Admin Overview</h1>
-          <p className="text-gray-500 text-sm mt-1">Welcome back. Here's what's happening at {settings?.clubName || 'your club'}.</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">Admin Overview</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
+          <p className="text-gray-500 text-sm mt-1">Welcome back. Here's what's happening at {clubName}.</p>
         </div>
       </div>
 

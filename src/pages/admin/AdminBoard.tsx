@@ -1,14 +1,12 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, setDoc, deleteDoc, writeBatch, orderBy, where } from 'firebase/firestore';
-import { db } from '../../firebase';
-import { fetchAndBake } from '../../utils/bake';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
 import { Pencil, Trash, User, Grid } from 'lucide-react';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
-import { useSettings } from '../../contexts/SettingsContext';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 import {
   DndContext,
@@ -36,7 +34,7 @@ const SortableItem = ({ id, member, onEdit, onDelete }: any) => {
     <div ref={setNodeRef} style={style} className="bg-white rounded-xl shadow-sm border border-gray-100 flex items-center p-4 gap-4 relative group cursor-default">
        <div {...attributes} {...listeners} className="cursor-grab text-gray-300 hover:text-gray-500 p-1"><Grid size={20} /></div>
        {member.photo ? (
-         <img src={member.photo} className="w-12 h-12 rounded-full object-cover shrink-0" />
+         <img src={member.photo} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-12 h-12 rounded-full object-cover shrink-0" />
        ) : (
          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0"><User size={20} /></div>
        )}
@@ -53,7 +51,8 @@ const SortableItem = ({ id, member, onEdit, onDelete }: any) => {
 };
 
 export default function AdminBoard() {
-  const { settings } = useSettings();
+  const { adminTenant: tenant } = useAdminTenant();
+  const [globalSettings, setGlobalSettings] = useState<any>({});
   const [board, setBoard] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -64,36 +63,43 @@ export default function AdminBoard() {
 
   const { addToast } = useToast();
 
-  const fetchBoard = async () => {
+  const loadSettingsAndBoard = async () => {
     setLoading(true);
     try {
-       const q = query(collection(db, 'board'), where('rotaryYear', '==', settings.rotaryYear));
-       const snap = await getDocs(q);
-       const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-       items.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
-       setBoard(items);
+      const { data: settingsRow } = await supabase.from('settings').select('data').eq('id', `${tenant.id}-global`).single();
+      const stgs = settingsRow?.data || {};
+      setGlobalSettings(stgs);
+      
+      if (stgs.rotaryYear) {
+         const { data: snap } = await supabase.from('board').select('*').eq('tenant_id', tenant.id).eq('rotaryYear', stgs.rotaryYear);
+         const items = snap || [];
+         items.sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0));
+         setBoard(items);
+      } else {
+         setBoard([]);
+      }
     } catch (err) {
-       console.error(err);
-       addToast('Failed to load board', 'error');
+      console.error(err);
+      addToast('Failed to load settings or board', 'error');
     } finally {
-       setLoading(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (settings.rotaryYear) fetchBoard();
-  }, [settings.rotaryYear]);
+    loadSettingsAndBoard();
+  }, [tenant.id]);
 
   const handleSave = async () => {
     const isNew = !formData.id;
-    const docId = isNew ? doc(collection(db, 'board')).id : formData.id;
+    const docId = isNew ? crypto.randomUUID() : formData.id;
     
     try {
-      await setDoc(doc(db, 'board', docId), { ...formData, order: formData.order ?? board.length }, { merge: true });
+      await supabase.from('board').upsert({ id: docId, tenant_id: tenant.id, ...{ ...formData, sort_order: formData.sort_order ?? board.length } }, { onConflict: 'id' });
       addToast('Board member saved', 'success');
       setIsFormOpen(false);
-      await fetchAndBake('board');
-      fetchBoard();
+      
+      loadSettingsAndBoard();
     } catch (err) {
       addToast('Failed to save', 'error');
     }
@@ -102,17 +108,17 @@ export default function AdminBoard() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'board', deleteId));
+      await supabase.from('board').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
       addToast('Board member removed', 'success');
       setDeleteId(null);
-      await fetchAndBake('board');
-      fetchBoard();
+      
+      loadSettingsAndBoard();
     } catch (err) { addToast('Failed to delete', 'error'); }
   };
 
   const advanceRotaryYear = async () => {
     try {
-       const current = settings.rotaryYear || '2025-2026';
+       const current = globalSettings.rotaryYear || '2025-2026';
        const parts = current.split('-');
        let nextYear = '';
        if (parts.length === 2 && !isNaN(Number(parts[0])) && !isNaN(Number(parts[1]))) {
@@ -120,9 +126,20 @@ export default function AdminBoard() {
        } else {
           nextYear = 'Next Year';
        }
-       await setDoc(doc(db, 'settings', 'global'), { rotaryYear: nextYear }, { merge: true });
+       
+       const updatedFields = {
+         ...globalSettings,
+         rotaryYear: nextYear
+       };
+
+       await supabase.from('settings').upsert({ 
+         id: `${tenant.id}-global`, 
+         data: updatedFields 
+       }, { onConflict: 'id' });
+
        addToast('Rotary Year advanced', 'success');
        setIsConfirmYear(false);
+       loadSettingsAndBoard(); // reload to get new year board
     } catch(err) {
        addToast('Failed to advance year', 'error');
     }
@@ -137,17 +154,17 @@ export default function AdminBoard() {
       
       setBoard(newBoard);
       
-      // Update order in firestore
+      // Update order in database
       try {
-        const batch = writeBatch(db);
+        const batch = [];
         newBoard.forEach((m, idx) => {
-          batch.update(doc(db, 'board', m.id), { order: idx });
+          batch.push(supabase.from('board').update({ sort_order: idx }).eq('id', m.id).eq('tenant_id', tenant.id));
         });
-        await batch.commit();
-        await fetchAndBake('board');
+        await Promise.all(batch);
+        
       } catch(err) {
         addToast('Failed to save order', 'error');
-        fetchBoard(); // revert
+        loadSettingsAndBoard(); // revert
       }
     }
   };
@@ -164,12 +181,17 @@ export default function AdminBoard() {
     <div className="space-y-8 pb-32">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900">Board of Officers</h1>
-           <p className="text-gray-500 text-sm mt-1">Current Rotary Year: <span className="font-bold text-primary">{settings.rotaryYear}</span></p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">Board of Officers</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
+           <p className="text-gray-500 text-sm mt-1">Current Rotary Year: <span className="font-bold text-primary">{globalSettings.rotaryYear || 'Not set'}</span></p>
         </div>
         <div className="flex gap-3">
            <Button variant="secondary" onClick={() => setIsConfirmYear(true)}>New Rotary Year</Button>
-           <Button onClick={() => { setFormData({ rotaryYear: settings.rotaryYear, order: board.length }); setIsFormOpen(true); }}>Add Member</Button>
+           <Button onClick={() => { setFormData({ rotaryYear: globalSettings.rotaryYear, sort_order: board.length }); setIsFormOpen(true); }}>Add Member</Button>
         </div>
       </div>
 
@@ -179,7 +201,7 @@ export default function AdminBoard() {
          </div>
       ) : board.length === 0 ? (
          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-16 flex justify-center text-gray-400">
-           <p>No board members for {settings.rotaryYear}. Add your team!</p>
+           <p>No board members for {globalSettings.rotaryYear || 'this year'}. Add your team!</p>
          </div>
       ) : (
          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -204,7 +226,7 @@ export default function AdminBoard() {
               <p className="text-xs text-gray-400 text-right mt-1">{(formData.bio || '').length}/150</p>
            </div>
            <div className="grid grid-cols-2 gap-4">
-              <div><label className={labelClass}>Order</label><input type="number" value={formData.order || 0} onChange={e => setFormData({...formData, order: Number(e.target.value)})} className={inputClass} /></div>
+              <div><label className={labelClass}>Order</label><input type="number" value={formData.sort_order || 0} onChange={e => setFormData({...formData, sort_order: Number(e.target.value)})} className={inputClass} /></div>
               <div><label className={labelClass}>Rotary Year</label><input value={formData.rotaryYear || ''} onChange={e => setFormData({...formData, rotaryYear: e.target.value})} className={inputClass} /></div>
            </div>
         </div>
@@ -220,7 +242,7 @@ export default function AdminBoard() {
         onClose={() => setIsConfirmYear(false)} 
         onConfirm={advanceRotaryYear} 
         title="Start New Rotary Year" 
-        message={`This will archive the current board and start a fresh one for the next Rotary Year. The current board members will remain in Firestore with their rotaryYear tag, but the active board display will be cleared. Continue?`} 
+        message={`This will archive the current board and start a fresh one for the next Rotary Year. The current board members will remain in the database with their rotaryYear tag, but the active board display will be cleared. Continue?`} 
         confirmLabel="Yes, Start New Year" 
       />
     </div>

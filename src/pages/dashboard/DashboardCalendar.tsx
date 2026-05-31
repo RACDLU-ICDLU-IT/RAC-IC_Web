@@ -1,9 +1,9 @@
+import { supabase } from '../../supabase';
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { CalendarDays, X, MapPin, Clock } from 'lucide-react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
+import { useTenant } from '../../hooks/useTenant';
 
 function getTypeStyle(type: string) {
   switch(type) {
@@ -26,20 +26,21 @@ function getTypeColor(type: string) {
 }
 
 export default function DashboardCalendar() {
+  const { tenant } = useTenant();
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
 
   useEffect(() => {
-    getDocs(query(collection(db, 'events'), orderBy('date', 'asc')))
-      .then(snap => {
-        setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    supabase.from('events').select('*').eq('tenant_id', tenant.id).order('date', { ascending: true })
+      .then(({ data: snap }) => {
+        setEvents(snap || []);
         setLoading(false);
-      }).catch(err => {
+      }, err => {
         console.error(err);
         setLoading(false);
       });
-  }, []);
+  }, [tenant.id]);
 
   if (loading) {
     return <div className="p-12 flex justify-center"><div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin" /></div>;

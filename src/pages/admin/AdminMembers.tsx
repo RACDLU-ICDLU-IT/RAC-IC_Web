@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { supabase } from '../../supabase';
 import { Table } from '../../components/ui/Table';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
@@ -8,10 +7,12 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
 import { Users, Pencil, Trash, Eye, Download } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
 
 export default function AdminMembers() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
+  const { adminTenant: tenant } = useAdminTenant();
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -36,8 +37,8 @@ export default function AdminMembers() {
   const fetchMembers = async () => {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'users')));
-      const users = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const { data: snap } = await supabase.from('users').select('*').eq('tenant_id', tenant.id);
+      const users = snap || [];
       setMembers(users);
     } catch (err) {
       console.error(err);
@@ -49,7 +50,7 @@ export default function AdminMembers() {
 
   useEffect(() => {
     fetchMembers();
-  }, []);
+  }, [tenant.id]);
 
   const schools = Array.from(new Set(members.map(m => m.school).filter(Boolean)));
 
@@ -74,24 +75,58 @@ export default function AdminMembers() {
     else setSelectedIds([...selectedIds, id]);
   };
 
+  // Prevent UI promotion if just officer
+  const isMasterAdmin = profile?.role === 'master_admin';
+  const canSetRole = isMasterAdmin || profile?.role === 'admin';
+  
+  // Rule: only master_admin can change the username of other admins
+  const isAdminOrMaster = formData.role === 'admin' || formData.role === 'master_admin';
+  const canChangeName = !isAdminOrMaster || isMasterAdmin || user?.id === formData.id;
+
   const handleSave = async () => {
     const isNew = !formData.id;
-    const docId = isNew ? doc(collection(db, 'users')).id : formData.id;
+    let docId = formData.id;
+    
     try {
-      await setDoc(doc(db, 'users', docId), formData, { merge: true });
+      if (isNew) {
+        if (!formData.email || !formData.password) {
+          addToast('Email and password required for new members', 'error');
+          return;
+        }
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-member`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + session?.access_token
+          },
+          body: JSON.stringify({...formData, tenant_id: tenant.id}) // explicit tenant_id pass
+        });
+        
+        const resData = await res.json();
+        if (!res.ok) {
+          throw new Error(resData.error || 'Failed to create member via Edge Function');
+        }
+        
+        docId = resData.uid;
+      }
+      
+      const { password, ...dataToSave } = formData;
+      await supabase.from('users').upsert({ id: docId, tenant_id: tenant.id, ...dataToSave }, { onConflict: 'id' });
       addToast('Member saved', 'success');
       setIsFormOpen(false);
       fetchMembers();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      addToast('Failed to save member', 'error');
+      addToast(err.message || 'Failed to save member', 'error');
     }
   };
 
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'users', deleteId));
+      await supabase.from('users').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
       addToast('Member removed', 'success');
       setDeleteId(null);
       fetchMembers();
@@ -103,17 +138,24 @@ export default function AdminMembers() {
 
   const handleBulkStatus = async (newStatus: string) => {
     try {
-      const batch = writeBatch(db);
-      selectedIds.forEach(id => {
-        batch.update(doc(db, 'users', id), { status: newStatus });
-      });
-      await batch.commit();
+      const { error } = await supabase
+        .from('users')
+        .update({ status: newStatus })
+        .in('id', selectedIds)
+        .eq('tenant_id', tenant.id);
+      if (error) throw error;
       addToast(`Status updated for ${selectedIds.length} members`, 'success');
       setSelectedIds([]);
       fetchMembers();
-    } catch(err) {
+    } catch (err) {
       addToast('Bulk update failed', 'error');
     }
+  };
+
+  const sanitizeCsvField = (value: string): string => {
+    // Prevent CSV formula injection — Excel/LibreOffice executes cells starting with = + - @ tab CR
+    const str = String(value || '');
+    return /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
   };
 
   const exportCSV = (dataToExport: any[]) => {
@@ -122,8 +164,15 @@ export default function AdminMembers() {
     csvRows.push(headers.join(','));
     for (const m of dataToExport) {
       csvRows.push([
-        `"${m.name || ''}"`, `"${m.email || ''}"`, `"${m.role || ''}"`, `"${m.status || ''}"`,
-        `"${m.school || ''}"`, `"${m.grade || ''}"`, `"${m.phone || ''}"`, m.duesPaid ? 'Yes' : 'No', `"${m.memberId || ''}"`
+        `"${sanitizeCsvField(m.name)}"`,
+        `"${sanitizeCsvField(m.email)}"`,
+        `"${sanitizeCsvField(m.role)}"`,
+        `"${sanitizeCsvField(m.status)}"`,
+        `"${sanitizeCsvField(m.school)}"`,
+        `"${sanitizeCsvField(m.grade)}"`,
+        `"${sanitizeCsvField(m.phone)}"`,
+        m.duesPaid ? 'Yes' : 'No',
+        `"${sanitizeCsvField(m.memberId)}"`,
       ].join(','));
     }
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
@@ -137,18 +186,20 @@ export default function AdminMembers() {
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors bg-white";
   const labelClass = "block text-sm font-medium text-gray-700 mb-1.5";
 
-  // Prevent UI promotion if just officer
-  const canSetRole = profile?.role === 'admin';
-
   return (
     <div className="space-y-8 pb-32">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900">Members</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">Members</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">Manage club roster</p>
         </div>
         <Button onClick={() => { 
-          setFormData({ role: 'member', status: 'active', memberId: `IC-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}` }); 
+          setFormData({ role: 'member', status: 'active', tenant_id: tenant.id, memberId: `${tenant.shortName.substring(0,2).toUpperCase()}-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}` }); 
           setIsFormOpen(true); 
         }}>
            Add Member
@@ -164,9 +215,8 @@ export default function AdminMembers() {
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className={inputClass + ' md:w-auto'}>
           <option value="all">All Roles</option>
           <option value="member">Member</option>
-          <option value="officer">Officer</option>
           <option value="admin">Admin</option>
-          <option value="rotary_advisor">Advisor</option>
+          <option value="master_admin">Master Admin</option>
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={inputClass + ' md:w-auto'}>
           <option value="all">All Statuses</option>
@@ -186,7 +236,7 @@ export default function AdminMembers() {
       <Table
         columns={[
           { key: 'select', label: <input type="checkbox" onChange={handleSelectAll} checked={selectedIds.length > 0 && selectedIds.length === filteredMembers.length} /> },
-          { key: 'avatar', label: '' },
+          { key: 'photo', label: '' },
           { key: 'name', label: 'Name' },
           { key: 'role', label: 'Role' },
           { key: 'status', label: 'Status' },
@@ -204,7 +254,7 @@ export default function AdminMembers() {
               <input type="checkbox" onChange={() => handleSelect(m.id)} checked={selectedIds.includes(m.id)} />
             </td>
             <td className="px-6 py-4">
-              {m.avatar ? <img src={m.avatar} className="w-9 h-9 rounded-full object-cover" /> : <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">{m.name?.substring(0,2)}</div>}
+              {m.photo ? <img src={m.photo} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-9 h-9 rounded-full object-cover" /> : <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">{m.name?.substring(0,2)}</div>}
             </td>
             <td className="px-6 py-4">
               <div className="font-medium text-gray-900">{m.name}</div>
@@ -213,9 +263,8 @@ export default function AdminMembers() {
             </td>
             <td className="px-6 py-4">
               <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold uppercase ${
-                m.role === 'admin' ? 'bg-amber-100 text-amber-800' :
-                m.role === 'officer' ? 'bg-blue-100 text-blue-800' :
-                m.role === 'rotary_advisor' ? 'bg-teal-100 text-teal-800' : 'bg-gray-100 text-gray-800'
+                m.role === 'master_admin' ? 'bg-amber-800 text-white' :
+                m.role === 'admin' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-800'
               }`}>{m.role || 'member'}</span>
             </td>
             <td className="px-6 py-4">
@@ -228,8 +277,11 @@ export default function AdminMembers() {
             <td className="px-6 py-4">
               <button 
                 onClick={async () => {
-                   await setDoc(doc(db, 'users', m.id), { duesPaid: !m.duesPaid }, { merge: true });
-                   fetchMembers();
+                  await supabase.from('users')
+                    .update({ duesPaid: !m.duesPaid })
+                    .eq('id', m.id)
+                    .eq('tenant_id', tenant.id);
+                  fetchMembers();
                 }}
                 className={`w-4 h-4 rounded-full border ${m.duesPaid ? 'bg-green-500 border-green-500' : 'bg-transparent border-gray-300'}`}
                 title={m.duesPaid ? 'Dues Paid' : 'Dues Unpaid'}
@@ -263,17 +315,29 @@ export default function AdminMembers() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="md:col-span-2 flex items-center gap-6">
             <div className="w-24">
-              <CloudinaryUpload onUpload={(u) => setFormData({...formData, avatar: u})} currentUrl={formData.avatar} label="Avatar" />
+              <CloudinaryUpload onUpload={(u) => setFormData({...formData, photo: u})} currentUrl={formData.photo} label="Photo" />
             </div>
             <div className="flex-1 grid grid-cols-2 gap-4">
-              <div>
+              <div className="col-span-2">
                 <label className={labelClass}>Full Name</label>
-                <input value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className={inputClass} />
+                <input 
+                   disabled={!canChangeName} 
+                   value={formData.name || ''} 
+                   onChange={e => setFormData({...formData, name: e.target.value})} 
+                   className={inputClass + (!canChangeName ? " bg-gray-50 opacity-70" : "")} 
+                />
+                {!canChangeName && <p className="text-[10px] text-gray-500 mt-1">Only master admins can update the name of other admins.</p>}
               </div>
-              <div>
+              <div className={!formData.id ? '' : 'col-span-2'}>
                 <label className={labelClass}>Email</label>
-                <input value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} className={inputClass} disabled={!!formData.id} />
+                <input value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} className={inputClass + (formData.id ? " bg-gray-50 opacity-70" : "")} disabled={!!formData.id} />
               </div>
+              {!formData.id && (
+                <div>
+                  <label className={labelClass}>Password (Required for new)</label>
+                  <input type="password" value={formData.password || ''} onChange={e => setFormData({...formData, password: e.target.value})} className={inputClass} placeholder="Minimum 8 characters" />
+                </div>
+              )}
             </div>
           </div>
 
@@ -281,9 +345,8 @@ export default function AdminMembers() {
             <label className={labelClass}>Role</label>
             <select value={formData.role || 'member'} onChange={e => setFormData({...formData, role: e.target.value})} className={inputClass} disabled={!canSetRole}>
               <option value="member">Member</option>
-              <option value="officer">Officer</option>
               <option value="admin">Admin</option>
-              <option value="rotary_advisor">Rotary Advisor</option>
+              {isMasterAdmin && <option value="master_admin">Master Admin</option>}
             </select>
             {!canSetRole && <p className="text-xs text-gray-400 mt-1">Only admins can promote roles.</p>}
           </div>
@@ -342,7 +405,7 @@ export default function AdminMembers() {
         {viewMember && (
           <div className="space-y-4 text-sm">
             <div className="flex gap-4 items-center">
-              {viewMember.avatar && <img src={viewMember.avatar} className="w-16 h-16 rounded-full" />}
+              {viewMember.photo && <img src={viewMember.photo} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-16 h-16 rounded-full" />}
               <div>
                 <h3 className="font-bold text-lg">{viewMember.name}</h3>
                 <p className="text-gray-500">{viewMember.email}</p>

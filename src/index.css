@@ -2,8 +2,9 @@
 
 @theme {
   --color-primary: var(--color-primary, #0A0E1A);
-  --color-accent: var(--color-accent, #F4A928);
+  --color-accent: var(--color-accent, #00A2E0);
   --color-hero-start: var(--color-hero-start, #05070d);
+  --color-page-bg: var(--color-page-bg, #F7F5F0);
   --radius-button: var(--radius-button, 0.5rem);
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-heading: "Clash Display", ui-sans-serif, system-ui, sans-serif;
@@ -11,7 +12,7 @@
 
 @layer base {
   body {
-    @apply font-sans antialiased bg-[#F7F5F0] text-gray-900;
+    @apply font-sans antialiased bg-[var(--color-page-bg)] text-gray-900;
   }
 }
 

@@ -1,31 +1,24 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, setDoc, deleteDoc, orderBy, writeBatch, getDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
-import { fetchAndBake } from '../../utils/bake';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
 import { Image as ImageIcon, Pencil, Trash, Download, ZoomIn, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
-
-import imgGallery1 from '../../assets/images/regenerated_image_1777783191084.jpg';
-import imgGallery2 from '../../assets/images/regenerated_image_1777783192770.jpg';
-import imgGallery3 from '../../assets/images/regenerated_image_1777783183004.jpg';
-import imgGallery4 from '../../assets/images/regenerated_image_1777783180868.jpg';
-import imgGallery5 from '../../assets/images/regenerated_image_1777783189156.jpg';
-import imgGallery6 from '../../assets/images/regenerated_image_1777783187022.jpg';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 const defaultPhotos = [
-  { url: imgGallery1, caption: 'Service Above Self', albumTag: 'Community, Featured', order: 1 },
-  { url: imgGallery2, caption: 'Rotary Team', albumTag: 'Team, Featured', order: 2 },
-  { url: imgGallery3, caption: 'Giving Back', albumTag: 'Community, Featured', order: 3 },
-  { url: imgGallery4, caption: 'Leadership', albumTag: 'Events, Featured', order: 4 },
-  { url: imgGallery5, caption: 'Charity Walk', albumTag: 'Events, Featured', order: 5 },
-  { url: imgGallery6, caption: 'Impact', albumTag: 'Team, Featured', order: 6 },
+  { url: 'https://images.unsplash.com/photo-1593113630400-ea4288922497?w=800&q=80', caption: 'Service Above Self', albumTag: 'Community, Featured', sort_order: 1 },
+  { url: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800&q=80', caption: 'Rotary Team', albumTag: 'Team, Featured', sort_order: 2 },
+  { url: 'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?w=800&q=80', caption: 'Giving Back', albumTag: 'Community, Featured', sort_order: 3 },
+  { url: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=800&q=80', caption: 'Leadership', albumTag: 'Events, Featured', sort_order: 4 },
+  { url: 'https://images.unsplash.com/photo-1502086223501-7ea6ecd79368?w=800&q=80', caption: 'Charity Walk', albumTag: 'Events, Featured', sort_order: 5 },
+  { url: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?w=800&q=80', caption: 'Impact', albumTag: 'Team, Featured', sort_order: 6 },
 ];
 
 export default function AdminGallery() {
+  const { adminTenant: tenant } = useAdminTenant();
   const [photos, setPhotos] = useState<any[]>([]);
   const [tags, setTags] = useState<string[]>(['Projects', 'Events', 'Team', 'Community']);
   const [newTag, setNewTag] = useState('');
@@ -42,12 +35,12 @@ export default function AdminGallery() {
   const fetchPhotos = async () => {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'gallery'), orderBy('createdAt', 'desc')));
-      setPhotos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: snap } = await supabase.from('gallery').select('*').eq('tenant_id', tenant.id).order('sort_order', { ascending: true });
+      setPhotos(snap || []);
       
-      const contentSnap = await getDoc(doc(db, 'settings', 'pageContent'));
-      if (contentSnap.exists() && contentSnap.data().galleryTags) {
-        setTags(contentSnap.data().galleryTags);
+      const { data } = await supabase.from('page_content').select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
+      if (data && data.data?.galleryTags) {
+        setTags(data.data.galleryTags);
       }
     } catch (err) {
       console.error(err);
@@ -63,9 +56,11 @@ export default function AdminGallery() {
     setTags(updatedTags);
     setNewTag('');
     try {
-      await setDoc(doc(db, 'settings', 'pageContent'), { galleryTags: updatedTags }, { merge: true });
+      const { data: existing } = await supabase.from('page_content').select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
+      const merged = { ...(existing?.data || {}), galleryTags: updatedTags };
+      await supabase.from('page_content').upsert({ id: 'pageContent', tenant_id: tenant.id, data: merged }, { onConflict: 'id, tenant_id' });
       addToast('Tag added', 'success');
-      await fetchAndBake('settings');
+      
     } catch (err) {
       console.error(err);
       addToast('Failed to add tag', 'error');
@@ -76,9 +71,11 @@ export default function AdminGallery() {
     const updatedTags = tags.filter(t => t !== tagToRemove);
     setTags(updatedTags);
     try {
-      await setDoc(doc(db, 'settings', 'pageContent'), { galleryTags: updatedTags }, { merge: true });
+      const { data: existing } = await supabase.from('page_content').select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
+      const merged = { ...(existing?.data || {}), galleryTags: updatedTags };
+      await supabase.from('page_content').upsert({ id: 'pageContent', tenant_id: tenant.id, data: merged }, { onConflict: 'id, tenant_id' });
       addToast('Tag removed', 'success');
-      await fetchAndBake('settings');
+      
     } catch (err) {
       console.error(err);
       addToast('Failed to remove tag', 'error');
@@ -87,7 +84,7 @@ export default function AdminGallery() {
 
   useEffect(() => {
     fetchPhotos();
-  }, []);
+  }, [tenant.id]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -103,13 +100,22 @@ export default function AdminGallery() {
   const handleSave = async () => {
     if (!formData.url) return;
     const isNew = !formData.id;
-    const docId = isNew ? doc(collection(db, 'gallery')).id : formData.id;
+    const docId = isNew ? crypto.randomUUID() : formData.id;
     
     try {
-      await setDoc(doc(db, 'gallery', docId), { ...formData, createdAt: formData.createdAt || new Date() }, { merge: true });
+      const { error } = await supabase.from('gallery').upsert({
+        id: docId,
+        url: formData.url,
+        caption: formData.caption || '',
+        albumTag: formData.albumTag || '',
+        sort_order: formData.sort_order ?? photos.length,
+        createdAt: formData.createdAt || new Date().toISOString(),
+        tenant_id: tenant.id
+      }, { onConflict: 'id' });
+      if (error) throw error;
       addToast('Photo saved', 'success');
       setIsFormOpen(false);
-      await fetchAndBake('gallery');
+      
       fetchPhotos();
     } catch (err) {
       console.error(err);
@@ -120,26 +126,37 @@ export default function AdminGallery() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'gallery', deleteId));
+      await supabase.from('gallery').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
       addToast('Photo removed', 'success');
       setDeleteId(null);
-      await fetchAndBake('gallery');
+      
       fetchPhotos();
     } catch (err) { addToast('Failed to delete', 'error'); }
   };
 
   const handleImportDefaults = async () => {
     try {
-      const batch = writeBatch(db);
-      defaultPhotos.forEach(p => {
-        const dRef = doc(collection(db, 'gallery'));
-        batch.set(dRef, { ...p, createdAt: new Date() });
-      });
-      await batch.commit();
-      addToast('Imported default photos', 'success');
-      await fetchAndBake('gallery');
+      const rows = defaultPhotos.map(p => ({
+        id: crypto.randomUUID(),
+        url: p.url,
+        caption: p.caption,
+        albumTag: p.albumTag,
+        sort_order: p.sort_order,
+        createdAt: new Date().toISOString(),
+        tenant_id: tenant.id
+      }));
+
+      const { error } = await supabase.from('gallery').insert(rows);
+
+      if (error) {
+        console.error('Seed error:', error);
+        addToast(`Failed to seed: ${error.message}`, 'error');
+        return;
+      }
+
+      addToast('Default photos seeded successfully', 'success');
       fetchPhotos();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       addToast('Failed to import defaults', 'error');
     }
@@ -152,7 +169,12 @@ export default function AdminGallery() {
     <div className="space-y-8 pb-32">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900">Gallery</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">Gallery</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">Manage public site photos and albums</p>
         </div>
         <div className="flex gap-2">
@@ -179,7 +201,7 @@ export default function AdminGallery() {
           <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4 opacity-50 pointer-events-none grayscale">
              {defaultPhotos.map((p, i) => (
                 <div key={i} className="relative group break-inside-avoid rounded-xl overflow-hidden cursor-pointer">
-                   <img src={p.url} className="w-full object-cover bg-gray-100 transition-transform duration-300" />
+                   <img src={p.url} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-full object-cover bg-gray-100 transition-transform duration-300" />
                    <div className="absolute inset-0 bg-black/50 opacity-100 flex flex-col justify-between p-3">
                       <div></div>
                       <div>
@@ -195,7 +217,7 @@ export default function AdminGallery() {
         <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
            {photos.map((p, i) => (
               <div key={p.id} className="relative group break-inside-avoid rounded-xl overflow-hidden cursor-pointer" onClick={() => setLightboxIndex(i)}>
-                 <img src={p.url} className="w-full object-cover bg-gray-100 transition-transform duration-300 group-hover:scale-105" />
+                 <img src={p.url} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-full object-cover bg-gray-100 transition-transform duration-300 group-hover:scale-105" />
                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-all duration-300 flex items-center justify-center">
                     <ZoomIn size={32} className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                  </div>
@@ -245,7 +267,7 @@ export default function AdminGallery() {
         <div className="space-y-6">
            <div className="bg-gray-50 p-4 rounded-lg flex justify-center border border-gray-100 border-dashed">
               <div className="max-w-xs w-full">
-                 <CloudinaryUpload onUpload={(url) => setFormData({...formData, url})} currentUrl={formData.url} label="Upload Image" />
+                 <CloudinaryUpload onUpload={(url, _publicId) => setFormData({...formData, url})} currentUrl={formData.url} label="Upload Image" />
               </div>
            </div>
 
@@ -299,6 +321,7 @@ export default function AdminGallery() {
           
           <img 
             src={photos[lightboxIndex]?.url} 
+            onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }}
             alt="" 
             className="max-h-[85vh] max-w-[85vw] object-contain rounded-lg shadow-2xl" 
             onClick={(e) => e.stopPropagation()} 

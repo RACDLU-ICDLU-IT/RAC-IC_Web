@@ -1,13 +1,14 @@
+import { supabase } from '../../supabase';
 import React, { useEffect, useState } from 'react';
-import { collection, query, getDocs, doc, setDoc, deleteDoc, orderBy, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Megaphone, Mail, Trash, Copy, Edit3 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 
 export default function AdminCommunications() {
+  const { adminTenant: tenant } = useAdminTenant();
   const { profile, user } = useAuth();
   const [tab, setTab] = useState<'announcements'|'email'>('announcements');
   const [announcements, setAnnouncements] = useState<any[]>([]);
@@ -31,8 +32,8 @@ export default function AdminCommunications() {
   const fetchAnnouncements = async () => {
     setLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'announcements'), orderBy('createdAt', 'desc')));
-      setAnnouncements(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: snap } = await supabase.from('announcements').select('*').eq('tenant_id', tenant.id).order('createdAt', { ascending: false });
+      setAnnouncements(snap || []);
     } catch (err) {
       console.error(err);
       addToast('Failed to load announcements', 'error');
@@ -43,7 +44,7 @@ export default function AdminCommunications() {
 
   useEffect(() => {
     if (tab === 'announcements') fetchAnnouncements();
-  }, [tab]);
+  }, [tab, tenant.id]);
 
   const handlePublish = async () => {
     if (!title || !content) {
@@ -51,14 +52,15 @@ export default function AdminCommunications() {
       return;
     }
     try {
-      const docId = activeId || doc(collection(db, 'announcements')).id;
+      const docId = activeId || crypto.randomUUID();
       const data = {
-        title, content, targetRole, isPinned,
-        authorId: user?.uid,
+        title, content, body: content, targetRole, isPinned,
+        authorId: user?.id,
         authorName: profile?.name,
-        ...(activeId ? {} : { createdAt: serverTimestamp() })
+        tenant_id: tenant.id,
+        ...(activeId ? {} : { createdAt: new Date().toISOString() })
       };
-      await setDoc(doc(db, 'announcements', docId), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+      await supabase.from('announcements').upsert({ id: docId, ...{ ...data, updatedAt: new Date().toISOString() } }, { onConflict: 'id' });
       addToast('Announcement published', 'success');
       resetForm();
       fetchAnnouncements();
@@ -68,7 +70,7 @@ export default function AdminCommunications() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'announcements', deleteId));
+      await supabase.from('announcements').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
       addToast('Announcement deleted', 'success');
       if (activeId === deleteId) resetForm();
       setDeleteId(null);
@@ -119,7 +121,12 @@ export default function AdminCommunications() {
     <div className="space-y-8 pb-32">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-gray-900">Communications</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-heading font-bold text-gray-900">Communications</h1>
+            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
+              {tenant.id}
+            </span>
+          </div>
           <p className="text-gray-500 text-sm mt-1">Broadcast messages to members</p>
         </div>
       </div>
@@ -153,7 +160,9 @@ export default function AdminCommunications() {
                          <button onClick={(e) => { e.stopPropagation(); setDeleteId(a.id); }} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash size={14} /></button>
                       </div>
                       <p className="text-xs text-gray-500 mt-1 line-clamp-2">{a.content || a.body}</p>
-                      <span className="text-[10px] text-gray-400 mt-2">{a.createdAt?.toDate().toLocaleDateString() || 'Recent'}</span>
+                      <span className="text-[10px] text-gray-400 mt-2">
+                        {a.createdAt ? new Date(a.createdAt).toLocaleDateString() : 'Recent'}
+                      </span>
                    </div>
                  ))}
                  {announcements.length === 0 && !loading && <div className="p-4 text-gray-400 text-sm text-center">No announcements yet.</div>}
@@ -169,7 +178,7 @@ export default function AdminCommunications() {
                     <label className={labelClass}>Audience</label>
                     <div className="flex gap-4">
                        <label className="flex items-center gap-2 text-sm"><input type="radio" value="All Members" checked={targetRole === 'All Members'} onChange={e=>setTargetRole(e.target.value)} /> All Members</label>
-                       <label className="flex items-center gap-2 text-sm"><input type="radio" value="Officers Only" checked={targetRole === 'Officers Only'} onChange={e=>setTargetRole(e.target.value)} /> Officers Only</label>
+                       <label className="flex items-center gap-2 text-sm"><input type="radio" value="Admins Only" checked={targetRole === 'Admins Only'} onChange={e=>setTargetRole(e.target.value)} /> Admins Only</label>
                     </div>
                  </div>
                  

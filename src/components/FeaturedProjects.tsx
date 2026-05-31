@@ -1,17 +1,20 @@
+import { supabase } from '../supabase';
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { useTenant } from '../hooks/useTenant';
 
 export default function FeaturedProjects() {
+  const { tenant } = useTenant();
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchProjects = async () => {
       try {
-        const snap = await getDocs(query(collection(db, 'projects'), orderBy('startDate', 'desc'), limit(5)));
-        setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const { data: snap } = await supabase.from('projects').select('*').eq('tenant_id', tenant.id).order('startDate', { ascending: false });
+        let filtered = snap || [];
+        // Optional limit if we want to retain limit logic but ensure it filters by tenant first
+        setProjects(filtered.slice(0, 5));
       } catch (err) {
         console.error("Error fetching projects", err);
       } finally {
@@ -19,12 +22,12 @@ export default function FeaturedProjects() {
       }
     };
     fetchProjects();
-  }, []);
+  }, [tenant.id]);
 
   if (loading || projects.length === 0) return null;
 
   return (
-    <section className="py-24 bg-[#F7F5F0]">
+    <section className="py-24 bg-[var(--color-hero-start,#F7F5F0)]">
       <div className="max-w-7xl mx-auto px-6 mb-12 flex justify-between items-end">
         <div>
           <h2 className="text-4xl md:text-5xl font-heading font-bold text-primary mb-4">Our Impact.</h2>
