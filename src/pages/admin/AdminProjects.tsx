@@ -180,7 +180,7 @@ export default function AdminProjects() {
 Name: ${project.name}
 Type: ${project.type}
 Status: ${project.status}
-Dates: ${project.startDate || 'TBD'} to ${project.endDate || 'TBD'}
+Date: ${project.executionDate || project.startDate || 'TBD'}
 Volunteer Hours Contributed: ${project.volunteerHours || 0}
 
 Description:
@@ -283,7 +283,7 @@ ${particip}`;
                       p.status==='Ongoing' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'
                     }`}>{p.status}</span>
                  </div>
-                 <div className="text-xs text-gray-500 font-medium">Starts: {p.startDate || 'TBD'}</div>
+                 <div className="text-xs text-gray-500 font-medium font-mono">Date: {p.executionDate || p.startDate || 'TBD'}</div>
                  <div className="flex items-center gap-2 text-xs font-bold text-gray-400 bg-gray-50 self-start px-2 py-1 rounded">
                     <Users size={14}/> {(p.memberIds || []).length} participants
                  </div>
@@ -323,8 +323,19 @@ ${particip}`;
                   <option value="Completed">Completed</option>
                 </select>
               </div>
-              <div><label className={labelClass}>Start Date</label><input type="date" value={formData.startDate || ''} onChange={e => setFormData({...formData, startDate: e.target.value})} className={inputClass} /></div>
-              <div><label className={labelClass}>End Date (Optional)</label><input type="date" value={formData.endDate || ''} onChange={e => setFormData({...formData, endDate: e.target.value})} className={inputClass} /></div>
+              <div className="col-span-2">
+                <label className={labelClass}>Execution Date</label>
+                <input 
+                  type="date" 
+                  value={formData.executionDate || formData.startDate || ''} 
+                  onChange={e => setFormData({
+                    ...formData, 
+                    executionDate: e.target.value, 
+                    startDate: e.target.value
+                  })} 
+                  className={inputClass} 
+                />
+              </div>
             </div>
 
             <div><label className={labelClass}>Volunteer Hours</label><input type="number" value={formData.volunteerHours || 0} onChange={e => setFormData({...formData, volunteerHours: Number(e.target.value)})} className={inputClass} /></div>
