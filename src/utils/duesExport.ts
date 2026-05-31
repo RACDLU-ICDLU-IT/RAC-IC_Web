@@ -253,3 +253,86 @@ export async function exportSelectedMembers(members: UserProfile[], allEntries: 
   const fileName = `members-dues-${new Date().toISOString().split('T')[0]}.xlsx`;
   XLSX.writeFile(wb, fileName);
 }
+
+export async function exportDuesSummaryFile(allEntries: LedgerEntry[], stats: any): Promise<void> {
+  const wb = XLSX.utils.book_new();
+
+  // 1. Overall Stats Sheet
+  const overallData = [
+    ['Dues & Fees Summary Report', ''],
+    ['Generated At', new Date().toLocaleString()],
+    [],
+    ['Key Metric', 'Value'],
+    ['Total Charged', stats?.totalCharged || 0],
+    ['Total Collected (Paid)', stats?.totalCollected || 0],
+    ['Total Outstanding', stats?.totalOutstanding || 0],
+    ['Total Waived', stats?.totalWaived || 0],
+    ['Collection Rate', `${(stats?.collectionRate || 0).toFixed(1)}%`],
+    ['Overdue Count', stats?.overdueCount || 0],
+    ['Paid This Month', stats?.paidThisMonth || 0],
+    ['Unpaid This Month', stats?.unpaidThisMonth || 0]
+  ];
+  const wsOverall = XLSX.utils.aoa_to_sheet(overallData);
+  wsOverall['!cols'] = [{ wch: 25 }, { wch: 25 }];
+  XLSX.utils.book_append_sheet(wb, wsOverall, 'Financial Overview');
+
+  // 2. Template Summary Sheet
+  const templateMap = new Map<string, { name: string, type: string, charged: number, paid: number, outstanding: number }>();
+  allEntries.forEach(e => {
+    const tId = e.template_id;
+    const name = e.fee_templates?.name || e.label || 'Unknown Fee';
+    const type = e.fee_templates?.type || 'N/A';
+    
+    if (!templateMap.has(tId)) {
+      templateMap.set(tId, { name, type, charged: 0, paid: 0, outstanding: 0 });
+    }
+    const tData = templateMap.get(tId)!;
+    if (e.status === 'waived') {
+       // waived
+    } else {
+       tData.charged += e.amount;
+       tData.paid += (e.paid_amount || 0);
+       tData.outstanding += (e.amount - (e.paid_amount || 0));
+    }
+  });
+
+  const templateData: any[][] = [
+    ['Template Name', 'Type', 'Total Charged', 'Total Collected', 'Total Outstanding', 'Collection Rate %']
+  ];
+  templateMap.forEach(t => {
+    const rate = t.charged > 0 ? ((t.paid / t.charged) * 100).toFixed(1) + '%' : 'N/A';
+    templateData.push([t.name, t.type, t.charged, t.paid, t.outstanding, rate]);
+  });
+  const wsTemplate = XLSX.utils.aoa_to_sheet(templateData);
+  wsTemplate['!cols'] = templateData[0].map((_, i) => ({ wch: 18 }));
+  XLSX.utils.book_append_sheet(wb, wsTemplate, 'Fees by Template');
+
+  // 3. Members List Sheet
+  const memberMap = new Map<string, { name: string, email: string, role: string, outstanding: number }>();
+  allEntries.forEach(e => {
+    if (!e.users) return;
+    const mId = e.member_id;
+    if (!memberMap.has(mId)) {
+      memberMap.set(mId, { name: e.users.name, email: e.users.email, role: e.users.role, outstanding: 0 });
+    }
+    if (e.status !== 'waived' && e.status !== 'paid') {
+      memberMap.get(mId)!.outstanding += (e.amount - (e.paid_amount || 0));
+    }
+  });
+
+  const memberData: any[][] = [
+    ['Member Name', 'Email', 'Role', 'Outstanding Balance']
+  ];
+  Array.from(memberMap.values())
+    .sort((a, b) => b.outstanding - a.outstanding)
+    .forEach(m => {
+       memberData.push([m.name, m.email, m.role, m.outstanding]);
+    });
+  const wsMember = XLSX.utils.aoa_to_sheet(memberData);
+  wsMember['!cols'] = memberData[0].map((_, i) => ({ wch: 18 }));
+  XLSX.utils.book_append_sheet(wb, wsMember, 'Outstanding Member Balances');
+
+  const fileName = `dues-summary-${new Date().toISOString().split('T')[0]}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+}
+
