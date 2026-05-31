@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { CreateTemplateInput, FeeTemplate } from '../../hooks/useDues';
 import { supabase } from '../../supabase';
+import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { Button } from '../ui/Button';
 
 interface FeeTemplateFormProps {
@@ -11,6 +12,7 @@ interface FeeTemplateFormProps {
 }
 
 export function FeeTemplateForm({ isOpen, onClose, onSubmit, editingTemplate }: FeeTemplateFormProps) {
+  const { adminTenant: tenant } = useAdminTenant();
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -57,12 +59,20 @@ export function FeeTemplateForm({ isOpen, onClose, onSubmit, editingTemplate }: 
   }, [isOpen, editingTemplate]);
 
   const fetchMembers = async () => {
-    const { data } = await supabase.from('users').select('id, name, photo, role, status').eq('status', 'Active');
+    const { data } = await supabase
+      .from('users')
+      .select('id, name, photo, role, status')
+      .eq('status', 'Active')
+      .eq('tenant_id', tenant.id);
     setAvailableMembers(data || []);
   };
 
   const fetchEvents = async () => {
-    const { data } = await supabase.from('events').select('id, title, date').order('date', { ascending: false });
+    const { data } = await supabase
+      .from('events')
+      .select('id, title, date')
+      .eq('tenant_id', tenant.id)
+      .order('date', { ascending: false });
     setEvents(data || []);
   };
 
