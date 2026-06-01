@@ -8,6 +8,8 @@ export default function FeaturedProjects() {
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const isLight = tenant.brand.primaryColor === '#FFFFFF';
+
   useEffect(() => {
     const fetchProjects = async () => {
       try {
@@ -28,24 +30,47 @@ export default function FeaturedProjects() {
 
   if (loading || projects.length === 0) return null;
 
+  /*
+   * Theme strategy:
+   * - Light tenant (isLight): use primary color bg (e.g. white/light) with
+   *   accent-colored headings and dark card gradients for contrast.
+   * - Dark tenant: use the hero primary bg so the section feels part of the
+   *   brand palette, not a random black block.
+   *
+   * All colors resolved from CSS vars so they work for any tenant config.
+   */
+  const sectionBg = isLight
+    ? 'var(--color-page-bg)'
+    : 'var(--color-primary)';
+
+  const headingColor = isLight
+    ? 'var(--color-accent)'
+    : 'var(--color-text-on-primary, #ffffff)';
+
+  const subColor = isLight
+    ? 'var(--color-text-muted, #6b7280)'
+    : 'rgba(255,255,255,0.55)';
+
+  const cardPlaceholderBg = isLight
+    ? 'linear-gradient(135deg, #e8eaf0 0%, #d0d4e8 50%, #bcc3db 100%)'
+    : 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
+
+  const overlayGradient = isLight
+    ? 'linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.35) 55%, transparent 100%)'
+    : 'linear-gradient(to top, var(--color-primary) 0%, rgba(0,0,0,0.45) 55%, transparent 100%)';
+
   return (
-    /*
-     * FIX: was bg-[var(--color-hero-start)] which resolves to the hero's hot-pink
-     * gradient start color for RACDLU — making the entire section magenta.
-     * Use an explicit dark bg so all card text (white) is legible and the section
-     * creates a strong visual break in the page hierarchy.
-     */
-    <section className="py-24" style={{ background: '#0a0a0a' }}>
+    <section className="py-24" style={{ background: sectionBg }}>
       {/* Header */}
       <div className="max-w-7xl mx-auto px-6 mb-12 flex justify-between items-end">
         <div>
-          {/* FIX: was text-primary (magenta) on a magenta bg = invisible.
-              Now white on dark bg. */}
-          <h2 className="text-4xl md:text-5xl font-heading font-bold text-white mb-4">
+          <h2
+            className="text-4xl md:text-5xl font-heading font-bold mb-4"
+            style={{ color: headingColor }}
+          >
             Our Impact.
           </h2>
-          {/* FIX: was text-gray-600 on magenta = poor contrast. Now muted on dark. */}
-          <p className="text-gray-400 text-lg">
+          <p className="text-lg" style={{ color: subColor }}>
             Featured projects shaping our community.
           </p>
         </div>
@@ -68,15 +93,8 @@ export default function FeaturedProjects() {
             <div
               key={project.id}
               className="w-[85vw] sm:w-[400px] md:w-[450px] aspect-[3/4] relative rounded-2xl overflow-hidden group snap-center shadow-xl"
-              /*
-               * FIX: was bg-gray-200 (light grey) which made the card look broken
-               * when no coverImage is present. A dark gradient placeholder looks
-               * intentional and keeps all overlaid white text readable.
-               */
               style={{
-                background: project.coverImage
-                  ? '#111'
-                  : 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+                background: project.coverImage ? '#111' : cardPlaceholderBg,
               }}
             >
               {/* Cover image */}
@@ -88,19 +106,10 @@ export default function FeaturedProjects() {
                 />
               )}
 
-              {/*
-               * FIX: was `from-primary/90` using a Tailwind opacity modifier on a
-               * CSS custom property — Tailwind cannot compute the RGBA value at
-               * build time from a var(), so the gradient silently fails and the
-               * overlay renders as fully transparent. Using an inline style with a
-               * CSS var in a gradient works reliably in all browsers.
-               */}
+              {/* Gradient overlay */}
               <div
                 className="absolute inset-0"
-                style={{
-                  background:
-                    'linear-gradient(to top, var(--color-primary) 0%, rgba(0,0,0,0.45) 55%, transparent 100%)',
-                }}
+                style={{ background: overlayGradient }}
               />
 
               {/* Card content */}
@@ -111,7 +120,7 @@ export default function FeaturedProjects() {
                     className="text-xs font-bold px-3 py-1 rounded-full"
                     style={{
                       background: 'var(--color-accent)',
-                      color: 'var(--color-primary)',
+                      color: '#ffffff',
                     }}
                   >
                     {project.type}
@@ -142,7 +151,7 @@ export default function FeaturedProjects() {
 
                 <Link
                   to={`/projects/${project.id}`}
-                  className="text-white font-medium mt-4 flex items-center gap-2 opacity-0 -translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300"
+                  className="font-medium mt-4 flex items-center gap-2 opacity-0 -translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300"
                   style={{ color: 'var(--color-accent)' }}
                 >
                   View Case Study &rarr;
