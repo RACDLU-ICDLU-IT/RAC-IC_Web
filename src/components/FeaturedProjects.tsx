@@ -40,15 +40,15 @@ export default function FeaturedProjects() {
    * All colors resolved from CSS vars so they work for any tenant config.
    */
   const sectionBg = isLight
-    ? 'var(--color-page-bg)'
+    ? 'var(--color-accent)'
     : 'var(--color-primary)';
 
   const headingColor = isLight
-    ? 'var(--color-accent)'
+    ? 'var(--color-page-bg)'
     : 'var(--color-text-on-primary, #ffffff)';
 
   const subColor = isLight
-    ? 'var(--color-text-muted, #6b7280)'
+    ? 'rgba(255,255,255,0.7)'
     : 'rgba(255,255,255,0.55)';
 
   const cardPlaceholderBg = isLight
