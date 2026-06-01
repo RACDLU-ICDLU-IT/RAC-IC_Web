@@ -697,7 +697,7 @@ export default function Home() {
         )}
 
         {/* TOP: headline — sits near top (logo removed) */}
-        <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-12 w-full pt-34 md:pt-38">
+        <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-12 w-full pt-32 md:pt-36">
           <h1
             ref={headlineRef}
             className="hv2-hero__headline"
