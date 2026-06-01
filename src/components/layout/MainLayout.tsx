@@ -196,9 +196,76 @@ export default function MainLayout() {
           </div>
           <div>
             <h4 className="font-bold text-lg mb-6 uppercase tracking-wider text-white">Follow Us</h4>
+            {/* FIX 6: Real SVG icons for Facebook and Instagram */}
             <div className="flex gap-4">
-              <a href={tenant.social.facebook} className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center hover:bg-white hover:text-[var(--color-accent)] transition-all text-white font-bold text-sm">FB</a>
-              <a href={tenant.social.instagram} className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center hover:bg-white hover:text-[var(--color-accent)] transition-all text-white font-bold text-sm">IN</a>
+              {/* Facebook */}
+              <a
+                href={tenant.social.facebook}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Facebook"
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.15)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background 0.2s, transform 0.2s',
+                  flexShrink: 0,
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.28)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                {/* Official Facebook "f" path */}
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+                </svg>
+              </a>
+
+              {/* Instagram */}
+              <a
+                href={tenant.social.instagram}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Instagram"
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.15)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'background 0.2s, transform 0.2s',
+                  flexShrink: 0,
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.28)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                {/* Instagram camera outline icon */}
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+                  <circle cx="12" cy="12" r="4" />
+                  {/* Dot — rendered as a small filled circle via a second element */}
+                  <circle cx="17.5" cy="6.5" r="1.2" fill="white" stroke="none" />
+                </svg>
+              </a>
             </div>
           </div>
         </div>
