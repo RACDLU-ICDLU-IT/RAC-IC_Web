@@ -702,7 +702,7 @@ export default function Home() {
         />
 
         {/* TOP: headline + logo — sits near top */}
-        <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-12 w-full pt-6 md:pt-10">
+        <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-12 w-full pt-24 md:pt-28">
           <h1
             ref={headlineRef}
             className="hv2-hero__headline"
