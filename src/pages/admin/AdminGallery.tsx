@@ -1,5 +1,5 @@
 import { supabase } from '../../supabase';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -34,6 +34,12 @@ export default function AdminGallery() {
   const { addToast } = useToast();
 
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  // Track in-flight bulk uploads so sort_order doesn't collide and
+  // fetchPhotos only fires once after all uploads complete.
+  const bulkUploadCounterRef = useRef(0);
+  const bulkUploadPendingRef = useRef(0);
+  const bulkFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchPhotos = async () => {
     setLoading(true);
@@ -176,22 +182,35 @@ export default function AdminGallery() {
 
   const handleBulkUpload = async (url: string) => {
     if (!url) return;
+
+    // Each upload gets a unique, monotonically increasing sort_order so
+    // parallel callbacks do not collide on the same value.
+    const sortOffset = bulkUploadCounterRef.current++;
+    bulkUploadPendingRef.current++;
+
     try {
       const { error } = await supabase.from('gallery').insert({
         id: crypto.randomUUID(),
         url: url,
         caption: '',
         albumTag: '',
-        sort_order: photos.length,
+        sort_order: photos.length + sortOffset,
         createdAt: new Date().toISOString(),
         tenant_id: tenant.id
       });
       if (error) throw error;
       addToast('Image uploaded successfully', 'success');
-      fetchPhotos();
     } catch (err: any) {
       console.error(err);
-      addToast(err.message || 'Failed to bulk upload photo', 'error');
+      addToast(err.message || 'Failed to upload photo', 'error');
+    } finally {
+      bulkUploadPendingRef.current--;
+      // Debounce: wait until all parallel uploads finish, then refresh once.
+      if (bulkFetchTimerRef.current) clearTimeout(bulkFetchTimerRef.current);
+      bulkFetchTimerRef.current = setTimeout(() => {
+        bulkUploadCounterRef.current = 0;
+        fetchPhotos();
+      }, 600);
     }
   };
 
