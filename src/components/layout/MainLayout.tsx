@@ -207,42 +207,69 @@ export default function MainLayout() {
         style={{
           backgroundColor: isLight ? 'var(--color-accent)' : 'var(--color-primary)',
           color: 'white',
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
-        {/* Top accent line */}
-        <div className="w-full h-[3px] bg-white/15" />
+        {/* ── Decorative ambient circles (depth / texture) ── */}
+        <div aria-hidden="true" style={{
+          position: 'absolute', top: '-120px', right: '-120px',
+          width: '480px', height: '480px', borderRadius: '50%',
+          border: '1px solid rgba(255,255,255,0.07)', pointerEvents: 'none',
+        }} />
+        <div aria-hidden="true" style={{
+          position: 'absolute', top: '-60px', right: '-60px',
+          width: '280px', height: '280px', borderRadius: '50%',
+          border: '1px solid rgba(255,255,255,0.05)', pointerEvents: 'none',
+        }} />
+        <div aria-hidden="true" style={{
+          position: 'absolute', bottom: '60px', left: '-100px',
+          width: '320px', height: '320px', borderRadius: '50%',
+          border: '1px solid rgba(255,255,255,0.05)', pointerEvents: 'none',
+        }} />
 
-        <div className="max-w-7xl mx-auto px-6 md:px-10 lg:px-16 pt-16 pb-10">
-          {/* Main grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12 lg:gap-8">
-
-            {/* Brand column */}
-            <div className="sm:col-span-2 lg:col-span-1">
+        {/* ══════════════════════════════════════════════════
+            HERO BAND — big club name + tagline + CTA
+        ══════════════════════════════════════════════════ */}
+        <div className="relative max-w-7xl mx-auto px-6 md:px-10 lg:px-16 pt-16 pb-12 border-b border-white/10">
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8">
+            {/* Left — logo + headline */}
+            <div className="flex flex-col gap-5">
               {settings.logoUrl && !logoError ? (
                 <img
                   src={settings.logoUrl}
-                  alt="Logo"
-                  className="h-16 w-auto object-contain mb-5 opacity-90"
+                  alt={settings.clubName || tenant.shortName}
+                  className="h-14 w-auto object-contain"
                   onError={() => setLogoError(true)}
                 />
               ) : (
-                <p className="font-heading font-extrabold text-2xl mb-5 text-white">
+                <span className="font-heading font-extrabold text-3xl text-white">
                   {tenant.shortName}
-                </p>
+                </span>
               )}
-              <p className="text-white/60 text-sm leading-relaxed max-w-[260px]">
+              <div>
+                <h2 className="font-heading font-extrabold text-3xl md:text-4xl lg:text-5xl text-white leading-tight tracking-tight">
+                  {settings.clubName || tenant.fullName}
+                </h2>
+                <p className="text-white/50 text-sm mt-2 tracking-widest uppercase font-medium">
+                  Rotary International · District 64 · Bangladesh
+                </p>
+              </div>
+            </div>
+
+            {/* Right — tagline + social + CTA */}
+            <div className="flex flex-col gap-6 lg:items-end lg:text-right max-w-sm">
+              <p className="text-white/65 text-base leading-relaxed">
                 A community of passionate young leaders dedicated to service, personal growth, and creating positive change.
               </p>
               {/* Social icons */}
-              <div className="flex gap-3 mt-7">
+              <div className="flex gap-3 lg:justify-end">
                 <SocialLink href={tenant.social?.facebook} aria="Facebook">
-                  {/* Facebook */}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
                     <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
                   </svg>
                 </SocialLink>
                 <SocialLink href={tenant.social?.instagram} aria="Instagram">
-                  {/* Instagram */}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
                     <circle cx="12" cy="12" r="4" />
@@ -250,7 +277,25 @@ export default function MainLayout() {
                   </svg>
                 </SocialLink>
               </div>
+              {/* Join CTA */}
+              <Link
+                to="/join"
+                className="inline-flex items-center gap-2.5 bg-white text-[var(--color-accent)] font-extrabold text-xs uppercase tracking-widest px-7 py-3.5 rounded-full hover:bg-white/90 transition-all duration-300 hover:scale-105 shadow-lg shadow-black/10 self-start lg:self-auto"
+              >
+                Join the Club
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </Link>
             </div>
+          </div>
+        </div>
+
+        {/* ══════════════════════════════════════════════════
+            LINK GRID — 3 columns
+        ══════════════════════════════════════════════════ */}
+        <div className="relative max-w-7xl mx-auto px-6 md:px-10 lg:px-16 py-12">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-10">
 
             {/* Explore */}
             <FooterCol title="Explore">
@@ -258,6 +303,7 @@ export default function MainLayout() {
               <FooterLink to="/events">Events</FooterLink>
               <FooterLink to="/news">News</FooterLink>
               <FooterLink to="/board">Leadership</FooterLink>
+              <FooterLink to="/about">About Us</FooterLink>
             </FooterCol>
 
             {/* Connect */}
@@ -268,39 +314,45 @@ export default function MainLayout() {
               {settings.contactEmail && (
                 <a
                   href={`mailto:${settings.contactEmail}`}
-                  className="block text-white/60 hover:text-white transition-colors duration-200 text-sm py-0.5"
+                  className="text-white/55 hover:text-white transition-colors duration-200 text-sm break-all"
                 >
                   {settings.contactEmail}
                 </a>
               )}
             </FooterCol>
 
-            {/* Organisation */}
-            <FooterCol title="Organisation">
-              <p className="text-white/60 text-sm leading-relaxed">
-                Rotaract Club of Dhaka Luminous
-              </p>
-              <p className="text-white/40 text-xs mt-1">Rotary International District 64</p>
-              <p className="text-white/40 text-xs">Bangladesh</p>
-              <div className="mt-5">
+            {/* Members */}
+            <div className="col-span-2 md:col-span-1">
+              <FooterCol title="Members">
                 <Link
                   to="/login"
-                  className="inline-flex items-center gap-2 border border-white/30 hover:border-white hover:bg-white/10 transition-all duration-300 text-white text-xs font-bold uppercase tracking-widest px-5 py-2.5 rounded-full"
+                  className="inline-flex items-center justify-center gap-2 border border-white/30 hover:border-white/70 hover:bg-white/10 transition-all duration-300 text-white text-xs font-bold uppercase tracking-widest px-6 py-3 rounded-full w-fit"
                 >
                   Member Login
                 </Link>
-              </div>
-            </FooterCol>
-          </div>
+                <p className="text-white/40 text-xs leading-relaxed mt-1 max-w-[200px]">
+                  Access your member dashboard, resources, and club tools.
+                </p>
+              </FooterCol>
+            </div>
 
-          {/* Divider */}
-          <div className="mt-14 pt-7 border-t border-white/15 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <p className="text-white/35 text-xs tracking-wide text-center sm:text-left">
+          </div>
+        </div>
+
+        {/* ══════════════════════════════════════════════════
+            BOTTOM BAR
+        ══════════════════════════════════════════════════ */}
+        <div className="relative border-t border-white/10">
+          <div className="max-w-7xl mx-auto px-6 md:px-10 lg:px-16 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <p className="text-white/30 text-xs tracking-wide text-center sm:text-left">
               © {new Date().getFullYear()} {settings.clubName || tenant.fullName}. All rights reserved.
             </p>
-            <p className="text-white/25 text-xs tracking-wide">
-              Rotary International District 64 · Bangladesh
-            </p>
+            <div className="flex items-center gap-4">
+              <span className="w-1 h-1 rounded-full bg-white/20 hidden sm:block" />
+              <p className="text-white/25 text-xs tracking-wide text-center">
+                Rotary International District 64 · Bangladesh
+              </p>
+            </div>
           </div>
         </div>
       </footer>
