@@ -1,3 +1,92 @@
+
+
+RAC-IC_Web-main.zip
+zip
+
+
+import { supabase } from '../../supabase'; import React, { useEffect, useState } from 'react'; import { Button } from '../../components/ui/Button'; import { useToast } from '../../hooks/useToast'; import { ConfirmDialog } from '../../components/ui/ConfirmDialog'; import { Modal } from '../../co
+
+pasted
+
+
+import { Button } from '../../components/ui/Button'; import { useToast } from '../../hooks/useToast'; import { ConfirmDialog } from '../../components/ui/ConfirmDialog'; import { Modal } from '../../components/ui/Modal'; import { Presentation, Pencil, Trash, Users, Loader2, MoreVertical } from 'l
+
+pasted
+
+it shows this when i go to pproject on admin dash ⚠️ Something went wrong useState is not defined Return to Home and the bulk upload do not work
+
+7:19 PM
+
+Identified missing imports and diagnosed bulk upload race condition
+Identified missing imports and diagnosed bulk upload race condition
+Found both bugs. Let me fix them:
+
+Bug 1 — useState is not defined: AdminProjects.tsx is missing its React, useState, useEffect, and supabase imports entirely.
+
+Bug 2 — Bulk upload broken: When multiple images upload in parallel, every callback reads the same stale photos.length for sort_order. If there's any uniqueness on that column they'll silently fail; even without it, the stale counter means only one photo may stick. Also fetchPhotos() fires once per image in a race.
+
+
+Viewed a file, edited a file
+Viewed a file, edited a file
+Now fix the bulk upload race condition in AdminGallery:
+
+
+Edited 2 files, viewed a file
+Edited 2 files, viewed a file
+Now replace the buggy handleBulkUpload with the race-condition-safe version:
+
+
+Ran 3 commands, viewed a file, edited a file
+Ran 3 commands, viewed a file, edited a file
+Now verify both fixes look correct:
+
+
+Ran 2 commands
+Ran 2 commands
+Both fixes are clean. Now copy the fixed files to outputs:
+
+
+Ran a command, read a file
+Ran a command, read a file
+Here's exactly what was wrong and what was fixed:
+
+Bug 1 — useState is not defined (AdminProjects.tsx)
+
+The file was missing its top-level imports entirely. Added:
+
+ts
+import { supabase } from '../../supabase';
+import React, { useEffect, useState } from 'react';
+Without these, every hook call (useState, useEffect) and every Supabase query crashed immediately, which is why you saw the error on page load.
+
+Bug 2 — Bulk upload broken (AdminGallery.tsx)
+
+Two problems in handleBulkUpload:
+
+Race condition on sort_order — When Cloudinary uploads multiple files, it calls onUpload once per file in parallel. Every callback read the same stale photos.length, so they all tried to insert with the same sort_order. Depending on your DB constraints this caused silent failures or collisions. Fixed by using a useRef counter (bulkUploadCounterRef) that increments atomically per callback, giving each image a unique offset.
+fetchPhotos() called N times in parallel — With 5 uploads, you'd fire 5 concurrent re-fetches. Now a setTimeout debounce (600ms) is used so fetchPhotos() fires just once after the last upload completes.
+
+Adminprojects
+Code · TSX 
+
+Admingallery
+Code · TSX 
+
+Next time, try this in Cowork
+
+Hand off complex tasks for Claude to handle independently. Come back to finished results.
+
+
+
+
+
+Claude is AI and can make mistakes. Please double-check responses.
+
+
+raw
+Adminprojects · TSX
+import { supabase } from '../../supabase';
+import React, { useEffect, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -7,7 +96,7 @@ import { CloudinaryUpload } from '../../components/CloudinaryUpload';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
-
+ 
 export default function AdminProjects() {
   const { adminTenant: tenant } = useAdminTenant();
   const [projects, setProjects] = useState<any[]>([]);
@@ -19,15 +108,15 @@ export default function AdminProjects() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [deleteId, setDeleteId] = useState<string | null>(null);
-
+ 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-
+ 
   const [activeTab, setActiveTab] = useState<'rich' | 'raw'>('rich');
   const [blocks, setBlocks] = useState<any[]>([]);
-
+ 
   const { addToast } = useToast();
-
+ 
   const fetchProjects = async (tenantId?: string) => {
     const tid = tenantId ?? tenant.id;
     setLoading(true);
@@ -46,19 +135,19 @@ export default function AdminProjects() {
       setLoading(false);
     }
   };
-
+ 
   const fetchMembers = async () => {
     try {
       const { data: snap } = await supabase.from('users').select('*').eq('tenant_id', tenant.id);
       setActiveMembers((snap || []).filter((m: any) => m.status === 'active'));
     } catch(err) { console.error(err); }
   };
-
+ 
   useEffect(() => {
     fetchProjects();
     fetchMembers();
   }, [tenant.id]);
-
+ 
   useEffect(() => {
     if (isFormOpen) {
       const desc = formData.description || '';
@@ -70,7 +159,7 @@ export default function AdminProjects() {
           return;
         }
       } catch (e) {}
-
+ 
       // Fallback: create a single text block with description content
       setBlocks([
         { id: crypto.randomUUID(), type: 'text', content: desc }
@@ -78,7 +167,7 @@ export default function AdminProjects() {
       setActiveTab('rich');
     }
   }, [isFormOpen, formData.id]);
-
+ 
   const addBlock = (type: 'text' | 'image' | 'collage') => {
     const newId = crypto.randomUUID();
     let newBlock: any;
@@ -91,11 +180,11 @@ export default function AdminProjects() {
     }
     setBlocks([...blocks, newBlock]);
   };
-
+ 
   const updateBlock = (id: string, updatedFields: any) => {
     setBlocks(blocks.map(b => b.id === id ? { ...b, ...updatedFields } : b));
   };
-
+ 
   const moveBlock = (index: number, direction: 'up' | 'down') => {
     if (direction === 'up' && index === 0) return;
     if (direction === 'down' && index === blocks.length - 1) return;
@@ -107,22 +196,22 @@ export default function AdminProjects() {
     updated[targetIndex] = temp;
     setBlocks(updated);
   };
-
+ 
   const deleteBlock = (id: string) => {
     setBlocks(blocks.filter(b => b.id !== id));
   };
-
+ 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) setSelectedIds(filteredProjects.map(p => p.id));
     else setSelectedIds([]);
   };
-
+ 
   const handleSelect = (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
     e.stopPropagation();
     if (selectedIds.includes(id)) setSelectedIds(selectedIds.filter(i => i !== id));
     else setSelectedIds([...selectedIds, id]);
   };
-
+ 
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} projects?`)) return;
@@ -141,7 +230,7 @@ export default function AdminProjects() {
       addToast(err.message || 'Bulk delete failed', 'error');
     }
   };
-
+ 
   const handleSave = async () => {
     if (!formData.name?.trim()) {
       addToast('Project name is required', 'error');
@@ -151,14 +240,14 @@ export default function AdminProjects() {
       addToast('Project type is required', 'error');
       return;
     }
-
+ 
     if (isSaving) return;
     setIsSaving(true);
-
+ 
     // Capture tenant.id NOW so save + fetch always use the exact same value,
     // even if the admin tenant context changes between awaits.
     const currentTenantId = tenant.id;
-
+ 
     const isNew = !formData.id;
     // Destructure out 'gallery' — it's a local UI state key that has no
     // matching column in the database. Only 'galleryImages' is the real column.
@@ -170,14 +259,14 @@ export default function AdminProjects() {
     if (typeof formData.tags === 'string') {
        finalTags = formData.tags.split(',').map((t:string) => t.trim()).filter(Boolean);
     }
-
+ 
     const finalDescription = activeTab === 'rich'
       ? JSON.stringify(blocks)
       : (formData.description || '');
-
+ 
     const currentGallery = formData.gallery || formData.galleryImages || [];
     const finalDate = formData.executionDate || formData.startDate || '';
-
+ 
     const dataToSave = { 
       ...formDataWithoutId, 
       description: finalDescription,
@@ -196,9 +285,9 @@ export default function AdminProjects() {
         .from('projects')
         .upsert({ id: docId, ...dataToSave }, { onConflict: 'id' })
         .select('id');
-
+ 
       if (saveError) throw saveError;
-
+ 
       // Verify that the row was actually written (catches silent RLS failures)
       if (!savedRows || savedRows.length === 0) {
         throw new Error(
@@ -206,7 +295,7 @@ export default function AdminProjects() {
           'Check that your account has write permission for the "' + currentTenantId + '" tenant.'
         );
       }
-
+ 
       addToast('Project saved', 'success');
       setIsFormOpen(false);
       
@@ -220,7 +309,7 @@ export default function AdminProjects() {
       setIsSaving(false);
     }
   };
-
+ 
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
@@ -238,7 +327,7 @@ export default function AdminProjects() {
       addToast(err.message || 'Failed to delete project', 'error');
     }
   };
-
+ 
   const generateReport = (project: any) => {
     const particip = (project.memberIds || []).map((id:string) => {
        const m = activeMembers.find(am => am.id === id);
@@ -257,7 +346,7 @@ export default function AdminProjects() {
         }).join('\n\n');
       }
     } catch (e) {}
-
+ 
     const text = `PROJECT REPORT
 =====================
 Name: ${project.name}
@@ -265,13 +354,13 @@ Type: ${project.type}
 Status: ${project.status}
 Date: ${project.executionDate || project.startDate || 'TBD'}
 Volunteer Hours Contributed: ${project.volunteerHours || 0}
-
+ 
 Description:
 ${descText}
-
+ 
 Participants (${(project.memberIds||[]).length}):
 ${particip}`;
-
+ 
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -279,10 +368,10 @@ ${particip}`;
     a.download = `Project_Report_${project.name.replace(/\s+/g, '_')}.txt`;
     a.click();
   };
-
+ 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors bg-white placeholder:text-gray-400";
   const labelClass = "block text-sm font-medium text-gray-700 mb-1.5";
-
+ 
   const renderDescriptionPreview = () => {
     try {
       const descVal = activeTab === 'rich' ? JSON.stringify(blocks) : (formData.description || '');
@@ -297,7 +386,7 @@ ${particip}`;
       return { __html: '' };
     }
   };
-
+ 
   const toggleMember = (id: string) => {
     const current = formData.memberIds || [];
     if (current.includes(id)) {
@@ -306,9 +395,9 @@ ${particip}`;
       setFormData({...formData, memberIds: [...current, id] });
     }
   };
-
+ 
   const filteredProjects = filter === 'all' ? projects : projects.filter(p => p.status?.toLowerCase() === filter);
-
+ 
   return (
     <div className="space-y-8 pb-32">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -334,7 +423,7 @@ ${particip}`;
           </Button>
         </div>
       </div>
-
+ 
       {selectedIds.length > 0 && (
         <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -349,7 +438,7 @@ ${particip}`;
           </div>
         </div>
       )}
-
+ 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1,2,3].map(i => <div key={i} className="h-64 bg-gray-100 animate-pulse rounded-xl"></div>)}
@@ -378,7 +467,7 @@ ${particip}`;
                     className="w-5 h-5 rounded border-2 border-white/80 bg-black/20 text-accent focus:ring-accent checked:bg-accent cursor-pointer"
                   />
                 </div>
-
+ 
                 {/* 3-dot Menu (Kebab) */}
                 <div className="absolute top-2 right-2 z-10">
                   <button 
@@ -425,7 +514,7 @@ ${particip}`;
           ))}
         </div>
       )}
-
+ 
       <Modal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} title={formData.id ? 'Edit Project' : 'Add Project'} size="xl">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           
@@ -467,7 +556,7 @@ ${particip}`;
                 />
               </div>
             </div>
-
+ 
             <div><label className={labelClass}>Volunteer Hours</label><input type="number" value={formData.volunteerHours || 0} onChange={e => setFormData({...formData, volunteerHours: Number(e.target.value)})} className={inputClass} /></div>
             
             <div>
@@ -498,7 +587,7 @@ ${particip}`;
                   Raw Markdown Text
                 </button>
               </div>
-
+ 
               {activeTab === 'rich' ? (
                 <div className="space-y-4">
                   <div className="flex flex-wrap gap-2 items-center p-2.5 bg-gray-50 border border-gray-200 rounded-xl">
@@ -525,7 +614,7 @@ ${particip}`;
                       + Photo Collage
                     </button>
                   </div>
-
+ 
                   {blocks.length === 0 ? (
                     <div className="border border-dashed border-gray-200 rounded-xl py-12 text-center text-gray-400 text-xs italic">
                       No blocks added yet. Click above to add text blocks, images, or photo collages!
@@ -574,7 +663,7 @@ ${particip}`;
                               </button>
                             </div>
                           </div>
-
+ 
                           {/* Content block editor body */}
                           {block.type === 'text' && (
                             <div className="space-y-2">
@@ -587,7 +676,7 @@ ${particip}`;
                               />
                             </div>
                           )}
-
+ 
                           {block.type === 'image' && (
                             <div className="space-y-3">
                               {/* Selected Image Preview / Upload */}
@@ -610,7 +699,7 @@ ${particip}`;
                                   </div>
                                 </div>
                               </div>
-
+ 
                               {/* Quick selection from library items */}
                               {((formData.gallery || formData.galleryImages || []).length > 0) && (
                                 <div>
@@ -632,7 +721,7 @@ ${particip}`;
                                   </div>
                                 </div>
                               )}
-
+ 
                               <div className="grid grid-cols-2 gap-3 pt-1">
                                 <div>
                                   <label className="block text-xs font-bold text-gray-700 mb-1">Display Style</label>
@@ -660,7 +749,7 @@ ${particip}`;
                               </div>
                             </div>
                           )}
-
+ 
                           {block.type === 'collage' && (
                             <div className="space-y-3">
                               <div className="grid grid-cols-2 gap-3">
@@ -683,7 +772,7 @@ ${particip}`;
                                   </span>
                                 </div>
                               </div>
-
+ 
                               {/* Interactive Collage selector from gallery library */}
                               <div>
                                 <p className="text-[10px] font-bold text-gray-400 mb-1.5 uppercase tracking-wider font-mono">
@@ -736,14 +825,14 @@ ${particip}`;
               )}
             </div>
           </div>
-
+ 
           {/* Right Column */}
           <div className="space-y-6">
             <div>
               <label className={labelClass}>Cover Image</label>
               <CloudinaryUpload onUpload={(url) => setFormData({...formData, coverImage: url})} currentUrl={formData.coverImage} aspectRatio="landscape" />
             </div>
-
+ 
             <div>
               <label className={labelClass}>Project Image Library</label>
               <div className="space-y-3">
@@ -797,7 +886,7 @@ ${particip}`;
                 <p className="text-[10px] text-gray-400 leading-normal">Upload images here, then use them in your dynamic sections or collages below.</p>
               </div>
             </div>
-
+ 
             <div>
               <label className={labelClass}>Participants</label>
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-2 max-h-48 overflow-y-auto">
@@ -811,7 +900,7 @@ ${particip}`;
               <p className="text-xs text-gray-500 mt-1">{(formData.memberIds || []).length} selected</p>
             </div>
           </div>
-
+ 
         </div>
         <div className="flex justify-between pt-6 mt-6 border-t border-gray-100">
           {formData.id ? (
@@ -825,8 +914,14 @@ ${particip}`;
           </Button>
         </div>
       </Modal>
-
+ 
       <ConfirmDialog isOpen={!!deleteId} onClose={() => setDeleteId(null)} onConfirm={handleDelete} title="Delete Project" message="Are you sure? This cannot be undone." />
     </div>
   );
 }
+ 
+
+
+
+
+
