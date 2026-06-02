@@ -672,12 +672,15 @@ ${particip}`;
                 <CloudinaryUpload 
                   onUpload={(url) => {
                     if (url) {
-                      const currentGallery = formData.gallery || formData.galleryImages || [];
-                      const updated = [...currentGallery, url];
-                      setFormData({
-                        ...formData,
-                        gallery: updated,
-                        galleryImages: updated
+                      setFormData((prev: any) => {
+                        const currentGallery = prev.gallery || prev.galleryImages || [];
+                        if (currentGallery.includes(url)) return prev;
+                        const updated = [...currentGallery, url];
+                        return {
+                          ...prev,
+                          gallery: updated,
+                          galleryImages: updated
+                        };
                       });
                     }
                   }} 
@@ -732,8 +735,14 @@ ${particip}`;
           </div>
 
         </div>
-        <div className="flex justify-end pt-6 mt-6 border-t border-gray-100">
-          <Button onClick={handleSave} disabled={isSaving}>
+        <div className="flex justify-between pt-6 mt-6 border-t border-gray-100">
+          {formData.id ? (
+            <Button type="button" variant="outline" onClick={() => { setDeleteId(formData.id); setIsFormOpen(false); }} className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200">
+              <Trash size={16} className="mr-2" />
+              Delete Project
+            </Button>
+          ) : <div></div>}
+          <Button type="button" onClick={handleSave} disabled={isSaving}>
             {isSaving ? <><Loader2 size={16} className="animate-spin mr-2" />Saving...</> : 'Save Project'}
           </Button>
         </div>
