@@ -58,12 +58,13 @@ export default function AdminGallery() {
     try {
       const { data: existing } = await supabase.from('page_content').select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
       const merged = { ...(existing?.data || {}), galleryTags: updatedTags };
-      await supabase.from('page_content').upsert({ id: 'pageContent', tenant_id: tenant.id, data: merged }, { onConflict: 'id, tenant_id' });
+      const { error: saveError } = await supabase.from('page_content').upsert({ id: 'pageContent', tenant_id: tenant.id, data: merged }, { onConflict: 'id, tenant_id' });
+      if (saveError) throw saveError;
       addToast('Tag added', 'success');
       
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      addToast('Failed to add tag', 'error');
+      addToast(err.message || 'Failed to add tag', 'error');
     }
   };
 
@@ -73,12 +74,13 @@ export default function AdminGallery() {
     try {
       const { data: existing } = await supabase.from('page_content').select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
       const merged = { ...(existing?.data || {}), galleryTags: updatedTags };
-      await supabase.from('page_content').upsert({ id: 'pageContent', tenant_id: tenant.id, data: merged }, { onConflict: 'id, tenant_id' });
+      const { error: saveError } = await supabase.from('page_content').upsert({ id: 'pageContent', tenant_id: tenant.id, data: merged }, { onConflict: 'id, tenant_id' });
+      if (saveError) throw saveError;
       addToast('Tag removed', 'success');
       
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      addToast('Failed to remove tag', 'error');
+      addToast(err.message || 'Failed to remove tag', 'error');
     }
   };
 
@@ -126,12 +128,38 @@ export default function AdminGallery() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await supabase.from('gallery').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
+      const { error: deleteError } = await supabase.from('gallery').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
+      if (deleteError) throw deleteError;
+      
       addToast('Photo removed', 'success');
       setDeleteId(null);
       
       fetchPhotos();
-    } catch (err) { addToast('Failed to delete', 'error'); }
+    } catch (err: any) { 
+      console.error(err);
+      addToast(err.message || 'Failed to delete', 'error'); 
+    }
+  };
+
+  const handleBulkUpload = async (url: string) => {
+    if (!url) return;
+    try {
+      const { error } = await supabase.from('gallery').insert({
+        id: crypto.randomUUID(),
+        url: url,
+        caption: '',
+        albumTag: '',
+        sort_order: photos.length,
+        createdAt: new Date().toISOString(),
+        tenant_id: tenant.id
+      });
+      if (error) throw error;
+      addToast('Image uploaded successfully', 'success');
+      fetchPhotos();
+    } catch (err: any) {
+      console.error(err);
+      addToast(err.message || 'Failed to bulk upload photo', 'error');
+    }
   };
 
   const handleImportDefaults = async () => {
@@ -184,6 +212,13 @@ export default function AdminGallery() {
                Seed Defaults
             </Button>
           )}
+          <div className="w-[160px]">
+            <CloudinaryUpload 
+              onUpload={handleBulkUpload} 
+              buttonText="Bulk Upload"
+              multiple={true}
+            />
+          </div>
           <Button onClick={() => { setFormData({}); setIsFormOpen(true); }}>Add Photo</Button>
         </div>
       </div>
@@ -297,8 +332,14 @@ export default function AdminGallery() {
                </div>
            </div>
         </div>
-        <div className="flex justify-end pt-6 mt-6 border-t border-gray-100">
-          <Button onClick={handleSave} disabled={!formData.url}>Save Photo</Button>
+        <div className="flex justify-between pt-6 mt-6 border-t border-gray-100">
+          {formData.id ? (
+            <Button type="button" variant="outline" onClick={() => { setDeleteId(formData.id); setIsFormOpen(false); }} className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200">
+              <Trash size={16} className="mr-2" />
+              Delete Photo
+            </Button>
+          ) : <div></div>}
+          <Button type="button" onClick={handleSave} disabled={!formData.url}>Save Photo</Button>
         </div>
       </Modal>
 
