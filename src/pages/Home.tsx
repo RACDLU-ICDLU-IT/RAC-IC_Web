@@ -1026,7 +1026,7 @@ export default function Home() {
                 src={joinRightImageUrl}
                 alt="Join the club"
                 style={{
-                  width: '62.5%',               
+                  width: '70%',               
                   height: 'auto',             // maintain aspect ratio
                   objectFit: 'contain',       // prevent cropping
                   display: 'block',           // remove extra spacing
