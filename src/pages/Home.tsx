@@ -1008,32 +1008,34 @@ export default function Home() {
             </div>
           </div>
 
-          {/* RIGHT — image (Resized to 25%) */}
-          {joinRightImageUrl && (
-            <div
-              className="hv2-join__right-img-wrap"
-              style={{
-                overflow: 'hidden',
-                maxHeight: 520,
-                minHeight: 0,
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <img
-                src={joinRightImageUrl}
-                alt="Join the club"
-                style={{
-                  width: '70%',               
-                  height: 'auto',             // maintain aspect ratio
-                  objectFit: 'contain',       // prevent cropping
-                  display: 'block',           // remove extra spacing
-                }}
-              />
-            </div>
-          )}
+          {/* RIGHT — image */}
+{joinRightImageUrl && (
+  <div
+    className="hv2-join__right-img-wrap"
+    style={{
+      overflow: 'hidden',
+      height: '100%',           // ✅ Fills the entire grid cell height
+      width: '100%',            // ✅ Fills the entire grid cell width
+      position: 'relative',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center', // ✅ Forces horizontal centering
+    }}
+  >
+    <img
+      src={joinRightImageUrl}
+      alt="Join the club"
+      style={{
+        width: '70%',          
+        height: 'auto',
+        maxWidth: '100%',         // ✅ Ensures it doesn't overflow horizontally
+        maxHeight: '100%',        // ✅ Ensures it doesn't overflow vertically
+        objectFit: 'contain',
+        display: 'block',
+      }}
+    />
+  </div>
+)}
         </div>
       </section>
 
