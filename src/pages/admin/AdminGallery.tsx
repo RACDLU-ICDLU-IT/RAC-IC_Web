@@ -4,7 +4,7 @@ import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
-import { Image as ImageIcon, Pencil, Trash, Download, ZoomIn, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Image as ImageIcon, Pencil, Trash, Download, ZoomIn, X, ChevronLeft, ChevronRight, MoreVertical } from 'lucide-react';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 
@@ -27,6 +27,9 @@ export default function AdminGallery() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
   const { addToast } = useToast();
 
@@ -141,6 +144,36 @@ export default function AdminGallery() {
     }
   };
 
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) setSelectedIds(photos.map(p => p.id));
+    else setSelectedIds([]);
+  };
+
+  const handleSelect = (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
+    e.stopPropagation();
+    if (selectedIds.includes(id)) setSelectedIds(selectedIds.filter(i => i !== id));
+    else setSelectedIds([...selectedIds, id]);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} photos?`)) return;
+    try {
+      const { error } = await supabase
+        .from('gallery')
+        .delete()
+        .in('id', selectedIds)
+        .eq('tenant_id', tenant.id);
+      if (error) throw error;
+      addToast(`Deleted ${selectedIds.length} photos`, 'success');
+      setSelectedIds([]);
+      fetchPhotos();
+    } catch (err: any) {
+      console.error(err);
+      addToast(err.message || 'Bulk delete failed', 'error');
+    }
+  };
+
   const handleBulkUpload = async (url: string) => {
     if (!url) return;
     try {
@@ -223,6 +256,21 @@ export default function AdminGallery() {
         </div>
       </div>
 
+      {selectedIds.length > 0 && (
+        <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+             <span className="text-sm font-bold text-primary">{selectedIds.length} selected</span>
+             <button onClick={() => setSelectedIds([])} className="text-xs text-primary hover:underline font-medium">Clear</button>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={handleBulkDelete}>
+              <Trash size={16} className="mr-2" />
+              Delete Selected
+            </Button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
            {[1,2,3,4,5].map(i => <div key={i} className="h-40 bg-gray-100 animate-pulse rounded-xl"></div>)}
@@ -251,16 +299,51 @@ export default function AdminGallery() {
       ) : (
         <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4">
            {photos.map((p, i) => (
-              <div key={p.id} className="relative group break-inside-avoid rounded-xl overflow-hidden cursor-pointer" onClick={() => setLightboxIndex(i)}>
-                 <img src={p.url} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-full object-cover bg-gray-100 transition-transform duration-300 group-hover:scale-105" />
-                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-all duration-300 flex items-center justify-center">
-                    <ZoomIn size={32} className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <div key={p.id} className="relative group break-inside-avoid rounded-xl overflow-hidden cursor-pointer">
+                 <div onClick={() => setLightboxIndex(i)}>
+                   <img src={p.url} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-full object-cover bg-gray-100 transition-transform duration-300 group-hover:scale-105" />
+                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-all duration-300 flex items-center justify-center pointer-events-none">
+                      <ZoomIn size={32} className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                   </div>
                  </div>
-                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3 pointer-events-none">
-                    <div className="flex justify-end gap-1.5 pointer-events-auto">
-                       <button onClick={(e) => { e.stopPropagation(); setFormData(p); setIsFormOpen(true); }} className="p-1.5 bg-blue-600/90 text-white rounded hover:bg-blue-600"><Pencil size={14}/></button>
-                       <button onClick={(e) => { e.stopPropagation(); setDeleteId(p.id); }} className="p-1.5 bg-red-600/90 text-white rounded hover:bg-red-600"><Trash size={14}/></button>
-                    </div>
+
+                 {/* Select Checkbox */}
+                 <div className="absolute top-3 left-3 z-10">
+                   <input
+                     type="checkbox"
+                     checked={selectedIds.includes(p.id)}
+                     onChange={(e) => handleSelect(e, p.id)}
+                     className="w-5 h-5 rounded border-2 border-white/80 bg-black/20 text-accent focus:ring-accent checked:bg-accent cursor-pointer"
+                   />
+                 </div>
+
+                 {/* 3-dot Menu (Kebab) */}
+                 <div className="absolute top-2 right-2 z-10 pointer-events-auto">
+                   <button 
+                     onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === p.id ? null : p.id) }} 
+                     className="p-1.5 bg-black/40 text-white rounded-lg hover:bg-black/60 transition-colors"
+                   >
+                     <MoreVertical size={20} />
+                   </button>
+                   {menuOpenId === p.id && (
+                     <div className="absolute top-10 right-0 w-32 bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden z-20">
+                       <button 
+                          onClick={(e) => { e.stopPropagation(); setFormData(p); setIsFormOpen(true); setMenuOpenId(null); }} 
+                          className="w-full text-left px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                       >
+                         <Pencil size={15}/> Edit
+                       </button>
+                       <button 
+                          onClick={(e) => { e.stopPropagation(); setDeleteId(p.id); setMenuOpenId(null); }} 
+                          className="w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-gray-50"
+                       >
+                         <Trash size={15}/> Delete
+                       </button>
+                     </div>
+                   )}
+                 </div>
+
+                 <div className="absolute bottom-0 left-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3 pointer-events-none bg-gradient-to-t from-black/80 to-transparent">
                     <div>
                        {p.albumTag && <span className="text-[10px] uppercase font-bold text-primary bg-primary/20 px-2 py-0.5 rounded backdrop-blur-sm inline-block mb-1">{p.albumTag}</span>}
                        {p.caption && <p className="text-white text-xs font-medium mt-1 truncate">{p.caption}</p>}
