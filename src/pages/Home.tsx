@@ -390,7 +390,7 @@ if (typeof document !== 'undefined' && !document.getElementById(INJECTED_ID)) {
         width: 100% !important;
       }
       .hv2-join__right-img-wrap img {
-        width: 50% !important;            /* ✅ Smaller image inside square */
+        width: 85% !important;            /* ✅ Smaller image inside square */
         height: auto !important;
         max-height: none !important;
         object-fit: contain !important;
