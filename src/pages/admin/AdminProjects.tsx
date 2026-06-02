@@ -4,7 +4,7 @@ import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
-import { Presentation, Pencil, Trash, Users } from 'lucide-react';
+import { Presentation, Pencil, Trash, Users, Loader2 } from 'lucide-react';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -16,6 +16,7 @@ export default function AdminProjects() {
   const [activeMembers, setActiveMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [isSaving, setIsSaving] = useState(false);
   
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState<any>({});
@@ -26,15 +27,16 @@ export default function AdminProjects() {
 
   const { addToast } = useToast();
 
-  const fetchProjects = async () => {
+  const fetchProjects = async (tenantId?: string) => {
+    const tid = tenantId ?? tenant.id;
     setLoading(true);
     try {
-      const { data: snap } = await supabase
+      const { data: snap, error: fetchError } = await supabase
         .from('projects')
         .select('*')
-        .eq('tenant_id', tenant.id)
-        .order('executionDate', { ascending: false })
+        .eq('tenant_id', tid)
         .order('startDate', { ascending: false });
+      if (fetchError) throw fetchError;
       setProjects(snap || []);
     } catch (err) {
       console.error(err);
@@ -47,7 +49,7 @@ export default function AdminProjects() {
   const fetchMembers = async () => {
     try {
       const { data: snap } = await supabase.from('users').select('*').eq('tenant_id', tenant.id);
-      setActiveMembers(snap || [].filter((m: any) => m.status === 'active'));
+      setActiveMembers((snap || []).filter((m: any) => m.status === 'active'));
     } catch(err) { console.error(err); }
   };
 
@@ -110,8 +112,26 @@ export default function AdminProjects() {
   };
 
   const handleSave = async () => {
+    if (!formData.name?.trim()) {
+      addToast('Project name is required', 'error');
+      return;
+    }
+    if (!formData.type) {
+      addToast('Project type is required', 'error');
+      return;
+    }
+
+    if (isSaving) return;
+    setIsSaving(true);
+
+    // Capture tenant.id NOW so save + fetch always use the exact same value,
+    // even if the admin tenant context changes between awaits.
+    const currentTenantId = tenant.id;
+
     const isNew = !formData.id;
-    const { id, ...formDataWithoutId } = formData;
+    // Destructure out 'gallery' — it's a local UI state key that has no
+    // matching column in the database. Only 'galleryImages' is the real column.
+    const { id, gallery, ...formDataWithoutId } = formData;
     const docId = isNew ? crypto.randomUUID() : id;
     
     // Convert tags string back to array if modified text, otherwise keep array
@@ -132,36 +152,59 @@ export default function AdminProjects() {
       description: finalDescription,
       tags: finalTags,
       memberIds: formData.memberIds || [],
-      gallery: currentGallery,
       galleryImages: currentGallery,
       executionDate: finalDate,
       startDate: finalDate,
-      tenant_id: tenant.id
+      tenant_id: currentTenantId   // always use the snapshot, not a live reference
     };
     
     try {
-      await supabase.from('projects').upsert({ id: docId, ...dataToSave }, { onConflict: 'id' });
+      // Use select() so Supabase returns the inserted/updated row.
+      // Without this, upsert returns {error:null} even if RLS silently blocked the write.
+      const { data: savedRows, error: saveError } = await supabase
+        .from('projects')
+        .upsert({ id: docId, ...dataToSave }, { onConflict: 'id' })
+        .select('id');
+
+      if (saveError) throw saveError;
+
+      // Verify that the row was actually written (catches silent RLS failures)
+      if (!savedRows || savedRows.length === 0) {
+        throw new Error(
+          'Project could not be saved — it may have been blocked by a database policy. ' +
+          'Check that your account has write permission for the "' + currentTenantId + '" tenant.'
+        );
+      }
+
       addToast('Project saved', 'success');
       setIsFormOpen(false);
       
-      fetchProjects();
-    } catch (err) {
+      // Pass currentTenantId explicitly so the list always refreshes
+      // under the same tenant context that was used to save.
+      await fetchProjects(currentTenantId);
+    } catch (err: any) {
       console.error(err);
-      addToast('Failed to save project', 'error');
+      addToast(err.message || 'Failed to save project', 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await supabase.from('projects').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
+      const { error: deleteError } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', deleteId)
+        .eq('tenant_id', tenant.id);
+      if (deleteError) throw deleteError;
       addToast('Project deleted', 'success');
       setDeleteId(null);
-      
       fetchProjects();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      addToast('Failed to delete project', 'error');
+      addToast(err.message || 'Failed to delete project', 'error');
     }
   };
 
@@ -690,7 +733,9 @@ ${particip}`;
 
         </div>
         <div className="flex justify-end pt-6 mt-6 border-t border-gray-100">
-          <Button onClick={handleSave}>Save Project</Button>
+          <Button onClick={handleSave} disabled={isSaving}>
+            {isSaving ? <><Loader2 size={16} className="animate-spin mr-2" />Saving...</> : 'Save Project'}
+          </Button>
         </div>
       </Modal>
 
