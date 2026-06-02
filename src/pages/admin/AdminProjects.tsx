@@ -1,10 +1,8 @@
-import { supabase } from '../../supabase';
-import React, { useEffect, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
-import { Presentation, Pencil, Trash, Users, Loader2 } from 'lucide-react';
+import { Presentation, Pencil, Trash, Users, Loader2, MoreVertical } from 'lucide-react';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -21,6 +19,9 @@ export default function AdminProjects() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<'rich' | 'raw'>('rich');
   const [blocks, setBlocks] = useState<any[]>([]);
@@ -109,6 +110,36 @@ export default function AdminProjects() {
 
   const deleteBlock = (id: string) => {
     setBlocks(blocks.filter(b => b.id !== id));
+  };
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) setSelectedIds(filteredProjects.map(p => p.id));
+    else setSelectedIds([]);
+  };
+
+  const handleSelect = (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
+    e.stopPropagation();
+    if (selectedIds.includes(id)) setSelectedIds(selectedIds.filter(i => i !== id));
+    else setSelectedIds([...selectedIds, id]);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} projects?`)) return;
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .delete()
+        .in('id', selectedIds)
+        .eq('tenant_id', tenant.id);
+      if (error) throw error;
+      addToast(`Deleted ${selectedIds.length} projects`, 'success');
+      setSelectedIds([]);
+      fetchProjects();
+    } catch (err: any) {
+      console.error(err);
+      addToast(err.message || 'Bulk delete failed', 'error');
+    }
   };
 
   const handleSave = async () => {
@@ -304,6 +335,21 @@ ${particip}`;
         </div>
       </div>
 
+      {selectedIds.length > 0 && (
+        <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+             <span className="text-sm font-bold text-primary">{selectedIds.length} selected</span>
+             <button onClick={() => setSelectedIds([])} className="text-xs text-primary hover:underline font-medium">Clear</button>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={handleBulkDelete}>
+              <Trash size={16} className="mr-2" />
+              Delete Selected
+            </Button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1,2,3].map(i => <div key={i} className="h-64 bg-gray-100 animate-pulse rounded-xl"></div>)}
@@ -316,15 +362,47 @@ ${particip}`;
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredProjects.map(p => (
-            <div key={p.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col group">
+            <div key={p.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col group relative">
               <div className="relative h-48 bg-gray-200">
                 {p.coverImage && <img src={p.coverImage} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-full h-full object-cover" />}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex flex-col justify-end p-4">
                    <h3 className="text-white font-heading font-bold text-xl drop-shadow-md">{p.name}</h3>
                 </div>
-                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                   <button onClick={() => { setFormData(p); setIsFormOpen(true); }} className="p-2 bg-white/90 text-gray-800 rounded-lg hover:bg-white"><Pencil size={16}/></button>
-                   <button onClick={() => setDeleteId(p.id)} className="p-2 bg-red-600/90 text-white rounded-lg hover:bg-red-600"><Trash size={16}/></button>
+                
+                {/* Select Checkbox */}
+                <div className="absolute top-3 left-3 z-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(p.id)}
+                    onChange={(e) => handleSelect(e, p.id)}
+                    className="w-5 h-5 rounded border-2 border-white/80 bg-black/20 text-accent focus:ring-accent checked:bg-accent cursor-pointer"
+                  />
+                </div>
+
+                {/* 3-dot Menu (Kebab) */}
+                <div className="absolute top-2 right-2 z-10">
+                  <button 
+                    onClick={() => setMenuOpenId(menuOpenId === p.id ? null : p.id)} 
+                    className="p-1.5 bg-black/40 text-white rounded-lg hover:bg-black/60 transition-colors"
+                  >
+                    <MoreVertical size={20} />
+                  </button>
+                  {menuOpenId === p.id && (
+                    <div className="absolute top-10 right-0 w-32 bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden z-20">
+                      <button 
+                         onClick={() => { setFormData(p); setIsFormOpen(true); setMenuOpenId(null); }} 
+                         className="w-full text-left px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <Pencil size={15}/> Edit
+                      </button>
+                      <button 
+                         onClick={() => { setDeleteId(p.id); setMenuOpenId(null); }} 
+                         className="w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-gray-50"
+                      >
+                        <Trash size={15}/> Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="p-4 flex-1 flex flex-col gap-3">
