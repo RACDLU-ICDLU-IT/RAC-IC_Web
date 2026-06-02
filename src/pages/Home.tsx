@@ -964,12 +964,17 @@ export default function Home() {
       </section>
 
       {/* ════════════════════════════════════════
-          JOIN CTA — Fixed mobile square & image size
-      ════════════════════════════════════════ */}
-      <section
-        className="hv2-join hv2-reveal"
-        style={{ background: isLight ? 'var(--color-accent)' : '#000251', color: 'white', marginTop: 80, overflow: 'hidden' }}
-      >
+    JOIN CTA — Matches Hero Background
+════════════════════════════════════════ */}
+<section
+  className="hv2-join hv2-reveal"
+  style={{
+    background: `linear-gradient(145deg, var(--color-hero-start) 0%, ${tenant.brand.heroDark || 'var(--color-primary)'} 100%)`,
+    color: 'white',
+    marginTop: 80,
+    overflow: 'hidden'
+  }}
+  >
         <div className="hv2-join__grid" style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
