@@ -1,14 +1,27 @@
 import { supabase } from '../supabase';
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTenant } from '../hooks/useTenant';
 
 export default function FeaturedProjects() {
   const { tenant } = useTenant();
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const isLight = tenant.brand.primaryColor === '#FFFFFF';
+
+  const handleViewAll = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (location.pathname === '/projects') {
+      // Already on projects page — just scroll down
+      const el = document.getElementById('all-projects');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      navigate('/projects#all-projects');
+    }
+  };
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -80,13 +93,13 @@ export default function FeaturedProjects() {
             Featured projects shaping our community.
           </p>
         </div>
-        <Link
-          to="/projects"
-          className="hidden md:inline-flex font-bold hover:opacity-80 transition-opacity"
-          style={{ color: 'var(--color-accent)' }}
+        <button
+          onClick={handleViewAll}
+          className="hidden md:inline-flex font-bold hover:opacity-80 transition-opacity cursor-pointer"
+          style={{ color: 'var(--color-accent)', background: 'none', border: 'none', padding: 0 }}
         >
           View All Projects &rarr;
-        </Link>
+        </button>
       </div>
 
       {/* Horizontal carousel */}
@@ -170,13 +183,13 @@ export default function FeaturedProjects() {
 
       {/* Mobile "view all" link */}
       <div className="mt-8 px-6 md:hidden">
-        <Link
-          to="/projects"
-          className="font-bold text-sm"
-          style={{ color: 'var(--color-accent)' }}
+        <button
+          onClick={handleViewAll}
+          className="font-bold text-sm cursor-pointer"
+          style={{ color: 'var(--color-accent)', background: 'none', border: 'none', padding: 0 }}
         >
           View All Projects &rarr;
-        </Link>
+        </button>
       </div>
     </section>
   );
