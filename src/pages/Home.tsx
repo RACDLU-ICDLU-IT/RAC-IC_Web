@@ -757,6 +757,7 @@ export default function Home() {
     homeStatMembers: 120,
     homeStatProjects: 45,
     homeStatHours: 1000,
+    homeMarqueeItems: ['Unite for Good', 'People of Action', 'Create Lasting Impact'],
   });
 
   const isLight = tenant.brand.primaryColor === '#FFFFFF';
@@ -959,7 +960,11 @@ export default function Home() {
         </div>
       </section>
 
-      <MarqueeTicker items={['Unite for Good', 'People of Action', 'Create Lasting Impact']} />
+      <MarqueeTicker items={
+        Array.isArray(content.homeMarqueeItems) && content.homeMarqueeItems.length > 0
+          ? content.homeMarqueeItems
+          : ['Unite for Good', 'People of Action', 'Create Lasting Impact']
+      } />
 
       {/* IMPACT STATS */}
       <section className="hv2-stats max-w-7xl mx-auto px-6 mt-8">
