@@ -19,6 +19,7 @@ export default function AdminPages() {
     homeStatMembers: 80,
     homeStatProjects: 30,
     homeStatHours: 500,
+    homeMarqueeItems: ['Unite for Good', 'People of Action', 'Create Lasting Impact'],
     homeAboutImage: '',
     aboutHeroImage: '',
     aboutRotaryImage: '',
@@ -132,6 +133,75 @@ export default function AdminPages() {
                <div>
                   <label className={labelClass}>Home About Image</label>
                   <div className="w-48"><CloudinaryUpload onUpload={(url) => setContent({...content, homeAboutImage: url})} currentUrl={content.homeAboutImage} aspectRatio="landscape" /></div>
+               </div>
+
+               {/* Marquee Ticker Editor */}
+               <div className="pt-4 border-t border-gray-100">
+                 <div className="flex items-center justify-between mb-3">
+                   <div>
+                     <label className={labelClass} style={{ marginBottom: 0 }}>Rolling Marquee Items</label>
+                     <p className="text-xs text-gray-400 mt-0.5">These scroll across the banner strip below the hero section.</p>
+                   </div>
+                   <Button
+                     size="sm"
+                     variant="secondary"
+                     onClick={() => setContent({
+                       ...content,
+                       homeMarqueeItems: [...(content.homeMarqueeItems || []), 'New Item']
+                     })}
+                   >
+                     <Plus size={14} className="mr-1" /> Add Item
+                   </Button>
+                 </div>
+
+                 {/* Live preview strip */}
+                 {(content.homeMarqueeItems || []).length > 0 && (
+                   <div className="mb-3 overflow-hidden rounded-lg bg-accent py-2.5 px-4 flex gap-6 items-center">
+                     {(content.homeMarqueeItems || []).map((item: string, i: number) => (
+                       <React.Fragment key={i}>
+                         <span className="font-heading font-medium tracking-wider uppercase text-xs text-primary whitespace-nowrap">{item || '…'}</span>
+                         {i < (content.homeMarqueeItems || []).length - 1 && (
+                           <span className="w-1.5 h-1.5 rounded-full bg-primary/30 shrink-0" />
+                         )}
+                       </React.Fragment>
+                     ))}
+                     <span className="text-[10px] text-primary/40 ml-2 shrink-0 italic">← preview</span>
+                   </div>
+                 )}
+
+                 <div className="space-y-2">
+                   {(content.homeMarqueeItems || []).map((item: string, index: number) => (
+                     <div key={index} className="flex items-center gap-2">
+                       <span className="text-xs font-bold text-gray-400 w-5 text-right shrink-0">{index + 1}.</span>
+                       <input
+                         value={item}
+                         onChange={(e) => {
+                           const updated = [...(content.homeMarqueeItems || [])];
+                           updated[index] = e.target.value;
+                           setContent({ ...content, homeMarqueeItems: updated });
+                         }}
+                         className={inputClass}
+                         placeholder="e.g. People of Action"
+                       />
+                       <button
+                         onClick={() => {
+                           const updated = [...(content.homeMarqueeItems || [])];
+                           updated.splice(index, 1);
+                           setContent({ ...content, homeMarqueeItems: updated });
+                         }}
+                         className="p-2 text-gray-300 hover:text-red-500 transition-colors shrink-0"
+                         title="Remove item"
+                       >
+                         <Trash size={16} />
+                       </button>
+                     </div>
+                   ))}
+                   {(content.homeMarqueeItems || []).length === 0 && (
+                     <p className="text-gray-400 text-sm text-center py-3 border border-dashed border-gray-200 rounded-lg">
+                       No marquee items. Click "Add Item" to add one.
+                     </p>
+                   )}
+                 </div>
                </div>
             </div>
          </section>
