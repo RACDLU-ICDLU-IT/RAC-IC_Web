@@ -153,6 +153,16 @@ export default function AdminProjects() {
       return;
     }
 
+    // Prevent backdating Upcoming projects
+    const dateValue = formData.executionDate || formData.startDate || '';
+    if (formData.status === 'Upcoming' && dateValue) {
+      const today = new Date().toISOString().split('T')[0];
+      if (dateValue < today) {
+        addToast('Upcoming projects cannot have a past execution date.', 'error');
+        return;
+      }
+    }
+
     if (isSaving) return;
     setIsSaving(true);
 
@@ -448,6 +458,7 @@ ${particip}`;
                 <input
                   type="date"
                   value={formData.executionDate || formData.startDate || ''}
+                  min={formData.status === 'Upcoming' ? new Date().toISOString().split('T')[0] : undefined}
                   onChange={e => setFormData({
                     ...formData,
                     executionDate: e.target.value,
@@ -455,6 +466,9 @@ ${particip}`;
                   })}
                   className={inputClass}
                 />
+                {formData.status === 'Upcoming' && (
+                  <p className="text-[11px] text-amber-600 mt-1 font-medium">Upcoming projects cannot have a past date.</p>
+                )}
               </div>
             </div>
 
@@ -741,15 +755,21 @@ ${particip}`;
                         const currentGallery = prev.gallery || prev.galleryImages || [];
                         if (currentGallery.includes(url)) return prev;
                         const updated = [...currentGallery, url];
-                        return {
-                          ...prev,
-                          gallery: updated,
-                          galleryImages: updated
-                        };
+                        return { ...prev, gallery: updated, galleryImages: updated };
                       });
                     }
                   }}
-                  buttonText="Upload Image to Library"
+                  onMultiUpload={(urls) => {
+                    if (urls.length > 0) {
+                      setFormData((prev: any) => {
+                        const currentGallery = prev.gallery || prev.galleryImages || [];
+                        const newUrls = urls.filter((u: string) => !currentGallery.includes(u));
+                        const updated = [...currentGallery, ...newUrls];
+                        return { ...prev, gallery: updated, galleryImages: updated };
+                      });
+                    }
+                  }}
+                  buttonText="Upload Images to Library"
                   multiple={true}
                 />
 
