@@ -198,6 +198,7 @@ export default function MainLayout() {
         tenant={tenant}
         logoError={logoError}
         setLogoError={setLogoError}
+        primaryColor={tenant.brand.accentColor}
       />
 
     </div>
@@ -206,17 +207,18 @@ export default function MainLayout() {
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SITE FOOTER
-   Design language: brand-colored base · big logo anchor · clear nav hierarchy
-   · refined bottom bar — zero hardcoded colors, 100% CSS-var driven
+   Background = tenant.brand.primaryColor directly (the real hex).
+   No overlays, no dark vignettes — pure brand color, white text on top.
 ═══════════════════════════════════════════════════════════════════════════ */
 interface FooterProps {
-  settings: any;
-  tenant:   any;
-  logoError: boolean;
+  settings:     any;
+  tenant:       any;
+  logoError:    boolean;
   setLogoError: (v: boolean) => void;
+  primaryColor: string; // tenant.brand.accentColor — e.g. "#E2006A" (magenta) or "#1D4ED8" (blue)
 }
 
-function SiteFooter({ settings, tenant, logoError, setLogoError }: FooterProps) {
+function SiteFooter({ settings, tenant, logoError, setLogoError, primaryColor }: FooterProps) {
   const clubName = settings.clubName || tenant.fullName;
   const year     = new Date().getFullYear();
 
@@ -238,35 +240,37 @@ function SiteFooter({ settings, tenant, logoError, setLogoError }: FooterProps) 
     <footer
       role="contentinfo"
       aria-label="Site footer"
-      style={{ backgroundColor: 'var(--color-primary)', color: '#fff', position: 'relative', overflow: 'hidden' }}
+      style={{ backgroundColor: primaryColor, color: '#fff', position: 'relative', overflow: 'hidden' }}
     >
 
-      {/* ── Depth layer: darkening vignette so white text always pops ── */}
+      {/* ── Overlay 1: very faint bottom-half darkening for text contrast
+              Starts transparent at 35% from top, fades to 0.13 black at bottom.
+              Logo sits in the top zone — completely untouched. ── */}
       <div
         aria-hidden="true"
         style={{
           position: 'absolute', inset: 0, pointerEvents: 'none',
-          background: 'linear-gradient(180deg, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.18) 100%)',
+          background: 'linear-gradient(180deg, transparent 35%, rgba(0,0,0,0.13) 100%)',
         }}
       />
 
-      {/* ── Top-edge shimmer line (white, brand-neutral) ── */}
+      {/* ── Overlay 2: top-edge white shimmer line — 1px, purely decorative ── */}
       <div
         aria-hidden="true"
         style={{
           position: 'absolute', top: 0, left: 0, right: 0, height: '1px',
-          background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 40%, rgba(255,255,255,0.2) 60%, transparent 100%)',
+          background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.22) 40%, rgba(255,255,255,0.22) 60%, transparent 100%)',
           pointerEvents: 'none',
         }}
       />
 
-      {/* ── Soft radial glow — bottom-right corner ── */}
+      {/* ── Overlay 3: bottom-right radial white glow — adds warmth/depth ── */}
       <div
         aria-hidden="true"
         style={{
-          position: 'absolute', bottom: '-180px', right: '-180px',
-          width: '520px', height: '520px', borderRadius: '50%', pointerEvents: 'none',
-          background: 'radial-gradient(circle, rgba(255,255,255,0.07) 0%, transparent 65%)',
+          position: 'absolute', bottom: '-140px', right: '-140px',
+          width: '420px', height: '420px', borderRadius: '50%', pointerEvents: 'none',
+          background: 'radial-gradient(circle, rgba(255,255,255,0.07) 0%, transparent 60%)',
         }}
       />
 
