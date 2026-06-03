@@ -17,8 +17,14 @@ export default function FeaturedProjects() {
           .from('projects')
           .select('*')
           .eq('tenant_id', tenant.id)
-          .order('startDate', { ascending: false });
-        setProjects((snap || []).slice(0, 5));
+          .in('status', ['Ongoing', 'Completed'])   // only ongoing + completed
+          .order('startDate', { ascending: false });  // newest first
+
+        // Only show projects tagged "featured" or "Featured"
+        const featured = (snap || []).filter((p: any) =>
+          Array.isArray(p.tags) && p.tags.some((t: string) => t.toLowerCase() === 'featured')
+        );
+        setProjects(featured);
       } catch (err) {
         console.error('Error fetching projects', err);
       } finally {
