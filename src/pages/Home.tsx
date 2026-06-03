@@ -965,9 +965,9 @@ export default function Home() {
       <section className="hv2-stats max-w-7xl mx-auto px-6 mt-8">
         <div ref={statsRef} className="hv2-stats__card hv2-reveal">
           {[
-            { label: 'Active Members', value: content.homeStatMembers, suffix: '+' },
-            { label: 'Projects Completed', value: content.homeStatProjects, suffix: '' },
-            { label: 'Volunteer Hours', value: content.homeStatHours, suffix: '+' },
+            { label: 'Active Members', value: typeof content.homeStatMembers === 'number' ? content.homeStatMembers : parseInt(content.homeStatMembers) || 120, suffix: '+' },
+            { label: 'Projects Completed', value: typeof content.homeStatProjects === 'number' ? content.homeStatProjects : parseInt(content.homeStatProjects) || 45, suffix: '' },
+            { label: 'Volunteer Hours', value: typeof content.homeStatHours === 'number' ? content.homeStatHours : parseInt(content.homeStatHours) || 1000, suffix: '+' },
           ].map((stat, i) => (
             <div key={i} className="hv2-stats__item">
               <span className="hv2-stats__label">{stat.label}</span>
