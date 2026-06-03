@@ -89,8 +89,7 @@ export default function MainLayout() {
     ? 'border border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-white'
     : 'border border-white/30 text-white hover:border-white hover:bg-white/10';
 
-  const hamburgerClass = scrolled && isLight ? 'text-gray-800' : 'text-white';
-
+  const hamburgerClass = (!isHomeOrAbout || (scrolled && isLight)) ? 'text-gray-800' : 'text-white';
   return (
     <div className="flex flex-col min-h-screen">
 
