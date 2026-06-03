@@ -129,8 +129,8 @@ export default function MainLayout() {
                   ? 'var(--color-accent)'
                   : '#ffffff',
                 transition: 'background-color 0.5s ease, width 0.5s ease, height 0.5s ease',
-                width:  scrolled ? '120px' : '148px',
-                height: scrolled ? '38px'  : '46px',
+                width:  scrolled ? '120px' : '132px',
+                height: scrolled ? '38px'  : '40px',
                 flexShrink: 0,
               }}
               onError={() => setLogoError(true)}
@@ -303,13 +303,25 @@ function SiteFooter({ settings, tenant, logoError, setLogoError, primaryColor }:
           {/* ── LEFT: Brand block ────────────────────────────────── */}
           <div className="flex flex-col gap-8">
 
-            {/* Logo — hero size */}
+            {/* Logo — hero size, colored in primary */}
             <Link to="/" aria-label={clubName}>
               {settings.logoUrl && !logoError ? (
-                <img
-                  src={settings.logoUrl}
-                  alt={clubName}
-                  className="h-20 md:h-24 w-auto object-contain object-left"
+                <div
+                  role="img"
+                  aria-label={clubName}
+                  style={{
+                    WebkitMaskImage: `url(${settings.logoUrl})`,
+                    maskImage: `url(${settings.logoUrl})`,
+                    WebkitMaskRepeat: 'no-repeat',
+                    maskRepeat: 'no-repeat',
+                    WebkitMaskSize: 'contain',
+                    maskSize: 'contain',
+                    WebkitMaskPosition: 'left center',
+                    maskPosition: 'left center',
+                    backgroundColor: 'var(--color-primary)',
+                    width: '200px',
+                    height: '62px',
+                  }}
                   onError={() => setLogoError(true)}
                 />
               ) : (
