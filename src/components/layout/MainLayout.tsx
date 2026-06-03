@@ -19,7 +19,7 @@ export default function MainLayout() {
 
   const isLight = tenant.brand.primaryColor === '#FFFFFF';
   const onPrimaryBorder = isLight ? 'border-gray-200' : 'border-white/10';
-  const isHomeOrAbout = location.pathname === '/' || location.pathname === '/about';
+  const isHomeOrAbout = location.pathname === '/' || location.pathname === '/about' || location.pathname === '/join';
 
 
   useEffect(() => {
