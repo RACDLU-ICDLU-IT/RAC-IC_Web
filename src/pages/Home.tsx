@@ -1043,6 +1043,7 @@ export default function Home() {
           UPCOMING EVENTS — NOW WITH SAME BACKGROUND AS MISSION BANNER
           Uses var(--color-accent) (the same accent color)
       ════════════════════════════════════════ */}
+      {upcomingEvents.length > 0 && (
       <section className="hv2-events-inverted py-28 px-6 hv2-reveal">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-end justify-between mb-16">
@@ -1066,40 +1067,34 @@ export default function Home() {
             </Link>
           </div>
 
-          {upcomingEvents.length > 0 ? (
-            <div>
-              {upcomingEvents.map((event) => (
-                <Link to="/events" key={event.id} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
-                  <div className="hv2-events__item-inverted">
-                    <div>
-                      <div className="hv2-events__date-month-inverted">
-                        {new Date(event.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short' })}
-                      </div>
-                      <div className="hv2-events__date-day-inverted font-heading">
-                        {new Date(event.date + 'T00:00:00').getDate()}
-                      </div>
+          <div>
+            {upcomingEvents.map((event) => (
+              <Link to="/events" key={event.id} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
+                <div className="hv2-events__item-inverted">
+                  <div>
+                    <div className="hv2-events__date-month-inverted">
+                      {new Date(event.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short' })}
                     </div>
-                    <div style={{ flex: 1 }}>
-                      <span className="hv2-events__pill-inverted">{event.type}</span>
-                      <div className="hv2-events__title-inverted font-heading">{event.title}</div>
-                      <div className="hv2-events__venue-inverted">
-                        <MapPin size={12} />
-                        {event.venue || 'TBA'}
-                      </div>
+                    <div className="hv2-events__date-day-inverted font-heading">
+                      {new Date(event.date + 'T00:00:00').getDate()}
                     </div>
-                    <ArrowUpRight size={20} className="hv2-events__arrow-inverted shrink-0" />
                   </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="hv2-events-empty-inverted">
-              <Calendar size={32} />
-              No upcoming events at the moment.
-            </div>
-          )}
+                  <div style={{ flex: 1 }}>
+                    <span className="hv2-events__pill-inverted">{event.type}</span>
+                    <div className="hv2-events__title-inverted font-heading">{event.title}</div>
+                    <div className="hv2-events__venue-inverted">
+                      <MapPin size={12} />
+                      {event.venue || 'TBA'}
+                    </div>
+                  </div>
+                  <ArrowUpRight size={20} className="hv2-events__arrow-inverted shrink-0" />
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       </section>
+      )}
 
       {/* GALLERY */}
       <section className="py-24 hv2-reveal" style={{ background: 'rgba(0,0,0,0.02)' }}>
