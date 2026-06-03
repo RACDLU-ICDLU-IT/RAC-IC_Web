@@ -7,6 +7,30 @@ export interface Theme {
   accent: string;
   heroStart: string;
   buttonRadius: string;
+  fontHeading: string;
+  fontBody: string;
+}
+
+// Map of font CSS value → Google/Fontshare import URL (must match AdminTheme.tsx)
+const FONT_IMPORT_MAP: Record<string, string> = {
+  "'Clash Display', sans-serif": 'https://api.fontshare.com/v2/css?f[]=clash-display@700,600,500&display=swap',
+  "'Plus Jakarta Sans', sans-serif": 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap',
+  "'Space Grotesk', sans-serif": 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap',
+  "'DM Sans', sans-serif": 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap',
+  "'Inter', sans-serif": 'https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap',
+  "'Syne', sans-serif": 'https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&display=swap',
+};
+
+function injectFontLink(fontValue: string, linkId: string) {
+  const importUrl = FONT_IMPORT_MAP[fontValue];
+  if (!importUrl) return;
+  const existing = document.getElementById(linkId);
+  if (existing) existing.remove();
+  const link = document.createElement('link');
+  link.id = linkId;
+  link.rel = 'stylesheet';
+  link.href = importUrl;
+  document.head.appendChild(link);
 }
 
 export interface GlobalSettings {
@@ -37,6 +61,8 @@ const defaultTheme: Theme = {
   accent: initialTenant.brand.accentColor,
   heroStart: initialTenant.brand.heroStart,
   buttonRadius: '0.5rem',
+  fontHeading: "'Clash Display', sans-serif",
+  fontBody: "'Plus Jakarta Sans', sans-serif",
 };
 
 const defaultSettings: GlobalSettings = {
@@ -108,6 +134,12 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     root.style.setProperty('--color-hero-start', theme.heroStart);
     root.style.setProperty('--color-page-bg', tenant.brand.pageBg || '#F7F5F0');
     root.style.setProperty('--radius-button', theme.buttonRadius);
+    root.style.setProperty('--font-heading', theme.fontHeading);
+    root.style.setProperty('--font-body', theme.fontBody);
+
+    // Dynamically load font files so the browser can actually render them
+    injectFontLink(theme.fontHeading, 'tenant-font-heading');
+    injectFontLink(theme.fontBody, 'tenant-font-body');
   }, [theme, tenant]);
 
   // Set document context
