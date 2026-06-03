@@ -1,12 +1,12 @@
 import { supabase } from '../supabase';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import FeaturedProjects from '../components/FeaturedProjects';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useTenant } from '../hooks/useTenant';
 import SEOHead from '../components/SEOHead';
 
 function getStatusStyle(status: string) {
-  switch(status) {
+  switch(status.toLowerCase()) {
     case 'upcoming': return 'bg-blue-100 text-blue-800';
     case 'ongoing': return 'bg-teal-100 text-teal-800';
     case 'completed': return 'bg-gray-100 text-gray-700';
@@ -14,11 +14,16 @@ function getStatusStyle(status: string) {
   }
 }
 
+const STATUS_TABS = ['All', 'Upcoming', 'Ongoing', 'Completed'];
+
 export default function Projects() {
   const { tenant } = useTenant();
+  const location = useLocation();
   const [allProjects, setAllProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('All');
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [activeStatus, setActiveStatus] = useState('All');
+  const allProjectsRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     supabase.from('projects').select('*').eq('tenant_id', tenant.id).order('startDate', { ascending: false })
@@ -31,11 +36,23 @@ export default function Projects() {
       });
   }, [tenant.id]);
 
+  // Handle #all-projects hash — scroll when data is loaded or on navigation
+  useEffect(() => {
+    if (location.hash === '#all-projects' && !loading) {
+      setTimeout(() => {
+        const el = document.getElementById('all-projects');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  }, [location.hash, loading]);
+
   const categories = ['All', ...Array.from(new Set(allProjects.map(p => p.type).filter(Boolean)))];
 
-  const filtered = activeTab === 'All' 
-    ? allProjects 
-    : allProjects.filter(p => p.type === activeTab);
+  const filtered = allProjects.filter(p => {
+    const categoryMatch = activeCategory === 'All' || p.type === activeCategory;
+    const statusMatch = activeStatus === 'All' || (p.status || '').toLowerCase() === activeStatus.toLowerCase();
+    return categoryMatch && statusMatch;
+  });
 
   const isLight = tenant.brand.primaryColor === '#FFFFFF';
   const headingColor = isLight ? 'text-[var(--color-accent)]' : 'text-[var(--color-primary)]';
@@ -52,15 +69,15 @@ export default function Projects() {
         <h1 className={`text-5xl md:text-7xl font-heading font-bold ${headingColor} mb-6`}>Our Work</h1>
         <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-16">Creating lasting change through targeted action in our local communities and around the world.</p>
         
-        {/* Filter Pills */}
-        {!loading && (
+        {/* Category Filter Pills */}
+        {!loading && categories.length > 1 && (
           <div className="flex flex-wrap justify-center gap-3">
             {categories.map((cat: any) => (
               <button
                 key={cat}
-                onClick={() => setActiveTab(cat)}
+                onClick={() => setActiveCategory(cat)}
                 className={`px-6 py-2 rounded-full text-sm font-bold transition-all duration-300 ${
-                  activeTab === cat 
+                  activeCategory === cat 
                     ? 'bg-accent text-primary shadow-md transform scale-105' 
                     : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'
                 }`}
@@ -73,12 +90,50 @@ export default function Projects() {
       </section>
 
       {/* Featured Strip */}
-      {activeTab === 'All' && (
+      {activeCategory === 'All' && activeStatus === 'All' && (
         <FeaturedProjects />
       )}
 
       {/* All Projects Grid */}
-      <section className="max-w-7xl mx-auto px-6 mt-16">
+      <section id="all-projects" ref={allProjectsRef} className="max-w-7xl mx-auto px-6 mt-16 scroll-mt-24">
+        {/* Status Tabs */}
+        {!loading && (
+          <div className="flex flex-wrap gap-2 mb-10">
+            {STATUS_TABS.map((tab) => {
+              const count = tab === 'All'
+                ? allProjects.filter(p => activeCategory === 'All' || p.type === activeCategory).length
+                : allProjects.filter(p =>
+                    (activeCategory === 'All' || p.type === activeCategory) &&
+                    (p.status || '').toLowerCase() === tab.toLowerCase()
+                  ).length;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveStatus(tab)}
+                  className={`flex items-center gap-2 px-5 py-2 rounded-full text-sm font-bold transition-all duration-300 ${
+                    activeStatus === tab
+                      ? tab === 'Upcoming'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : tab === 'Ongoing'
+                        ? 'bg-teal-600 text-white shadow-md'
+                        : tab === 'Completed'
+                        ? 'bg-gray-700 text-white shadow-md'
+                        : 'bg-[var(--color-accent)] text-white shadow-md'
+                      : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  {tab}
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
+                    activeStatus === tab ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {loading ? (
           <div className="flex items-center justify-center py-24">
             <div className="w-12 h-12 border-4 border-accent border-t-transparent rounded-full animate-spin" />
@@ -100,7 +155,7 @@ export default function Projects() {
                   </div>
                   <div className="p-6 flex flex-col flex-grow relative overflow-hidden">
                     <div className="mb-4">
-                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${getStatusStyle(project.status.toLowerCase())}`}>
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${getStatusStyle(project.status || '')}`}>
                         {project.status}
                       </span>
                     </div>
@@ -117,11 +172,7 @@ export default function Projects() {
             ))}
           </div>
         )}
-        {!loading && filtered.length === 0 && (
-          <div className="text-center py-24 text-gray-500">
-            <p className="text-xl">No projects found in this category.</p>
-          </div>
-        )}
+
       </section>
     </div>
   );
