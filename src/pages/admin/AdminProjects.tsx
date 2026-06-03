@@ -475,13 +475,45 @@ ${particip}`;
             <div><label className={labelClass}>Volunteer Hours</label><input type="number" value={formData.volunteerHours || 0} onChange={e => setFormData({ ...formData, volunteerHours: Number(e.target.value) })} className={inputClass} /></div>
 
             <div>
-              <label className={labelClass}>Tags (comma-separated)</label>
-              <input
-                value={typeof formData.tags === 'string' ? formData.tags : (formData.tags || []).join(', ')}
-                onChange={e => setFormData({ ...formData, tags: e.target.value })}
-                className={inputClass}
-                placeholder="e.g. food drive, partnership"
-              />
+              <label className={labelClass}>Featured Project</label>
+              {(() => {
+                const t = formData.tags || [];
+                const arr = typeof t === 'string' ? t.split(',').map((x: string) => x.trim()) : t;
+                const isFeatured = arr.some((x: string) => x.toLowerCase() === 'featured');
+                return (
+                  <label className="flex items-center gap-3 cursor-pointer select-none group w-fit">
+                    <div
+                      className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                        isFeatured ? 'bg-accent border-accent' : 'bg-white border-gray-300 group-hover:border-accent/60'
+                      }`}
+                    >
+                      {isFeatured && (
+                        <svg className="w-3 h-3 text-white" viewBox="0 0 12 10" fill="none">
+                          <path d="M1 5l3.5 3.5L11 1" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                    </div>
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={isFeatured}
+                      onChange={e => {
+                        const current: string[] = typeof t === 'string' ? t.split(',').map((x: string) => x.trim()).filter(Boolean) : [...t];
+                        if (e.target.checked) {
+                          if (!current.some((x: string) => x.toLowerCase() === 'featured')) current.push('featured');
+                        } else {
+                          const idx = current.findIndex((x: string) => x.toLowerCase() === 'featured');
+                          if (idx !== -1) current.splice(idx, 1);
+                        }
+                        setFormData({ ...formData, tags: current });
+                      }}
+                    />
+                    <span className="text-sm text-gray-700 group-hover:text-gray-900 transition-colors">
+                      Show in <span className="font-bold">Our Impact</span> featured strip on homepage &amp; projects page
+                    </span>
+                  </label>
+                );
+              })()}
             </div>
 
             {/* Description Tab Builder */}
