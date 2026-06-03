@@ -110,12 +110,10 @@ export default function Events() {
           </div>
         ) : view === 'list' ? (
           <div className="space-y-16">
-            {/* Upcoming Events */}
+            {/* Upcoming Events — hidden entirely when empty */}
+            {upcoming.length > 0 && (
             <div className="space-y-6">
-              {upcoming.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">No upcoming events match this filter.</div>
-              ) : (
-                upcoming.map(event => (
+              {upcoming.map(event => (
                   <div 
                     key={event.id}
                     className="flex items-stretch gap-6 md:gap-12 p-6 md:p-8 bg-white rounded-2xl border border-gray-100 hover:shadow-md transition-all duration-300 cursor-pointer group"
@@ -156,9 +154,9 @@ export default function Events() {
                       <ChevronRight size={24} />
                     </div>
                   </div>
-                ))
-              )}
+                ))}
             </div>
+            )}
 
             {/* Past Events */}
             {past.length > 0 && (
