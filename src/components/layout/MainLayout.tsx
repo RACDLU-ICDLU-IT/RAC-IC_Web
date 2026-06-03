@@ -5,22 +5,6 @@ import gsap from 'gsap';
 import { useTenant } from '../../hooks/useTenant';
 import { Menu, X } from 'lucide-react';
 
-/* ─── Utility: convert a hex color to its HSL hue angle (0-360) ─────────── */
-function hexToHue(hex: string): number {
-  const clean = hex.replace('#', '');
-  const r = parseInt(clean.substring(0, 2), 16) / 255;
-  const g = parseInt(clean.substring(2, 4), 16) / 255;
-  const b = parseInt(clean.substring(4, 6), 16) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const d = max - min;
-  if (d === 0) return 0;
-  let h = 0;
-  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-  else if (max === g) h = ((b - r) / d + 2) / 6;
-  else h = ((r - g) / d + 4) / 6;
-  return Math.round(h * 360);
-}
 
 export default function MainLayout() {
   const { settings, tenant } = useTenant();
@@ -36,8 +20,6 @@ export default function MainLayout() {
   const isLight = tenant.brand.primaryColor === '#FFFFFF';
   const onPrimaryBorder = isLight ? 'border-gray-200' : 'border-white/10';
 
-  // Hue angle derived from accent hex — used to CSS-filter the white logo to accent color
-  const accentHue = hexToHue(tenant.brand.accentColor ?? '#000000');
 
   useEffect(() => {
     const lenis = new Lenis({
@@ -125,26 +107,31 @@ export default function MainLayout() {
           aria-label={settings.clubName || tenant.fullName}
         >
           {settings.logoUrl && !logoError ? (
-            <img
-              src={settings.logoUrl}
-              alt={settings.clubName || tenant.shortName}
-              className={`object-contain transition-all duration-500 ${
-                scrolled
-                  ? 'w-[54px] h-[54px] md:w-[60px] md:h-[60px]'
-                  : 'w-[68px] h-[68px] md:w-[76px] md:h-[76px]'
-              }`}
+            /* CSS mask technique — the SVG logo uses currentColor,
+               so we drive color directly via backgroundColor on a masked div.
+               Unscrolled (transparent nav)  → white
+               Scrolled on light primary nav → accent color
+               Scrolled on dark/colored nav  → white
+               Transition is instant & exact — no filter hue-rotation weirdness. */
+            <div
+              role="img"
+              aria-label={settings.clubName || tenant.shortName}
               style={{
-                // When scrolled on a light-primary navbar, recolor the white logo
-                // to the accent color using CSS filter chain:
-                // brightness(0) → turns everything black
-                // invert(1)     → turns black to white (clean base)
-                // Then sepia+saturate+hue-rotate paints it the accent hue.
-                // We use a strong saturate so the accent color comes through vividly.
-                // On dark/colored navbars (unscrolled), no filter — logo stays white.
-                filter: scrolled && isLight
-                  ? `brightness(0) invert(1) sepia(1) saturate(10) hue-rotate(${accentHue}deg)`
-                  : 'none',
-                transition: 'filter 0.5s ease, width 0.5s ease, height 0.5s ease',
+                WebkitMaskImage: `url(${settings.logoUrl})`,
+                maskImage: `url(${settings.logoUrl})`,
+                WebkitMaskRepeat: 'no-repeat',
+                maskRepeat: 'no-repeat',
+                WebkitMaskSize: 'contain',
+                maskSize: 'contain',
+                WebkitMaskPosition: 'center',
+                maskPosition: 'center',
+                backgroundColor: scrolled && isLight
+                  ? 'var(--color-accent)'
+                  : '#ffffff',
+                transition: 'background-color 0.5s ease, width 0.5s ease, height 0.5s ease',
+                width:  scrolled ? '120px' : '148px',
+                height: scrolled ? '38px'  : '46px',
+                flexShrink: 0,
               }}
               onError={() => setLogoError(true)}
             />
