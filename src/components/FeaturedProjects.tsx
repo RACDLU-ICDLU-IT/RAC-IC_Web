@@ -162,11 +162,24 @@ export default function FeaturedProjects() {
                   {project.name}
                 </h3>
 
-                {project.description && (
-                  <p className="text-white/70 text-sm line-clamp-2 mb-2">
-                    {project.description}
-                  </p>
-                )}
+                {project.description && (() => {
+                  let displayText = project.description;
+                  try {
+                    const parsed = JSON.parse(project.description);
+                    if (Array.isArray(parsed)) {
+                      displayText = parsed
+                        .filter((b: any) => b.type === 'text' && b.content)
+                        .map((b: any) => b.content)
+                        .join(' ')
+                        .trim();
+                    }
+                  } catch (e) {}
+                  return displayText ? (
+                    <p className="text-white/70 text-sm line-clamp-2 mb-2">
+                      {displayText}
+                    </p>
+                  ) : null;
+                })()}
 
                 <Link
                   to={`/projects/${project.id}`}
