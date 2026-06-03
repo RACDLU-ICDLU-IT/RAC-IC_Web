@@ -39,6 +39,7 @@ import Contact from './pages/Contact';
 import Join from './pages/Join';
 import Login from './pages/auth/Login';
 import Sponsorship from './pages/Sponsorship';
+import Donate from './pages/Donate';
 
 // Admin Pages
 import AdminOverview from './pages/admin/AdminOverview';
@@ -91,6 +92,7 @@ export default function App() {
                   <Route path="/contact" element={<Contact />} />
                   <Route path="/join" element={<Join />} />
                   <Route path="/sponsorship" element={<Sponsorship />} />
+                  <Route path="/donate" element={<Donate />} />
                   <Route path="/login" element={<Login />} />
                 </Route>
 
