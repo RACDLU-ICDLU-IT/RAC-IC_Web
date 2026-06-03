@@ -5,8 +5,9 @@ import { supabase } from '../supabase';
 
 interface CloudinaryUploadProps {
   onUpload: (url: string, publicId: string) => void;
+  onMultiUpload?: (urls: string[]) => void;
   currentUrl?: string;
-  currentPublicId?: string;  // Store and pass this alongside currentUrl for reliable deletion
+  currentPublicId?: string;
   label?: string;
   buttonText?: string;
   aspectRatio?: 'square' | 'landscape' | 'portrait';
@@ -15,6 +16,7 @@ interface CloudinaryUploadProps {
 
 export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
   onUpload,
+  onMultiUpload,
   currentUrl,
   currentPublicId,
   label,
@@ -42,26 +44,45 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
 
     setIsUploading(true);
 
+    // Collect all uploaded URLs when multiple mode is on
+    const batchUrls: string[] = [];
+
     const widget = (window as any).cloudinary.createUploadWidget(
       {
         cloudName: cloudName,
         uploadPreset: uploadPreset,
         multiple: multiple,
         maxFiles: multiple ? 20 : 1,
-        cropping: true,
+        cropping: !multiple, // disable cropping in multi-upload for smoother batch experience
         croppingAspectRatio: aspectRatio === 'square' ? 1 : aspectRatio === 'landscape' ? 16/9 : 3/4,
         showSkipCropButton: true,
       },
       (error: any, result: any) => {
-        if (!error && result && result.event === 'success') {
-          onUpload(result.info.secure_url, result.info.public_id);
-          setIsUploading(false);
-        }
         if (error) {
           addToast(error.message || 'Upload failed. Check your Cloudinary preset is set to Unsigned.', 'error');
           setIsUploading(false);
-        } else if (result?.event === 'close') {
+          return;
+        }
+
+        if (result?.event === 'success') {
+          const url = result.info.secure_url;
+          const publicId = result.info.public_id;
+          if (multiple && onMultiUpload) {
+            // Collect — don't close yet; flush when widget closes
+            batchUrls.push(url);
+          } else {
+            // Single-image mode: fire immediately
+            onUpload(url, publicId);
+            setIsUploading(false);
+          }
+        }
+
+        if (result?.event === 'close') {
           setIsUploading(false);
+          // Flush all collected multi-upload URLs at once when widget closes
+          if (multiple && onMultiUpload && batchUrls.length > 0) {
+            onMultiUpload([...batchUrls]);
+          }
         }
       }
     );
