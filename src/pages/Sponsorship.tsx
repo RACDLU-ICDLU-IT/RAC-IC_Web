@@ -83,52 +83,41 @@ export default function Sponsorship() {
               </div>
               
               <div className="flex justify-center w-full">
-                <div className="group relative overflow-hidden flex flex-col items-center justify-center max-w-2xl w-full text-center">
-                  {/* Card */}
-                  <div
-                    className="relative w-full rounded-2xl border border-gray-100 bg-white shadow-lg transition-all duration-300 hover:shadow-2xl hover:-translate-y-1 overflow-hidden"
-                    style={{ borderTop: '4px solid #F7A81B' }}
+                <div className="group w-full max-w-xl">
+                  <a
+                    href={tenant.parentOrgUrl || '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="relative flex items-center gap-6 bg-white rounded-2xl px-7 py-6 shadow-[0_4px_24px_rgba(0,0,0,0.08)] border border-gray-100 transition-all duration-300 hover:shadow-[0_8px_40px_rgba(0,0,0,0.12)] hover:-translate-y-1 hover:border-[var(--color-accent)] overflow-hidden"
                   >
-                    {/* Subtle top gradient wash */}
-                    <div className="absolute inset-0 bg-gradient-to-b from-amber-50/40 to-transparent pointer-events-none" />
+                    {/* Left accent stripe */}
+                    <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl bg-[var(--color-accent)]" />
 
-                    <div className="relative z-10 flex flex-col items-center px-10 pt-10 pb-8 gap-6">
-                      {/* Rotary official wheel logo */}
-                      <div className="w-28 h-28 flex items-center justify-center">
-                        <img
-                          src="https://rotary-ribi.org/upimages/PageMainPics/4_Wheel2013_Transp_1200.png"
-                          alt="Rotary Mark of Excellence"
-                          className="w-full h-full object-contain drop-shadow-sm transition-transform duration-500 group-hover:rotate-12 group-hover:scale-105"
-                        />
-                      </div>
-
-                      {/* Club name */}
-                      <div>
-                        <h2 className="text-3xl md:text-4xl font-heading font-extrabold text-gray-900 leading-tight mb-3">
-                          {tenant.parentOrg}
-                        </h2>
-                        <p className="text-xs font-bold tracking-[0.22em] uppercase text-gray-400">
-                          Rotary International D64, Bangladesh
-                        </p>
-                      </div>
-
-                      {/* Divider */}
-                      <div className="w-16 h-px bg-amber-300" />
-
-                      {/* Visit button */}
-                      {tenant.parentOrgUrl && (
-                        <a
-                          href={tenant.parentOrgUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-7 py-3 rounded-full text-sm font-bold text-white shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
-                          style={{ background: 'linear-gradient(135deg, #F7A81B 0%, #e0920a 100%)' }}
-                        >
-                          Visit Website <ExternalLink size={14} />
-                        </a>
-                      )}
+                    {/* Wheel */}
+                    <div className="flex-shrink-0 w-16 h-16 md:w-20 md:h-20">
+                      <img
+                        src="https://rotary-ribi.org/upimages/PageMainPics/4_Wheel2013_Transp_1200.png"
+                        alt="Rotary Mark of Excellence"
+                        className="w-full h-full object-contain transition-transform duration-500 group-hover:rotate-[20deg]"
+                      />
                     </div>
-                  </div>
+
+                    {/* Text */}
+                    <div className="flex-1 min-w-0 text-left">
+                      <p className="text-[10px] font-black tracking-[0.25em] uppercase text-[var(--color-accent)] mb-1">Parent Organization</p>
+                      <h2 className="text-xl md:text-2xl font-heading font-extrabold text-gray-900 leading-snug">
+                        {tenant.parentOrg}
+                      </h2>
+                      <p className="text-[11px] font-semibold tracking-widest uppercase text-gray-400 mt-1">
+                        Rotary International D64, Bangladesh
+                      </p>
+                    </div>
+
+                    {/* Arrow CTA */}
+                    <div className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-full bg-[var(--color-accent)]/10 border border-[var(--color-accent)]/20 text-[var(--color-accent)] transition-all duration-300 group-hover:bg-[var(--color-accent)] group-hover:text-white group-hover:border-[var(--color-accent)]">
+                      <ExternalLink size={15} />
+                    </div>
+                  </a>
                 </div>
               </div>
             </div>
