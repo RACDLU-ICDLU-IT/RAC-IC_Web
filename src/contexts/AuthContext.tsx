@@ -19,10 +19,12 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextValue>({ user: null, profile: null, loading: true, signOut: async () => {} });
+const AuthContext = createContext<AuthContextValue>({
+  user: null, profile: null, loading: true, signOut: async () => {},
+});
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser]       = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -37,9 +39,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    try { sessionStorage.removeItem('lr_no_persist'); } catch {}
   };
 
   useEffect(() => {
+    // If user chose not to remember, clear session on fresh tab/browser open.
+    // sessionStorage is cleared when all tabs of the origin close.
+    const noP = sessionStorage.getItem('lr_no_persist');
+    const rem = localStorage.getItem('lr_remember');
+    if (noP === '1' || rem !== '1') {
+      // Check if this is a fresh browser session (no sessionStorage continuity)
+      const alive = sessionStorage.getItem('lr_tab_alive');
+      if (!alive && rem !== '1') {
+        // Fresh browser open + not remembered → clear persisted Supabase session
+        supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+        sessionStorage.setItem('lr_tab_alive', '1');
+        setLoading(false);
+        return;
+      }
+    }
+    sessionStorage.setItem('lr_tab_alive', '1');
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       if (session?.user) {
