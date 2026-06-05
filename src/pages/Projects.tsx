@@ -91,7 +91,7 @@ export default function Projects() {
 
       {/* Featured Strip */}
       {activeCategory === 'All' && activeStatus === 'All' && (
-        <FeaturedProjects />
+        <FeaturedProjects title="Featured Projects" />
       )}
 
       {/* All Projects Grid */}
