@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTenant } from '../hooks/useTenant';
 
-export default function FeaturedProjects() {
+export default function FeaturedProjects({ title = 'Our Impact.' }: { title?: string }) {
   const { tenant } = useTenant();
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,6 +62,14 @@ export default function FeaturedProjects() {
     ? 'var(--color-accent)'
     : 'var(--color-primary)';
 
+  const headingColor = isLight
+    ? 'var(--color-page-bg)'
+    : 'var(--color-text-on-primary, #ffffff)';
+
+  const subColor = isLight
+    ? 'rgba(255,255,255,0.7)'
+    : 'rgba(255,255,255,0.55)';
+
   const cardPlaceholderBg = isLight
     ? 'linear-gradient(135deg, #e8eaf0 0%, #d0d4e8 50%, #bcc3db 100%)'
     : 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
@@ -73,7 +81,18 @@ export default function FeaturedProjects() {
   return (
     <section className="py-24" style={{ background: sectionBg }}>
       {/* Header */}
-      <div className="max-w-7xl mx-auto px-6 mb-12 flex justify-end items-end">
+      <div className="max-w-7xl mx-auto px-6 mb-12 flex justify-between items-end">
+        <div>
+          <h2
+            className="text-4xl md:text-5xl font-heading font-bold mb-4"
+            style={{ color: headingColor }}
+          >
+            {title}
+          </h2>
+          <p className="text-lg" style={{ color: subColor }}>
+            Featured projects shaping our community.
+          </p>
+        </div>
         <button
           onClick={handleViewAll}
           className="hidden md:inline-flex font-bold hover:opacity-80 transition-opacity cursor-pointer"
