@@ -23,17 +23,18 @@ const joinSchema = z.object({
 
 type JoinFormData = z.infer<typeof joinSchema>;
 
+// Shared "← Go Back" button style used across all steps
+const GO_BACK_CLASS =
+  'block w-full text-center text-white text-sm transition-opacity mt-2 opacity-100 hover:opacity-70';
+
 export default function Join() {
   const { tenant } = useTenant();
   const isRotaract = tenant.id === 'racdlu';
   const clubTypeName = isRotaract ? 'Rotaract' : 'Interact';
   const ageRange = isRotaract ? '18 and 30 years old' : '12 and 18 years old';
 
-  // Ineligibility reasons: 'under' = too young, 'over' = too old
   const [ineligibleReason, setIneligibleReason] = useState<'under' | 'over' | null>(null);
 
-  // For Rotaract: under 18 → Interact; over 30 → Rotary
-  // For Interact: any ineligible → Rotaract (ages 18+) or Rotary
   const getIneligibleContent = () => {
     if (isRotaract) {
       if (ineligibleReason === 'under') {
@@ -49,7 +50,6 @@ export default function Join() {
           ],
         };
       }
-      // over 30
       return {
         message:
           'Rotaract is for young adults aged 18–30. If you are over 30, consider joining Rotary Club instead.',
@@ -62,7 +62,6 @@ export default function Join() {
         ],
       };
     } else {
-      // Interact
       return {
         message:
           "Interact is specifically for youth aged 12–18. If you're older, consider joining Rotaract (ages 18+) or a local Rotary club.",
@@ -89,6 +88,16 @@ export default function Join() {
   const [photoPublicId, setPhotoPublicId] = useState('');
 
   const isLight = tenant.brand.primaryColor === '#FFFFFF';
+
+  // FIX: double-rAF ensures scroll fires after first paint on mobile WebView,
+  // solving the sidebar-navigation-lands-at-footer issue
+  React.useEffect(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo(0, 0);
+      });
+    });
+  }, []);
 
   React.useEffect(() => {
     supabase
@@ -212,7 +221,6 @@ export default function Join() {
                 Yes, I am
               </Button>
               {isRotaract ? (
-                /* Rotaract: two "No" options — under 18 or over 30 */
                 <div className="flex flex-col sm:flex-row gap-4">
                   <Button
                     size="lg"
@@ -252,9 +260,13 @@ export default function Join() {
                 </a>
               ))}
             </div>
-            <Button variant="outline" onClick={() => window.history.back()}>
-              Go Back
-            </Button>
+            {/* FIX: unified Go Back style — same as code-check step, full opacity */}
+            <button
+              onClick={() => setStep('eligibility')}
+              className={GO_BACK_CLASS}
+            >
+              ← Go Back
+            </button>
           </div>
         )}
 
@@ -335,7 +347,7 @@ export default function Join() {
                   </div>
                 )}
 
-                {/* ── VERIFY BUTTON — solid white, bold, full-width ── */}
+                {/* ── VERIFY BUTTON ── */}
                 <button
                   onClick={handleVerifyCode}
                   disabled={isVerifyingCode || inviteCode.trim().length < 12}
@@ -383,13 +395,14 @@ export default function Join() {
                   )}
                 </button>
 
+                {/* FIX: unified Go Back style — full opacity */}
                 <button
                   onClick={() => {
                     setStep('eligibility');
                     setCodeError('');
                     setInviteCode('');
                   }}
-                  className="block w-full text-center text-white/50 hover:text-white text-sm transition-colors mt-2"
+                  className={GO_BACK_CLASS}
                 >
                   ← Go Back
                 </button>
