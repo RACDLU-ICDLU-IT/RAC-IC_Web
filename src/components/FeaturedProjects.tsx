@@ -62,14 +62,6 @@ export default function FeaturedProjects() {
     ? 'var(--color-accent)'
     : 'var(--color-primary)';
 
-  const headingColor = isLight
-    ? 'var(--color-page-bg)'
-    : 'var(--color-text-on-primary, #ffffff)';
-
-  const subColor = isLight
-    ? 'rgba(255,255,255,0.7)'
-    : 'rgba(255,255,255,0.55)';
-
   const cardPlaceholderBg = isLight
     ? 'linear-gradient(135deg, #e8eaf0 0%, #d0d4e8 50%, #bcc3db 100%)'
     : 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
@@ -81,18 +73,7 @@ export default function FeaturedProjects() {
   return (
     <section className="py-24" style={{ background: sectionBg }}>
       {/* Header */}
-      <div className="max-w-7xl mx-auto px-6 mb-12 flex justify-between items-end">
-        <div>
-          <h2
-            className="text-4xl md:text-5xl font-heading font-bold mb-4"
-            style={{ color: headingColor }}
-          >
-            Our Impact.
-          </h2>
-          <p className="text-lg" style={{ color: subColor }}>
-            Featured projects shaping our community.
-          </p>
-        </div>
+      <div className="max-w-7xl mx-auto px-6 mb-12 flex justify-end items-end">
         <button
           onClick={handleViewAll}
           className="hidden md:inline-flex font-bold hover:opacity-80 transition-opacity cursor-pointer"
@@ -186,7 +167,7 @@ export default function FeaturedProjects() {
                   className="font-medium mt-4 flex items-center gap-2 opacity-0 -translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300"
                   style={{ color: 'var(--color-accent)' }}
                 >
-                  View Case Study &rarr;
+                  View Details &rarr;
                 </Link>
               </div>
             </div>
