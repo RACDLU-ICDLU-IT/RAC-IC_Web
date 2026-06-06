@@ -21,7 +21,8 @@ export default function AdminApplications() {
   const [codesLoading, setCodesLoading] = useState(false);
   const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
   const [newCodeLabel, setNewCodeLabel] = useState('');
-  const [generatedCode, setGeneratedCode] = useState('');
+  const [codeQuantity, setCodeQuantity] = useState(1);
+  const [generatedCodes, setGeneratedCodes] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [codeCopied, setCopiedCode] = useState<string | null>(null);
 
@@ -78,27 +79,34 @@ export default function AdminApplications() {
   };
 
   const handleGenerateCode = async () => {
+    const qty = Math.max(1, Math.min(50, codeQuantity));
     setIsGenerating(true);
     try {
-      const code = generateRandomCode();
       const { data: { session } } = await supabase.auth.getSession();
-      const { error } = await supabase.from('application_codes').insert({
-        code,
-        tenant_id: tenant.id,
-        created_by: session?.user?.id || null,
-        label: newCodeLabel.trim() || 'Invitation Code',
-        is_active: true,
-        used_count: 0,
-        max_uses: 1,
+      const newCodes: string[] = [];
+      const rows = Array.from({ length: qty }, () => {
+        const code = generateRandomCode();
+        newCodes.push(code);
+        return {
+          code,
+          tenant_id: tenant.id,
+          created_by: session?.user?.id || null,
+          label: newCodeLabel.trim() || 'Invitation Code',
+          is_active: true,
+          used_count: 0,
+          max_uses: 1,
+        };
       });
+      const { error } = await supabase.from('application_codes').insert(rows);
       if (error) throw error;
-      setGeneratedCode(code);
+      setGeneratedCodes(newCodes);
       setNewCodeLabel('');
+      setCodeQuantity(1);
       fetchCodes();
-      addToast('Invitation code generated successfully!', 'success');
+      addToast(`${qty} invitation code${qty > 1 ? 's' : ''} generated!`, 'success');
     } catch (err: any) {
       console.error('generateCode error:', err);
-      addToast(err.message || 'Failed to generate code', 'error');
+      addToast(err.message || 'Failed to generate codes', 'error');
     } finally {
       setIsGenerating(false);
     }
@@ -271,7 +279,7 @@ export default function AdminApplications() {
           </Button>
           <Button
             size="sm"
-            onClick={() => { setIsCodeModalOpen(true); setGeneratedCode(''); }}
+            onClick={() => { setIsCodeModalOpen(true); setGeneratedCodes([]); }}
           >
             <KeyRound size={15} className="mr-1.5" />
             Manage Codes
@@ -465,7 +473,7 @@ export default function AdminApplications() {
 
       <Modal
         isOpen={isCodeModalOpen}
-        onClose={() => { setIsCodeModalOpen(false); setGeneratedCode(''); setNewCodeLabel(''); }}
+        onClose={() => { setIsCodeModalOpen(false); setGeneratedCodes([]); setNewCodeLabel(''); setCodeQuantity(1); }}
         title="Invitation Code Manager"
         size="lg"
       >
@@ -474,7 +482,7 @@ export default function AdminApplications() {
           {/* --- Generate New Code Section --- */}
           <div className="bg-gray-50 rounded-xl border border-gray-200 p-5">
             <h3 className="font-bold text-gray-800 text-sm uppercase tracking-wide mb-4 flex items-center gap-2">
-              <KeyRound size={15} className="text-primary" /> Generate New Code
+              <KeyRound size={15} className="text-primary" /> Generate Invitation Codes
             </h3>
             <div className="flex gap-3 items-end">
               <div className="flex-1">
@@ -484,8 +492,21 @@ export default function AdminApplications() {
                 <input
                   value={newCodeLabel}
                   onChange={e => setNewCodeLabel(e.target.value)}
-                  placeholder="e.g. For Ahmed Rafi"
+                  placeholder="e.g. Batch June 2026"
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+              <div className="w-24">
+                <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                  Quantity
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={codeQuantity}
+                  onChange={e => setCodeQuantity(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-accent transition-colors text-center font-bold"
                 />
               </div>
               <Button onClick={handleGenerateCode} disabled={isGenerating} size="sm">
@@ -503,27 +524,41 @@ export default function AdminApplications() {
               </Button>
             </div>
 
-            {/* Newly generated code display */}
-            {generatedCode && (
+            {/* Newly generated codes display */}
+            {generatedCodes.length > 0 && (
               <div className="mt-5 bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-2">✓ New Code Ready</p>
-                <div className="flex items-center gap-3">
-                  <div className="font-mono text-2xl font-bold tracking-[0.35em] text-emerald-800 bg-white px-4 py-2 rounded-lg border border-emerald-200 select-all">
-                    {generatedCode}
-                  </div>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
+                    ✓ {generatedCodes.length} Code{generatedCodes.length > 1 ? 's' : ''} Ready
+                  </p>
                   <button
-                    onClick={() => handleCopyCode(generatedCode)}
-                    className="flex items-center gap-1.5 text-emerald-700 hover:text-emerald-900 font-medium text-sm transition-colors"
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedCodes.join('\n'));
+                      setCopiedCode('__all__');
+                      setTimeout(() => setCopiedCode(null), 2500);
+                    }}
+                    className="flex items-center gap-1.5 text-emerald-700 hover:text-emerald-900 font-medium text-xs transition-colors"
                   >
-                    {codeCopied === generatedCode ? (
-                      <><Check size={15} /> Copied!</>
-                    ) : (
-                      <><Copy size={15} /> Copy</>
-                    )}
+                    {codeCopied === '__all__' ? <><Check size={13} /> Copied all!</> : <><Copy size={13} /> Copy all</>}
                   </button>
                 </div>
-                <p className="text-xs text-emerald-600 mt-2">
-                  Share this with the applicant. Each code is single-use only.
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {generatedCodes.map((code, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-emerald-200">
+                      <span className="font-mono text-lg font-bold tracking-[0.3em] text-emerald-800 select-all">
+                        {code}
+                      </span>
+                      <button
+                        onClick={() => handleCopyCode(code)}
+                        className="flex items-center gap-1 text-emerald-700 hover:text-emerald-900 font-medium text-xs transition-colors"
+                      >
+                        {codeCopied === code ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy</>}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-emerald-600 mt-3">
+                  Each code is single-use. Share one per applicant.
                 </p>
               </div>
             )}
