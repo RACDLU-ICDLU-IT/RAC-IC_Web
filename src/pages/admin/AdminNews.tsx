@@ -55,10 +55,18 @@ export default function AdminNews() {
     };
     
     try {
-      await supabase.from('news').upsert({ id: docId, ...dataToSave }, { onConflict: 'id' });
+      const { data: savedRows, error: saveError } = await supabase
+        .from('news')
+        .upsert({ id: docId, ...dataToSave }, { onConflict: 'id' })
+        .select('id');
+
+      if (saveError) throw saveError;
+      if (!savedRows || savedRows.length === 0) {
+        throw new Error('Article could not be saved — check RLS policy for this tenant.');
+      }
+
       addToast('Article saved', 'success');
       setIsFormOpen(false);
-      
       fetchArticles();
     } catch (err) {
       console.error(err);
@@ -69,12 +77,19 @@ export default function AdminNews() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await supabase.from('news').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
+      const { error: deleteError } = await supabase
+        .from('news')
+        .delete()
+        .eq('id', deleteId)
+        .eq('tenant_id', tenant.id);
+      if (deleteError) throw deleteError;
       addToast('Article deleted', 'success');
       setDeleteId(null);
-      
       fetchArticles();
-    } catch (err) { addToast('Failed to delete', 'error'); }
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to delete', 'error');
+    }
   };
 
   const insertMarkdown = (syntax: string) => {
@@ -194,7 +209,7 @@ export default function AdminNews() {
 
             <div>
               <label className={labelClass}>Cover Image</label>
-              <CloudinaryUpload onUpload={(url) => setFormData({...formData, coverImage: url})} currentUrl={formData.coverImage} aspectRatio="landscape" />
+              <CloudinaryUpload onUpload={(url, publicId) => setFormData({...formData, coverImage: url, coverImagePublicId: publicId})} currentUrl={formData.coverImage} currentPublicId={formData.coverImagePublicId} aspectRatio="landscape" />
             </div>
 
             <div className="flex flex-col flex-1 min-h-[300px]">
