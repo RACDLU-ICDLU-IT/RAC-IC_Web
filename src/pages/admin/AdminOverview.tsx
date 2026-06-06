@@ -40,12 +40,12 @@ export default function AdminOverview() {
     const fetchStats = async () => {
       try {
         const p1 = supabase.from('users').select('*').eq('status', 'active').eq('tenant_id', tenant.id);
-        const p2 = supabase.from('applications').select('*').eq('status', 'pending').eq('tenant_id', tenant.id);
+        const p2 = supabase.from('applications').select('*').eq('status', 'Pending').eq('tenant_id', tenant.id);
         
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
         const p3 = supabase.from('events').select('*').gte('date', startOfMonth).eq('tenant_id', tenant.id);
-        const p4 = supabase.from('projects').select('*').eq('status', 'ongoing').eq('tenant_id', tenant.id);
+        const p4 = supabase.from('projects').select('*').eq('status', 'Ongoing').eq('tenant_id', tenant.id);
 
         const [usersSnap, appsSnap, eventsSnap, projectsSnap] = await Promise.all([p1, p2, p3, p4]);
 
