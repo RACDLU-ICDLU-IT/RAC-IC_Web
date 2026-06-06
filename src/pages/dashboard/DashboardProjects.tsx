@@ -54,7 +54,7 @@ export default function DashboardProjects() {
                 <div className="w-full h-full bg-gradient-to-br from-primary/10 to-accent/10" />
               )}
               <div className="absolute top-4 left-4 flex gap-2">
-                <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${getStatusStyle(project.status.toLowerCase())}`}>
+                <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${getStatusStyle(project.status?.toLowerCase() ?? '')}`}>
                   {project.status}
                 </span>
               </div>
