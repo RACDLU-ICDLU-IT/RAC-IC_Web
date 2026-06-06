@@ -141,34 +141,37 @@ export default function Projects() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {filtered.map((project) => (
-              <Link to={`/projects/${project.id}`} key={project.id}>
-                <div className="group flex flex-col bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 h-full cursor-pointer">
-                  <div className="aspect-video overflow-hidden relative bg-primary/5">
-                    {project.coverImage ? (
-                      <img src={project.coverImage} alt={project.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
-                    ) : (
-                      <div className="w-full h-full bg-gradient-to-br from-primary/10 to-accent/10" />
-                    )}
-                    <div className="absolute top-4 left-4 flex gap-2">
-                      <span className="bg-white/90 backdrop-blur text-primary text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">{project.type}</span>
-                    </div>
-                  </div>
-                  <div className="p-6 flex flex-col flex-grow relative overflow-hidden">
-                    <div className="mb-4">
-                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${getStatusStyle(project.status || '')}`}>
-                        {project.status}
-                      </span>
-                    </div>
-                    <h3 className="text-xl font-bold font-heading text-primary mb-2 line-clamp-2">{project.name}</h3>
-                    <p className="text-sm text-gray-500 mb-6 font-mono">Date: {project.executionDate || project.startDate || 'TBD'}</p>
-                    
-                    {/* Hover Button */}
-                    <div className="mt-auto pt-4 border-t border-gray-50 transform translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
-                      <span className="text-accent font-bold group-hover:underline">View Project Details &rarr;</span>
-                    </div>
+              <div key={project.id} className="group flex flex-col bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 h-full">
+                <div className="aspect-video overflow-hidden relative bg-primary/5">
+                  {project.coverImage ? (
+                    <img src={project.coverImage} alt={project.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-primary/10 to-accent/10" />
+                  )}
+                  <div className="absolute top-4 left-4 flex gap-2">
+                    <span className="bg-white/90 backdrop-blur text-primary text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">{project.type}</span>
                   </div>
                 </div>
-              </Link>
+                <div className="p-6 flex flex-col flex-grow relative overflow-hidden">
+                  <div className="mb-4">
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider ${getStatusStyle(project.status || '')}`}>
+                      {project.status}
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold font-heading text-primary mb-2 line-clamp-2">{project.name}</h3>
+                  <p className="text-sm text-gray-500 mb-6 font-mono">Date: {project.executionDate || project.startDate || 'TBD'}</p>
+
+                  {/* View Details — always visible on mobile, hover-animated on desktop */}
+                  <div className="mt-auto pt-4 border-t border-gray-50 md:transform md:translate-y-4 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100 transition-all duration-300">
+                    <Link
+                      to={`/projects/${project.id}`}
+                      className="text-accent font-bold hover:underline underline-offset-2"
+                    >
+                      View Project Details &rarr;
+                    </Link>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         )}
