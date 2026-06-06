@@ -76,7 +76,7 @@ export default function ProjectDetail() {
               <span className="text-xs font-bold uppercase tracking-widest text-accent bg-primary/50 px-3 py-1 rounded-full backdrop-blur-sm">
                 {project.type}
               </span>
-              <span className={`text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full backdrop-blur-sm ${getStatusStyle(project.status.toLowerCase())}`}>
+              <span className={`text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full backdrop-blur-sm ${getStatusStyle(project.status?.toLowerCase() ?? '')}`}>
                 {project.status}
               </span>
             </div>
@@ -177,11 +177,11 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {project.gallery && project.gallery.length > 0 && (
+        {((project.galleryImages || project.gallery || []).length > 0) && (
           <div className="max-w-7xl mx-auto px-6 py-16 border-t border-gray-100">
             <h2 className="text-3xl font-heading font-bold text-primary mb-8">Gallery</h2>
             <div className="flex overflow-x-auto pb-8 gap-6 hide-scrollbar snap-x">
-              {project.gallery.map((url: string, i: number) => (
+              {(project.galleryImages || project.gallery || []).map((url: string, i: number) => (
                 <img key={i} src={url} alt="" className="h-64 rounded-xl object-cover snap-center" />
               ))}
             </div>
