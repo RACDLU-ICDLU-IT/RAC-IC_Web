@@ -180,7 +180,7 @@ export default function AdminGallery() {
     }
   };
 
-  const handleBulkUpload = async (url: string) => {
+  const handleBulkUpload = async (url: string, publicId: string) => {
     if (!url) return;
 
     // Each upload gets a unique, monotonically increasing sort_order so
@@ -192,6 +192,7 @@ export default function AdminGallery() {
       const { error } = await supabase.from('gallery').insert({
         id: crypto.randomUUID(),
         url: url,
+        publicId: publicId || null,
         caption: '',
         albumTag: '',
         sort_order: photos.length + sortOffset,
