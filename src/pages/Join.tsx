@@ -132,8 +132,10 @@ export default function Join() {
 
   const onSubmit = async (data: JoinFormData) => {
     setIsSubmitting(true);
+    const trimmedCode = inviteCode.trim().toUpperCase();
     try {
-      const { error } = await supabase.from('applications').insert({
+      // Step 1: Insert the application
+      const { error: insertError } = await supabase.from('applications').insert({
         name: data.name,
         email: data.email,
         dob: data.dob,
@@ -143,12 +145,19 @@ export default function Join() {
         address: data.address,
         referredBy: data.referredBy || '',
         photo: photoUrl,
-        codeUsed: inviteCode.trim().toUpperCase(),
+        codeUsed: trimmedCode,
         tenant_id: tenant.id,
-        status: 'pending',
+        status: 'Pending',
         createdAt: new Date().toISOString(),
       });
-      if (error) throw error;
+      if (insertError) throw insertError;
+
+      // Step 2: Mark the code as used NOW (only after successful submission)
+      await supabase.rpc('consume_application_code', {
+        p_code: trimmedCode,
+        p_tenant_id: tenant.id,
+      });
+
       setStep('success');
     } catch (err: any) {
       console.error('Application submit error:', err);
@@ -167,7 +176,8 @@ export default function Join() {
     setIsVerifyingCode(true);
     setCodeError('');
     try {
-      const { data, error } = await supabase.rpc('verify_application_code', {
+      // check_application_code only validates — it does NOT consume/expire the code
+      const { data, error } = await supabase.rpc('check_application_code', {
         p_code: trimmed,
         p_tenant_id: tenant.id,
       });
