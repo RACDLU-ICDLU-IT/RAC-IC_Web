@@ -18,7 +18,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { data: profile } = await supabaseAdmin
     .from('users').select('role').eq('id', user.id).single();
-  if (!['officer','admin','master_admin'].includes(profile?.role)) {
+  if (!['admin','master_admin'].includes(profile?.role)) {
     return res.status(403).json({ error: 'Forbidden' });
   }
 
