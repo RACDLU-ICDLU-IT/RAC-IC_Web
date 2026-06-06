@@ -183,7 +183,8 @@ export default function FeaturedProjects({ title = 'Our Impact.' }: { title?: st
 
                 <Link
                   to={`/projects/${project.id}`}
-                  className="font-medium mt-4 flex items-center gap-2 opacity-0 -translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300"
+                  onClick={(e) => e.stopPropagation()}
+                  className="font-medium mt-4 inline-flex items-center gap-2 md:opacity-0 md:-translate-y-2 md:group-hover:opacity-100 md:group-hover:translate-y-0 transition-all duration-300 underline underline-offset-2 md:no-underline"
                   style={{ color: 'var(--color-accent)' }}
                 >
                   View Details &rarr;
