@@ -54,6 +54,7 @@ export default function Events() {
   }, [tenant.id]);
 
   const today = new Date().toISOString().split('T')[0];
+  const eventTypes = ['all', ...Array.from(new Set(events.map(e => e.type).filter(Boolean)))];
   const filtered = typeFilter === 'all' ? events : events.filter(e => e.type === typeFilter);
   const upcoming = filtered.filter(e => e.date >= today);
   const past = filtered.filter(e => e.date < today);
@@ -91,7 +92,7 @@ export default function Events() {
         </div>
         {/* Type filter pills */}
         <div className="flex flex-wrap gap-2 mt-8">
-          {['all', 'Meeting', 'Community Project', 'International', 'Social'].map(type => (
+          {eventTypes.map(type => (
             <button 
               key={type} 
               onClick={() => setTypeFilter(type)}
@@ -110,9 +111,18 @@ export default function Events() {
           </div>
         ) : view === 'list' ? (
           <div className="space-y-16">
-            {/* Upcoming Events — hidden entirely when empty */}
+            {/* Empty state */}
+            {!loading && upcoming.length === 0 && past.length === 0 && (
+              <div className="text-center py-24 text-gray-400">
+                <CalendarDays size={48} className="mx-auto mb-4 opacity-40" />
+                <p className="font-medium text-lg">No events found for this filter.</p>
+              </div>
+            )}
+
+            {/* Upcoming Events */}
             {upcoming.length > 0 && (
             <div className="space-y-6">
+              <h3 className="text-2xl font-heading font-bold text-gray-700">Upcoming Events</h3>
               {upcoming.map(event => (
                   <div 
                     key={event.id}
