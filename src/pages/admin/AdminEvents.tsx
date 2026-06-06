@@ -14,7 +14,6 @@ export default function AdminEvents() {
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const [view, setView] = useState<'list'|'calendar'>('list');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -46,10 +45,18 @@ export default function AdminEvents() {
     const dataToSave = { ...formData, isPublic: formData.isPublic ?? false, tenant_id: tenant.id };
     
     try {
-      await supabase.from('events').upsert({ id: docId, ...dataToSave }, { onConflict: 'id' });
+      const { data: savedRows, error: saveError } = await supabase
+        .from('events')
+        .upsert({ id: docId, ...dataToSave }, { onConflict: 'id' })
+        .select('id');
+
+      if (saveError) throw saveError;
+      if (!savedRows || savedRows.length === 0) {
+        throw new Error('Event could not be saved — check RLS policy for this tenant.');
+      }
+
       addToast('Event saved', 'success');
       setIsFormOpen(false);
-      
       fetchEvents();
     } catch (err) {
       console.error(err);
@@ -60,10 +67,14 @@ export default function AdminEvents() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await supabase.from('events').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
+      const { error: deleteError } = await supabase
+        .from('events')
+        .delete()
+        .eq('id', deleteId)
+        .eq('tenant_id', tenant.id);
+      if (deleteError) throw deleteError;
       addToast('Event deleted', 'success');
       setDeleteId(null);
-      
       fetchEvents();
     } catch (err) {
       console.error(err);
@@ -160,7 +171,7 @@ export default function AdminEvents() {
           <div><label className={labelClass}>Description</label><textarea value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} className={inputClass} rows={3} /></div>
           <div>
             <label className={labelClass}>Cover Image</label>
-            <CloudinaryUpload onUpload={(url) => setFormData({...formData, coverImage: url})} currentUrl={formData.coverImage} aspectRatio="landscape" />
+            <CloudinaryUpload onUpload={(url, publicId) => setFormData({...formData, coverImage: url, coverImagePublicId: publicId})} currentUrl={formData.coverImage} currentPublicId={formData.coverImagePublicId} aspectRatio="landscape" />
           </div>
           <div className="flex items-center gap-2 pt-2">
              <input type="checkbox" checked={formData.isPublic || false} onChange={e => setFormData({...formData, isPublic: e.target.checked})} />
