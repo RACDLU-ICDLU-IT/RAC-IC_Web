@@ -15,6 +15,7 @@ const joinSchema = z.object({
   email: z.string().email('A valid email address is required'),
   dob: z.string().min(1, 'Date of birth is required'),
   gender: z.string().min(1, 'Please select your gender'),
+  bloodGroup: z.string().min(1, 'Please select your blood group'),
   phone: z.string().min(5, 'A valid phone number is required'),
   emergencyContact: z.string().min(3, 'Emergency contact information is required'),
   address: z.string().min(5, 'Residential address is required'),
@@ -89,6 +90,31 @@ export default function Join() {
 
   const isLight = tenant.brand.primaryColor === '#FFFFFF';
 
+  // Compute allowed DOB range based on club type
+  const getDobRange = () => {
+    const today = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    if (isRotaract) {
+      // Must be 18+: born no later than today - 18 years
+      const maxDate = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
+      // No hard upper limit but set a generous 80-year lower bound
+      const minDate = new Date(today.getFullYear() - 80, today.getMonth(), today.getDate());
+      return { min: fmt(minDate), max: fmt(maxDate) };
+    } else {
+      // Interact: must be 12 ≤ age < 18
+      // max DOB: today minus 12 years (to be at least 12 today)
+      const maxDate = new Date(today.getFullYear() - 12, today.getMonth(), today.getDate());
+      // min DOB: the day after today minus 18 years (to be strictly under 18)
+      const minRaw = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
+      minRaw.setDate(minRaw.getDate() + 1);
+      return { min: fmt(minRaw), max: fmt(maxDate) };
+    }
+  };
+
+  const dobRange = getDobRange();
+
   // FIX: double-rAF ensures scroll fires after first paint on mobile WebView,
   // solving the sidebar-navigation-lands-at-footer issue
   React.useEffect(() => {
@@ -140,6 +166,7 @@ export default function Join() {
         email: data.email,
         dob: data.dob,
         gender: data.gender,
+        bloodGroup: data.bloodGroup,
         phone: data.phone,
         emergencyContact: data.emergencyContact,
         address: data.address,
@@ -147,7 +174,7 @@ export default function Join() {
         photo: photoUrl,
         codeUsed: trimmedCode,
         tenant_id: tenant.id,
-        status: 'Pending',
+        status: 'pending',
         createdAt: new Date().toISOString(),
       });
       if (insertError) throw insertError;
@@ -478,8 +505,15 @@ export default function Join() {
                   <input
                     {...register('dob')}
                     type="date"
+                    min={dobRange.min}
+                    max={dobRange.max}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-700"
                   />
+                  <p className="text-xs text-gray-400 mt-1">
+                    {isRotaract
+                      ? 'Rotaract requires applicants to be 18 years or older.'
+                      : 'Interact requires applicants to be between 12 and 17 years old.'}
+                  </p>
                   {errors.dob && (
                     <p className="text-red-500 text-xs mt-1">{errors.dob.message}</p>
                   )}
@@ -497,11 +531,34 @@ export default function Join() {
                     <option value="">Select gender...</option>
                     <option value="Male">Male</option>
                     <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                    <option value="Prefer not to say">Prefer not to say</option>
                   </select>
                   {errors.gender && (
                     <p className="text-red-500 text-xs mt-1">{errors.gender.message}</p>
+                  )}
+                </div>
+
+                {/* Blood Group */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    Blood Group <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    {...register('bloodGroup')}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                  >
+                    <option value="">Select blood group...</option>
+                    <option value="A+">A+</option>
+                    <option value="A-">A−</option>
+                    <option value="B+">B+</option>
+                    <option value="B-">B−</option>
+                    <option value="AB+">AB+</option>
+                    <option value="AB-">AB−</option>
+                    <option value="O+">O+</option>
+                    <option value="O-">O−</option>
+                    <option value="Unknown">Unknown</option>
+                  </select>
+                  {errors.bloodGroup && (
+                    <p className="text-red-500 text-xs mt-1">{errors.bloodGroup.message}</p>
                   )}
                 </div>
 
