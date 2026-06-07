@@ -13,7 +13,7 @@ export default function AdminApplications() {
   const { adminTenant: tenant } = useAdminTenant();
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('pending');
+  const [activeTab, setActiveTab] = useState('all');
   const [selectedApp, setSelectedApp] = useState<any | null>(null);
   
   // Code management
@@ -190,6 +190,23 @@ export default function AdminApplications() {
     }
   };
 
+  const handleSetPending = async (app: any) => {
+    setActionLoading(true);
+    try {
+      await supabase.from('applications').update({ 
+        status: 'pending',
+        rejectionNote: null
+      }).eq('id', app.id).eq('tenant_id', tenant.id);
+      addToast('Application set back to pending.', 'success');
+      fetchApplications();
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to update application status', 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const calculateAge = (dob: string) => {
     if (!dob) return 0;
     const birth = new Date(dob);
@@ -222,6 +239,7 @@ export default function AdminApplications() {
       'Email': app.email || '',
       'Date of Birth': app.dob || '',
       'Gender': app.gender || '',
+      'Blood Group': app.bloodGroup || '',
       'Phone': app.phone || '',
       'Emergency Contact': app.emergencyContact || '',
       'Residential Address': app.address || '',
@@ -240,9 +258,9 @@ export default function AdminApplications() {
     XLSX.writeFile(wb, fileName);
   };
 
-  const filteredApps = applications.filter(a => activeTab === 'all' || a.status === activeTab);
+  const filteredApps = applications.filter(a => activeTab === 'all' || (a.status || '').toLowerCase() === activeTab);
 
-  const pendingCount = applications.filter(a => a.status === 'pending').length;
+  const pendingCount = applications.filter(a => (a.status || '').toLowerCase() === 'pending').length;
 
   return (
     <div className="space-y-8 pb-12">
@@ -288,7 +306,7 @@ export default function AdminApplications() {
       </div>
 
       <div className="flex gap-2 border-b border-gray-200">
-        {['pending', 'approved', 'rejected', 'all'].map(tab => (
+        {['all', 'pending', 'approved', 'rejected'].map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -359,20 +377,41 @@ export default function AdminApplications() {
               </td>
               <td className="px-6 py-4">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                  app.status === 'approved' ? 'bg-green-100 text-green-800' :
-                  app.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                  (app.status || '').toLowerCase() === 'approved' ? 'bg-green-100 text-green-800' :
+                  (app.status || '').toLowerCase() === 'rejected' ? 'bg-red-100 text-red-800' :
                   'bg-amber-100 text-amber-800'
                 }`}>
-                  {app.status || 'pending'}
+                  {(app.status || 'pending').toLowerCase()}
                 </span>
               </td>
               <td className="px-6 py-4">
-                <div className="flex gap-2">
-                  {app.status === 'pending' && (
-                    <>
-                      <button onClick={() => setConfirmApprove(app)} className="text-green-600 hover:text-green-800 hover:bg-green-50 p-1 rounded transition-colors"><CheckCircle2 size={18} /></button>
-                      <button onClick={() => setConfirmReject(app)} className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1 rounded transition-colors"><XCircle size={18} /></button>
-                    </>
+                <div className="flex gap-1.5 items-center flex-wrap">
+                  {(app.status || '').toLowerCase() !== 'approved' && (
+                    <button
+                      onClick={() => setConfirmApprove(app)}
+                      title="Approve"
+                      className="text-green-600 hover:text-green-800 hover:bg-green-50 p-1 rounded transition-colors"
+                    >
+                      <CheckCircle2 size={18} />
+                    </button>
+                  )}
+                  {(app.status || '').toLowerCase() !== 'pending' && (
+                    <button
+                      onClick={() => handleSetPending(app)}
+                      title="Set to Pending"
+                      className="text-amber-500 hover:text-amber-700 hover:bg-amber-50 p-1 rounded transition-colors text-xs font-bold leading-none"
+                    >
+                      ⏳
+                    </button>
+                  )}
+                  {(app.status || '').toLowerCase() !== 'rejected' && (
+                    <button
+                      onClick={() => setConfirmReject(app)}
+                      title="Reject"
+                      className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1 rounded transition-colors"
+                    >
+                      <XCircle size={18} />
+                    </button>
                   )}
                   <button onClick={() => setSelectedApp(app)} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100 p-1 rounded transition-colors"><Eye size={18} /></button>
                 </div>
@@ -443,6 +482,10 @@ export default function AdminApplications() {
               <div>
                 <span className="text-xs text-gray-500 uppercase font-bold">Gender</span>
                 <p className="font-medium">{selectedApp.gender || '-'}</p>
+              </div>
+              <div>
+                <span className="text-xs text-gray-500 uppercase font-bold">Blood Group</span>
+                <p className="font-medium">{selectedApp.bloodGroup || '-'}</p>
               </div>
               <div>
                 <span className="text-xs text-gray-500 uppercase font-bold">Code Used</span>
