@@ -102,13 +102,17 @@ export default function Board() {
         canonicalPath="/board"
       />
 
-      <section className="pt-28 pb-6 px-6 max-w-4xl mx-auto">
-        <h1 className="text-6xl md:text-[96px] font-heading font-bold leading-none"
+      <section className="pt-20 pb-2 px-6 max-w-4xl mx-auto">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-1"
+          style={{ color: 'color-mix(in srgb, var(--color-accent) 60%, transparent)' }}>
+          Leadership
+        </p>
+        <h1 className="text-3xl md:text-5xl font-heading font-bold leading-tight"
           style={{ color: 'var(--color-accent)' }}>
           Our Board.
         </h1>
-        <p className="mt-3 text-base max-w-sm"
-          style={{ color: 'color-mix(in srgb, var(--color-primary) 48%, transparent)' }}>
+        <p className="mt-1 text-sm max-w-xs"
+          style={{ color: 'color-mix(in srgb, var(--color-primary) 45%, transparent)' }}>
           Meet the dedicated leaders guiding {tenant.shortName}.
         </p>
       </section>
@@ -120,7 +124,7 @@ export default function Board() {
       </section>
 
       {!loading && boardMembers.length > 0 && (
-        <section className="mt-8 pt-10 pb-16 px-4"
+        <section className="mt-4 pt-8 pb-14 px-4"
           style={{ backgroundColor: 'var(--color-accent)' }}>
           <div className="max-w-sm mx-auto">
             {active
