@@ -20,7 +20,6 @@ const STYLES = `
     --neu-text:  #3d4468;
     --neu-muted: #9499b7;
     --accent:    var(--color-accent, #c41e50);
-    --accent-deep: color-mix(in srgb, var(--accent) 80%, black);
   }
   .bd {
     min-height: 100vh;
@@ -55,10 +54,10 @@ const STYLES = `
   }
   .bd-subtitle { font-size: 13px; color: var(--neu-muted); font-weight: 400; }
 
-  /* Grid area — no group card */
+  /* Grid area — plain bg, no card */
   .bd-grid-wrap {
     margin: 0 16px;
-    padding: 16px 20px 20px;
+    padding: 20px 20px 24px;
     animation: bd-fadeUp 0.45s 0.08s ease both;
     overflow-x: auto;
   }
@@ -68,25 +67,6 @@ const STYLES = `
     position: relative;
     width: calc(var(--col-width) * 4 + var(--hex-w));
     height: calc(var(--row-height) * 2 + (var(--row-height) * 0.5) + var(--hex-h));
-  }
-
-  /* ── Per-hex shadow wrapper ──
-     drop-shadow() follows clip-path contour of the child,
-     giving each hex its own individual neumorphic shadow.        */
-  .bd-hex-shadow {
-    position: absolute;
-    width: var(--hex-w);
-    height: var(--hex-h);
-    cursor: pointer;
-    transition: filter 0.28s ease, opacity 0.28s ease, transform 0.25s ease;
-    filter:
-      drop-shadow(3px 3px 6px var(--neu-dark))
-      drop-shadow(-3px -3px 6px var(--neu-light));
-  }
-  .bd-hex-shadow.is-active {
-    filter:
-      drop-shadow(5px 5px 12px var(--neu-dark))
-      drop-shadow(-3px -3px 8px var(--neu-light));
   }
 
   /* Hex position slots */
@@ -101,11 +81,56 @@ const STYLES = `
   .b-p9  { left: calc(var(--col-width) * 4); top: calc(var(--row-height) * 0 + var(--row-height) * 0.5); }
   .b-p10 { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 2); }
 
-  /* Inner clipped hex (no shadow — parent handles it) */
+  /*
+   * Per-hex 3D neu effect strategy:
+   * clip-path kills box-shadow, so we use a 3-layer approach:
+   *   1. .bd-hex-shadow  — sits BEHIND, slightly offset, clipped hex filled with --neu-dark
+   *                        creates the "bottom/right shadow" of a raised button
+   *   2. .bd-hex-light   — sits BEHIND on opposite side, filled with --neu-light
+   *                        creates the "top/left highlight"
+   *   3. .bd-hex-face    — the actual hex on top (border ring + photo)
+   * Together they fake the neu raised look without needing box-shadow.
+   */
+  .bd-hex-wrap {
+    position: absolute;
+    width: var(--hex-w);
+    height: var(--hex-h);
+    cursor: pointer;
+    transition: opacity 0.28s ease, transform 0.25s ease;
+  }
+  /* Dark shadow layer — shifted bottom-right */
+  .bd-hex-shadow-layer {
+    position: absolute;
+    inset: 0;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    background: var(--neu-dark);
+    transform: translate(5px, 5px);
+    transition: transform 0.25s ease;
+  }
+  /* Light highlight layer — shifted top-left */
+  .bd-hex-light-layer {
+    position: absolute;
+    inset: 0;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    background: var(--neu-light);
+    transform: translate(-5px, -5px);
+    transition: transform 0.25s ease;
+  }
+  /* Face — the actual visible hex */
+  .bd-hex-face {
+    position: absolute;
+    inset: 0;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    overflow: hidden;
+  }
+  /* Active state — flatten shadow (pressed-in feel) */
+  .bd-hex-wrap.is-active .bd-hex-shadow-layer { transform: translate(2px, 2px); }
+  .bd-hex-wrap.is-active .bd-hex-light-layer  { transform: translate(-2px, -2px); }
+
+  /* Border ring inside face */
   .b-hex-border {
     position: absolute; inset: 0; width: 100%; height: 100%;
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    transition: background 0.3s ease;
     pointer-events: none;
   }
   .b-hex-inner {
@@ -116,7 +141,7 @@ const STYLES = `
                 width 0.28s ease, height 0.28s ease;
   }
 
-  .b-hpop  { animation: hexPop 0.46s cubic-bezier(0.34,1.56,0.64,1) both; }
+  .b-hpop    { animation: hexPop 0.46s cubic-bezier(0.34,1.56,0.64,1) both; }
   .b-card-in { animation: cardIn 0.35s cubic-bezier(0.22,1,0.36,1) both; }
 
   /* ── Member panel ── */
@@ -190,7 +215,6 @@ const STYLES = `
   .bd-spinner {
     width:36px; height:36px; border-radius:50%; border:3px solid transparent;
     border-top-color: var(--accent);
-    box-shadow: 3px 3px 8px var(--neu-dark), -3px -3px 8px var(--neu-light);
     animation: bd-spin 0.8s linear infinite;
   }
   @keyframes bd-spin { to { transform: rotate(360deg); } }
@@ -311,60 +335,66 @@ function HexGrid({ members, activeIdx, setActiveIdx }: {
         if (!member) return null;
         const isActive = activeIdx === i;
         const isDimmed = activeIdx !== null && !isActive;
-        const insetPx  = isActive ? 3 : 2;
+        const insetPx  = isActive ? 4 : 3;
 
         return (
-          /* Outer wrapper: carries drop-shadow (follows child clip-path contour) */
           <div
             key={member.id}
-            className={`b-hpop bd-hex-shadow ${slotClass}${isActive ? ' is-active' : ''}`}
+            className={`b-hpop bd-hex-wrap ${slotClass}${isActive ? ' is-active' : ''}`}
             style={{
               animationDelay: `${i * 50}ms`,
               zIndex: isActive ? 10 : 1,
-              opacity: isDimmed ? 0.3 : 1,
+              opacity: isDimmed ? 0.32 : 1,
               transform: isActive ? 'scale(1.1)' : 'scale(1)',
             }}
             onClick={() => setActiveIdx(isActive ? null : i)}
           >
-            {/* Border ring — clipped hex shape */}
-            <div className="b-hex-border" style={{
-              background: isActive
-                ? 'var(--accent)'
-                : 'color-mix(in srgb, var(--accent) 22%, #e8eaf0)',
-            }} />
-            {/* Photo — inset from border */}
-            <div className="b-hex-inner" style={{
-              top: insetPx, left: insetPx, right: insetPx, bottom: insetPx,
-              width: `calc(100% - ${insetPx * 2}px)`,
-              height: `calc(100% - ${insetPx * 2}px)`,
-            }}>
-              {member.photo ? (
-                <img
-                  src={member.photo} alt={member.name}
-                  style={{
-                    width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-                    filter: isActive ? 'grayscale(0) brightness(1.05)' : 'grayscale(1) brightness(0.72)',
-                  }}
-                />
-              ) : (
-                <div style={{
-                  width: '100%', height: '100%', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: 'color-mix(in srgb, var(--accent) 10%, #e8eaf0)',
-                  color: 'var(--accent)', fontWeight: 800, fontSize: '1.2rem',
-                }}>
-                  {member.name?.[0]}
-                </div>
-              )}
-              <div style={{
-                position: 'absolute', inset: 'auto 0 0',
-                padding: '18px 4px 6px',
-                background: 'linear-gradient(to top, rgba(0,0,0,0.75) 60%, transparent)',
-                opacity: isActive ? 1 : 0,
-                transition: 'opacity 0.3s ease',
-                textAlign: 'center',
+            {/* Dark shadow layer */}
+            <div className="bd-hex-shadow-layer" />
+            {/* Light highlight layer */}
+            <div className="bd-hex-light-layer" />
+            {/* Face — border ring + photo */}
+            <div className="bd-hex-face">
+              {/* Border ring */}
+              <div className="b-hex-border" style={{
+                background: isActive
+                  ? 'var(--accent)'
+                  : 'color-mix(in srgb, var(--accent) 20%, #e8eaf0)',
+              }} />
+              {/* Photo */}
+              <div className="b-hex-inner" style={{
+                top: insetPx, left: insetPx, right: insetPx, bottom: insetPx,
+                width: `calc(100% - ${insetPx * 2}px)`,
+                height: `calc(100% - ${insetPx * 2}px)`,
               }}>
-                <span style={{ color: 'white', fontSize: 8, fontWeight: 700 }}>{member.name}</span>
+                {member.photo ? (
+                  <img
+                    src={member.photo} alt={member.name}
+                    style={{
+                      width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                      filter: isActive ? 'grayscale(0) brightness(1.05)' : 'grayscale(1) brightness(0.72)',
+                    }}
+                  />
+                ) : (
+                  <div style={{
+                    width: '100%', height: '100%', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: 'color-mix(in srgb, var(--accent) 10%, #e8eaf0)',
+                    color: 'var(--accent)', fontWeight: 800, fontSize: '1.2rem',
+                  }}>
+                    {member.name?.[0]}
+                  </div>
+                )}
+                <div style={{
+                  position: 'absolute', inset: 'auto 0 0',
+                  padding: '18px 4px 6px',
+                  background: 'linear-gradient(to top, rgba(0,0,0,0.75) 60%, transparent)',
+                  opacity: isActive ? 1 : 0,
+                  transition: 'opacity 0.3s ease',
+                  textAlign: 'center',
+                }}>
+                  <span style={{ color: 'white', fontSize: 8, fontWeight: 700 }}>{member.name}</span>
+                </div>
               </div>
             </div>
           </div>
