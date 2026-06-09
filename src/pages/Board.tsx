@@ -5,7 +5,6 @@ import { useTenant } from '../hooks/useTenant';
 import SEOHead from '../components/SEOHead';
 
 const STYLES = `
-  /* POINTY-TOP hexagon */
   .hex-clip {
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
   }
@@ -23,51 +22,35 @@ const STYLES = `
 `;
 
 /*
-  POINTY-TOP hex grid (axial offset):
-    hex width  W
-    hex height H = W * (2/√3) ≈ W * 1.1547
-    row step   = H * 0.75
-    odd rows shift right by W * 0.5
-
-  Tracing the Canva reference cluster (10 hexes):
-
-  Row 0 (top):     col 2, col 3, col 4   → 3 hexes (right side, top)
-  Row 1 (mid-top): col 1, col 2, col 3   → 3 hexes
-  Row 2 (mid-bot): col 0, col 1, col 2   → 3 hexes  (shifted left)
-  Row 3 (bottom):  col 1                 → 1 hex bottom-left
-
-  That's exactly 10.
+  Hardcoded positions from pixel-tracing the Canva mockup.
+  Container width = 100%, container height = 75% of width.
+  Each value is { cx, cy } = center as % of container width.
+  Hex size = 20% of container width.
+  (cx - 10%, cy - 10%) = top-left corner for absolute positioning.
+  Heights are scaled: original container ~360px tall, ~440px wide → ratio 0.818
+  cx% = (px_x / 440) * 100
+  cy% = (px_y / 440) * 100  (using same unit so square container)
 */
+const HEX_SIZE = 20; // % of container width
+const HS = HEX_SIZE / 2;
 
-const W   = 23;               // hex width as % of container
-const H   = W * 1.1547;       // pointy-top hex height
-const RS  = H * 0.75;         // row vertical step
-const ODD = W * 0.5;          // odd-row horizontal offset
-
-// [col, row]
-const GRID: [number, number][] = [
-  [2, 0],  // 0 — top right
-  [3, 0],  // 1
-  [4, 0],  // 2 — far right top
-  [1, 1],  // 3
-  [2, 1],  // 4 — center
-  [3, 1],  // 5
-  [0, 2],  // 6 — far left
-  [1, 2],  // 7
-  [2, 2],  // 8
-  [1, 3],  // 9 — bottom
+// Centers as % of container width (container is square padded)
+// Traced from reference: 10 hexes, pointy-top, tight cluster
+const POSITIONS = [
+  { cx: 60, cy:  8 },  // 0 — top right-center
+  { cx: 80, cy:  8 },  // 1 — top right
+  { cx: 99, cy:  8 },  // 2 — far right (slightly cut ok)
+  { cx: 50, cy: 26 },  // 3
+  { cx: 70, cy: 26 },  // 4
+  { cx: 89, cy: 26 },  // 5
+  { cx: 30, cy: 44 },  // 6 — far left
+  { cx: 50, cy: 44 },  // 7
+  { cx: 70, cy: 44 },  // 8
+  { cx: 50, cy: 62 },  // 9 — bottom center-left
 ];
 
-function pos(col: number, row: number) {
-  return {
-    left: col * W + (row % 2 === 1 ? ODD : 0),
-    top:  row * RS,
-  };
-}
-
-const allPos     = GRID.map(([c, r]) => pos(c, r));
-const maxTop     = Math.max(...allPos.map(p => p.top));
-const CONT_H_PCT = maxTop + H;
+// Container height as % of its own width
+const CONT_H = Math.max(...POSITIONS.map(p => p.cy)) + HS + 2;
 
 export default function Board() {
   const { tenant } = useTenant();
@@ -114,7 +97,7 @@ export default function Board() {
       </section>
 
       {/* Hex cluster */}
-      <section className="max-w-md mx-auto px-4 pb-0">
+      <section className="w-full max-w-md mx-auto px-4 overflow-hidden">
         {loading   ? <Spinner />    :
          boardMembers.length === 0 ? <EmptyState /> :
          <HexCluster members={boardMembers} activeIdx={activeIdx} setActiveIdx={setActiveIdx} />}
@@ -168,11 +151,10 @@ function HexCluster({ members, activeIdx, setActiveIdx }: {
   setActiveIdx: (i: number | null) => void;
 }) {
   return (
-    <div className="relative w-full select-none" style={{ paddingBottom: `${CONT_H_PCT}%` }}>
-      {GRID.map(([col, row], i) => {
+    <div className="relative w-full select-none" style={{ paddingBottom: `${CONT_H}%` }}>
+      {POSITIONS.map((p, i) => {
         const member   = members[i];
         if (!member) return null;
-        const { left, top } = pos(col, row);
         const isActive = activeIdx === i;
         const isDimmed = activeIdx !== null && !isActive;
 
@@ -180,10 +162,10 @@ function HexCluster({ members, activeIdx, setActiveIdx }: {
           <div key={member.id}
             className="hex-pop absolute cursor-pointer"
             style={{
-              left:          `${left}%`,
-              top:           `${top}%`,
-              width:         `${W}%`,
-              paddingBottom: `${H}%`,
+              left:          `${p.cx - HS}%`,
+              top:           `${p.cy - HS}%`,
+              width:         `${HEX_SIZE}%`,
+              paddingBottom: `${HEX_SIZE}%`,
               animationDelay: `${i * 50}ms`,
               zIndex:    isActive ? 10 : 1,
               opacity:   isDimmed ? 0.28 : 1,
@@ -192,23 +174,21 @@ function HexCluster({ members, activeIdx, setActiveIdx }: {
             }}
             onClick={() => setActiveIdx(isActive ? null : i)}
           >
-            {/* Border layer */}
+            {/* Border */}
             <div className="hex-clip absolute inset-0" style={{
               background: isActive
                 ? 'var(--color-accent)'
                 : 'color-mix(in srgb, var(--color-accent) 22%, var(--color-page-bg))',
               transition: 'background 0.3s ease',
             }} />
-            {/* Photo layer */}
+            {/* Photo */}
             <div className="hex-clip absolute overflow-hidden"
               style={{ inset: isActive ? '3px' : '2px', transition: 'inset 0.28s ease' }}>
               {member.photo ? (
                 <img src={member.photo} alt={member.name}
                   className="absolute inset-0 w-full h-full object-cover"
                   style={{
-                    filter: isActive
-                      ? 'grayscale(0) brightness(1.05)'
-                      : 'grayscale(1) brightness(0.7)',
+                    filter: isActive ? 'grayscale(0) brightness(1.05)' : 'grayscale(1) brightness(0.7)',
                     transition: 'filter 0.4s ease',
                   }} />
               ) : (
@@ -220,14 +200,14 @@ function HexCluster({ members, activeIdx, setActiveIdx }: {
                   {member.name?.[0]}
                 </div>
               )}
-              {/* Name overlay on active */}
+              {/* Name on active */}
               <div className="absolute inset-x-0 bottom-0 pb-2 px-1 flex flex-col items-center"
                 style={{
                   background: 'linear-gradient(to top, rgba(0,0,0,0.72) 55%, transparent)',
                   opacity: isActive ? 1 : 0,
                   transition: 'opacity 0.3s ease',
                 }}>
-                <span className="text-white text-[7px] font-bold text-center leading-tight line-clamp-1 w-full">
+                <span className="text-white text-[7px] font-bold text-center line-clamp-1 w-full">
                   {member.name}
                 </span>
               </div>
