@@ -1,397 +1,294 @@
 import { supabase } from '../supabase';
-import React, { useState, useEffect, useCallback } from 'react';
-import { Users, X, Mail, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Users, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTenant } from '../hooks/useTenant';
 import SEOHead from '../components/SEOHead';
 
-/* ─────────────────────────────────────────
-   Hex geometry helpers
-   offset-q layout: each hex is a pointy-top hexagon
-   We use SVG clip-path via CSS for the shape
-───────────────────────────────────────── */
-const HEX_CSS = `
+const STYLES = `
   .hex-clip {
     clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
   }
-  .hex-clip-border {
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  @keyframes hexPop {
+    0%   { transform: scale(0.55); opacity: 0; }
+    72%  { transform: scale(1.06); }
+    100% { transform: scale(1);    opacity: 1; }
   }
-  @keyframes slideUp {
-    from { transform: translateY(100%); opacity: 0; }
+  .hex-pop { animation: hexPop 0.48s cubic-bezier(0.34,1.56,0.64,1) both; }
+  @keyframes cardIn {
+    from { transform: translateY(20px); opacity: 0; }
     to   { transform: translateY(0);    opacity: 1; }
   }
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-  }
-  .panel-enter { animation: slideUp 0.38s cubic-bezier(0.22,1,0.36,1) both; }
-  .overlay-enter { animation: fadeIn 0.25s ease both; }
-  @keyframes hexPop {
-    0%   { transform: scale(0.7); opacity: 0; }
-    70%  { transform: scale(1.04); }
-    100% { transform: scale(1); opacity: 1; }
-  }
-  .hex-pop { animation: hexPop 0.45s cubic-bezier(0.34,1.56,0.64,1) both; }
+  .card-in { animation: cardIn 0.38s cubic-bezier(0.22,1,0.36,1) both; }
 `;
+
+/*
+  Exact pattern from the reference image (flat-top hexagons, all same size).
+  Container is 100% wide with a fixed aspect-ratio wrapper.
+  Coordinates are expressed as % of container width for both x and y.
+
+  Hex size: ~22% of container width (flat-top hex: width W, height W*0.866)
+  
+  Flat-top hex axial offset rules:
+    - Each column shifts right by W * 0.75
+    - Even columns: y baseline = 0
+    - Odd  columns: y baseline = H * 0.5  (H = W * 0.866)
+
+  Traced from reference (col 0-4, rows mapped):
+  
+  Col 0 (x=0%):        row2 row3
+  Col 1 (x=16.5%):     row1 row2 row3 row4
+  Col 2 (x=33%):            row2 row3 row4
+  Col 3 (x=49.5%):     row1 row2 row3
+  Col 4 (x=66%):       row1 row2
+
+  Mapping to 10 hexes (0-indexed members):
+*/
+const W = 22;           // hex width as % of container
+const H = W * 0.866;    // hex height
+const CX = W * 0.75;    // column x step
+const ODD_OFFSET = H * 0.5; // odd-col vertical offset
+
+// col, row  (row 0 = top)
+const GRID: [number, number][] = [
+  [1, 0],  // 0
+  [3, 0],  // 1
+  [4, 0],  // 2
+  [0, 1],  // 3
+  [1, 1],  // 4
+  [2, 1],  // 5
+  [3, 1],  // 6
+  [1, 2],  // 7
+  [2, 2],  // 8
+  [3, 2],  // 9
+];
+
+// Convert grid [col,row] → {left%, top%}
+function gridToPos(col: number, row: number) {
+  const left = col * CX;
+  const top  = row * H + (col % 2 === 1 ? ODD_OFFSET : 0);
+  return { left, top };
+}
+
+// Container height needed (max top + H)
+const allPos = GRID.map(([c, r]) => gridToPos(c, r));
+const maxTop = Math.max(...allPos.map(p => p.top));
+const CONTAINER_H_PCT = maxTop + H; // as % of container width
 
 export default function Board() {
   const { tenant } = useTenant();
   const [boardMembers, setBoardMembers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<any | null>(null);
+  const [loading, setLoading]           = useState(true);
+  const [activeIdx, setActiveIdx]       = useState<number | null>(null);
 
   useEffect(() => {
     supabase
-      .from('board')
-      .select('*')
-      .eq('tenant_id', tenant.id)
+      .from('board').select('*').eq('tenant_id', tenant.id)
       .order('sort_order', { ascending: true })
-      .then(({ data: snap }) => {
-        setBoardMembers(snap || []);
-        setLoading(false);
-      }, err => { console.error(err); setLoading(false); });
+      .then(({ data }) => { setBoardMembers(data || []); setLoading(false); },
+            err => { console.error(err); setLoading(false); });
   }, [tenant.id]);
 
-  const close = useCallback(() => setSelected(null), []);
+  const go = (dir: number) => {
+    if (!boardMembers.length) return;
+    setActiveIdx(prev =>
+      prev === null ? 0 : (prev + dir + boardMembers.length) % boardMembers.length
+    );
+  };
 
-  /* Build rows for honeycomb: [3,4,3,4,...] alternating */
-  const rows: any[][] = [];
-  let idx = 0;
-  let rowIdx = 0;
-  while (idx < boardMembers.length) {
-    const count = rowIdx % 2 === 0 ? 3 : 4;
-    rows.push(boardMembers.slice(idx, idx + count));
-    idx += count;
-    rowIdx++;
-  }
+  const activeMember = activeIdx !== null ? boardMembers[activeIdx] ?? null : null;
 
   return (
-    <div className="min-h-screen pt-24 pb-40" style={{ backgroundColor: 'var(--color-page-bg)' }}>
-      <style>{HEX_CSS}</style>
+    <div className="min-h-screen" style={{ backgroundColor: 'var(--color-page-bg)' }}>
+      <style>{STYLES}</style>
       <SEOHead
         title="Leadership & Board"
         description={`Meet the leadership team and board members of ${tenant.fullName}.`}
         canonicalPath="/board"
       />
 
-      {/* Heading */}
-      <section
-        className="py-16 md:py-20 px-6 max-w-5xl mx-auto border-b-2"
-        style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 25%, transparent)' }}
-      >
-        <h1
-          className="text-7xl md:text-[108px] font-heading font-bold leading-none"
-          style={{ color: 'var(--color-accent)' }}
-        >
+      {/* ── Heading ── */}
+      <section className="pt-28 pb-8 px-6 max-w-3xl mx-auto">
+        <h1 className="text-6xl md:text-[96px] font-heading font-bold leading-none"
+          style={{ color: 'var(--color-accent)' }}>
           Our Board.
         </h1>
-        <p className="mt-4 text-lg md:text-xl max-w-xl"
-          style={{ color: 'color-mix(in srgb, var(--color-primary) 50%, transparent)' }}>
-          Meet the dedicated leaders guiding {tenant.shortName} towards service, leadership, and community impact.
+        <p className="mt-3 text-base max-w-sm"
+          style={{ color: 'color-mix(in srgb, var(--color-primary) 48%, transparent)' }}>
+          Meet the dedicated leaders guiding {tenant.shortName}.
         </p>
       </section>
 
-      {/* Grid */}
-      <section className="max-w-5xl mx-auto px-4 mt-16">
-        {loading ? (
-          <Spinner />
-        ) : boardMembers.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <HoneycombGrid rows={rows} selected={selected} onSelect={setSelected} />
+      {/* ── Hex cluster ── */}
+      <section className="max-w-md mx-auto px-6 pb-0">
+        {loading ? <Spinner /> : boardMembers.length === 0 ? <EmptyState /> : (
+          <HexCluster members={boardMembers} activeIdx={activeIdx} setActiveIdx={setActiveIdx} />
         )}
       </section>
 
-      {/* Bottom slide-up panel */}
-      {selected && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="overlay-enter fixed inset-0 z-40"
-            style={{ backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
-            onClick={close}
-          />
-          {/* Panel */}
-          <div
-            className="panel-enter fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl overflow-hidden"
-            style={{
-              backgroundColor: 'var(--color-page-bg)',
-              boxShadow: '0 -8px 60px rgba(0,0,0,0.18)',
-              maxHeight: '88vh',
-            }}
-          >
-            <MemberPanel member={selected} onClose={close} />
+      {/* ── Accent section ── */}
+      {!loading && boardMembers.length > 0 && (
+        <section className="mt-0 pt-10 pb-16 px-4"
+          style={{ backgroundColor: 'var(--color-accent)' }}>
+
+          <div className="max-w-sm mx-auto">
+            {activeMember
+              ? <MemberCard key={activeMember.id} member={activeMember} />
+              : <DefaultCard members={boardMembers} />
+            }
+
+            {activeMember && (
+              <div className="flex items-center justify-between mt-5 px-1">
+                <button onClick={() => go(-1)}
+                  className="w-10 h-10 rounded-full flex items-center justify-center active:scale-95 transition-transform"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.2)', color: 'white' }}>
+                  <ChevronLeft size={20} />
+                </button>
+                <div className="flex gap-1.5">
+                  {boardMembers.map((_, i) => (
+                    <button key={i} onClick={() => setActiveIdx(i)}
+                      className="rounded-full transition-all duration-200"
+                      style={{
+                        width: i === activeIdx ? 20 : 6, height: 6,
+                        backgroundColor: i === activeIdx ? 'white' : 'rgba(255,255,255,0.35)',
+                      }} />
+                  ))}
+                </div>
+                <button onClick={() => go(1)}
+                  className="w-10 h-10 rounded-full flex items-center justify-center active:scale-95 transition-transform"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.2)', color: 'white' }}>
+                  <ChevronRight size={20} />
+                </button>
+              </div>
+            )}
           </div>
-        </>
+        </section>
       )}
     </div>
   );
 }
 
-/* ─────────────────────────────────────────
-   Honeycomb grid
-───────────────────────────────────────── */
-function HoneycombGrid({
-  rows,
-  selected,
-  onSelect,
-}: {
-  rows: any[][];
-  selected: any | null;
-  onSelect: (m: any) => void;
+/* ── Hex cluster ── */
+function HexCluster({ members, activeIdx, setActiveIdx }: {
+  members: any[];
+  activeIdx: number | null;
+  setActiveIdx: (i: number | null) => void;
 }) {
-  /* Hex size: CSS width of each hex cell */
   return (
-    <div className="flex flex-col items-center gap-0" style={{ rowGap: 'calc(var(--hex-size, 120px) * -0.26)' }}>
-      {rows.map((row, ri) => (
-        <div
-          key={ri}
-          className="flex justify-center"
-          style={{
-            gap: 'calc(var(--hex-size, 120px) * 0.06)',
-            /* odd rows offset by half a hex + gap */
-            marginLeft: ri % 2 !== 0 ? 'calc(var(--hex-size, 120px) * 0.53)' : '0',
-          }}
-        >
-          {row.map((member, mi) => (
-            <HexCell
-              key={member.id}
-              member={member}
-              isActive={selected?.id === member.id}
-              isDimmed={selected !== null && selected?.id !== member.id}
-              animDelay={ri * 80 + mi * 60}
-              onClick={() => onSelect(member)}
-            />
-          ))}
-        </div>
-      ))}
+    <div className="relative w-full" style={{ paddingBottom: `${CONTAINER_H_PCT}%` }}>
+      {GRID.map(([col, row], i) => {
+        const member = members[i];
+        if (!member) return null;
+        const { left, top } = gridToPos(col, row);
+        const isActive = activeIdx === i;
+        const isDimmed = activeIdx !== null && !isActive;
+        return (
+          <div
+            key={member.id}
+            className="hex-pop absolute cursor-pointer select-none"
+            style={{
+              left:   `${left}%`,
+              top:    `${top}%`,
+              width:  `${W}%`,
+              paddingBottom: `${W}%`,
+              animationDelay: `${i * 50}ms`,
+              zIndex: isActive ? 10 : 1,
+              opacity: isDimmed ? 0.3 : 1,
+              transform: isActive ? 'scale(1.1)' : 'scale(1)',
+              transition: 'opacity 0.28s ease, transform 0.25s ease',
+            }}
+            onClick={() => setActiveIdx(isActive ? null : i)}
+          >
+            {/* Accent border */}
+            <div className="hex-clip absolute inset-0" style={{
+              background: isActive
+                ? 'var(--color-accent)'
+                : 'color-mix(in srgb, var(--color-accent) 20%, var(--color-page-bg))',
+              transition: 'background 0.3s ease',
+            }} />
+            {/* Photo */}
+            <div className="hex-clip absolute overflow-hidden"
+              style={{ inset: isActive ? '3px' : '2px', transition: 'inset 0.3s ease' }}>
+              {member.photo ? (
+                <img src={member.photo} alt={member.name}
+                  className="absolute inset-0 w-full h-full object-cover"
+                  style={{
+                    filter: isActive
+                      ? 'grayscale(0) brightness(1.05)'
+                      : 'grayscale(1) brightness(0.72)',
+                    transition: 'filter 0.4s ease',
+                  }} />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center font-heading font-bold text-xl"
+                  style={{
+                    backgroundColor: 'color-mix(in srgb, var(--color-accent) 12%, var(--color-page-bg))',
+                    color: 'var(--color-accent)',
+                  }}>
+                  {member.name?.[0]}
+                </div>
+              )}
+              {/* Active name overlay */}
+              <div className="absolute inset-x-0 bottom-0 pb-2 px-1 flex flex-col items-center justify-end"
+                style={{
+                  background: 'linear-gradient(to top, rgba(0,0,0,0.72) 55%, transparent)',
+                  opacity: isActive ? 1 : 0,
+                  transition: 'opacity 0.3s ease',
+                }}>
+                <span className="text-white text-[7px] font-bold text-center leading-tight line-clamp-1 w-full text-center">
+                  {member.name}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-/* ─────────────────────────────────────────
-   Single hex cell
-───────────────────────────────────────── */
-function HexCell({
-  member,
-  isActive,
-  isDimmed,
-  animDelay,
-  onClick,
-}: {
-  member: any;
-  isActive: boolean;
-  isDimmed: boolean;
-  animDelay: number;
-  onClick: () => void;
-}) {
-  const SIZE = 'clamp(96px, 18vw, 140px)';
-
+/* ── Member card ── */
+function MemberCard({ member }: { member: any }) {
   return (
-    <div
-      className="hex-pop relative cursor-pointer select-none flex-shrink-0"
+    <div className="card-in rounded-2xl overflow-hidden"
       style={{
-        width: SIZE,
-        height: SIZE,
-        animationDelay: `${animDelay}ms`,
-        opacity: isDimmed ? 0.35 : 1,
-        transition: 'opacity 0.35s ease, transform 0.25s ease',
-        transform: isActive ? 'scale(1.08)' : 'scale(1)',
-      }}
-      onClick={onClick}
-    >
-      {/* Border ring — separate layer behind */}
-      <div
-        className="hex-clip-border absolute inset-0"
-        style={{
-          background: isActive
-            ? 'var(--color-accent)'
-            : 'color-mix(in srgb, var(--color-accent) 0%, transparent)',
-          transition: 'background 0.3s ease',
-          padding: '3px',
-        }}
-      />
-
-      {/* Accent border via scale trick */}
-      <div
-        className="hex-clip absolute"
-        style={{
-          inset: isActive ? '3px' : '0',
-          transition: 'inset 0.3s ease',
-          overflow: 'hidden',
-        }}
-      >
-        {member.photo ? (
-          <img
-            src={member.photo}
-            alt={member.name}
-            className="w-full h-full object-cover"
-            style={{
-              filter: isActive
-                ? 'grayscale(0) brightness(1.04)'
-                : 'grayscale(0.7) brightness(0.8)',
-              transition: 'filter 0.4s ease',
-            }}
-          />
-        ) : (
-          <div
-            className="w-full h-full flex items-center justify-center text-3xl font-heading font-bold"
-            style={{
-              backgroundColor: 'color-mix(in srgb, var(--color-accent) 14%, var(--color-page-bg))',
-              color: 'var(--color-accent)',
-            }}
-          >
-            {member.name?.[0]}
-          </div>
-        )}
-
-        {/* Name overlay on active */}
-        <div
-          className="absolute inset-x-0 bottom-0 flex flex-col items-center justify-end pb-3 px-1"
-          style={{
-            background: 'linear-gradient(to top, rgba(0,0,0,0.72) 60%, transparent)',
-            opacity: isActive ? 1 : 0,
-            transition: 'opacity 0.3s ease',
-          }}
-        >
-          <span className="text-white text-[10px] font-bold text-center leading-tight line-clamp-1 w-full text-center">
-            {member.name}
-          </span>
-          <span
-            className="text-[8px] font-medium uppercase tracking-widest mt-0.5 text-center line-clamp-1 w-full"
-            style={{ color: 'color-mix(in srgb, var(--color-accent) 85%, white)' }}
-          >
+        backgroundColor: 'rgba(255,255,255,0.13)',
+        backdropFilter: 'blur(14px)',
+        border: '1px solid rgba(255,255,255,0.22)',
+      }}>
+      <div className="relative w-full" style={{ height: 200 }}>
+        {member.photo
+          ? <img src={member.photo} alt={member.name} className="w-full h-full object-cover object-top" />
+          : <div className="w-full h-full flex items-center justify-center text-5xl font-heading font-bold text-white/30">
+              {member.name?.[0]}
+            </div>
+        }
+        <div className="absolute inset-0"
+          style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.65) 35%, transparent)' }} />
+        <div className="absolute bottom-3 left-4 right-4">
+          <h3 className="text-white font-heading font-bold text-xl leading-tight">{member.name}</h3>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-white/70">
             {member.position}
           </span>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────
-   Bottom panel — member detail
-───────────────────────────────────────── */
-function MemberPanel({ member, onClose }: { member: any; onClose: () => void }) {
-  return (
-    <div className="flex flex-col h-full overflow-y-auto">
-      {/* Drag handle */}
-      <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
-        <div
-          className="w-10 h-1 rounded-full"
-          style={{ backgroundColor: 'color-mix(in srgb, var(--color-primary) 20%, transparent)' }}
-        />
-      </div>
-
-      {/* Close btn */}
-      <div className="flex justify-end px-5 pt-1 flex-shrink-0">
-        <button
-          onClick={onClose}
-          className="w-9 h-9 rounded-full flex items-center justify-center transition-colors"
-          style={{
-            backgroundColor: 'color-mix(in srgb, var(--color-accent) 10%, transparent)',
-            color: 'var(--color-accent)',
-          }}
-        >
-          <X size={18} />
-        </button>
-      </div>
-
-      {/* Content */}
-      <div className="px-6 pb-10 flex flex-col gap-6">
-        {/* Top: photo + name */}
-        <div className="flex items-center gap-5">
-          {/* Hex photo */}
-          <div
-            className="hex-clip flex-shrink-0 overflow-hidden"
-            style={{ width: 80, height: 80 }}
-          >
-            {member.photo ? (
-              <img src={member.photo} alt={member.name} className="w-full h-full object-cover" />
-            ) : (
-              <div
-                className="w-full h-full flex items-center justify-center text-2xl font-heading font-bold"
-                style={{
-                  backgroundColor: 'color-mix(in srgb, var(--color-accent) 14%, var(--color-page-bg))',
-                  color: 'var(--color-accent)',
-                }}
-              >
-                {member.name?.[0]}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <h2
-              className="text-2xl font-heading font-bold leading-tight"
-              style={{ color: 'var(--color-primary)' }}
-            >
-              {member.name}
-            </h2>
-            <span
-              className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-[0.22em] px-3 py-1 rounded-full"
-              style={{
-                backgroundColor: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
-                color: 'var(--color-accent)',
-              }}
-            >
-              {member.position}
-            </span>
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div
-          className="h-px w-full"
-          style={{ backgroundColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)' }}
-        />
-
-        {/* Bio */}
-        {member.bio ? (
-          <p
-            className="text-[15px] leading-relaxed"
-            style={{ color: 'color-mix(in srgb, var(--color-primary) 65%, transparent)' }}
-          >
-            {member.bio}
-          </p>
-        ) : (
-          <p
-            className="text-sm italic"
-            style={{ color: 'color-mix(in srgb, var(--color-primary) 35%, transparent)' }}
-          >
-            No bio available.
-          </p>
-        )}
-
-        {/* Contact links if present */}
+      <div className="px-4 py-4">
+        {member.bio
+          ? <p className="text-white/80 text-sm leading-relaxed">{member.bio}</p>
+          : <p className="text-white/40 text-sm italic">No bio available.</p>
+        }
         {(member.email || member.linkedin || member.profile_url) && (
-          <div className="flex flex-wrap gap-3 mt-1">
+          <div className="flex gap-2 mt-3 flex-wrap">
             {member.email && (
-              <a
-                href={`mailto:${member.email}`}
-                className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-full transition-colors"
-                style={{
-                  backgroundColor: 'color-mix(in srgb, var(--color-accent) 10%, transparent)',
-                  color: 'var(--color-accent)',
-                  border: '1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)',
-                }}
-              >
-                <Mail size={13} /> Email
+              <a href={`mailto:${member.email}`}
+                className="text-xs font-semibold px-3 py-1.5 rounded-full"
+                style={{ backgroundColor: 'rgba(255,255,255,0.18)', color: 'white' }}>
+                Email
               </a>
             )}
             {(member.linkedin || member.profile_url) && (
-              <a
-                href={member.linkedin || member.profile_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-full transition-colors"
-                style={{
-                  backgroundColor: 'color-mix(in srgb, var(--color-accent) 10%, transparent)',
-                  color: 'var(--color-accent)',
-                  border: '1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)',
-                }}
-              >
-                <ExternalLink size={13} /> Profile
+              <a href={member.linkedin || member.profile_url} target="_blank" rel="noopener noreferrer"
+                className="text-xs font-semibold px-3 py-1.5 rounded-full"
+                style={{ backgroundColor: 'rgba(255,255,255,0.18)', color: 'white' }}>
+                Profile
               </a>
             )}
           </div>
@@ -401,43 +298,56 @@ function MemberPanel({ member, onClose }: { member: any; onClose: () => void }) 
   );
 }
 
-/* ─────────────────────────────────────────
-   Utility components
-───────────────────────────────────────── */
+/* ── Default card ── */
+function DefaultCard({ members }: { members: any[] }) {
+  return (
+    <div className="rounded-2xl p-5 text-center"
+      style={{
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        border: '1px solid rgba(255,255,255,0.15)',
+      }}>
+      <div className="flex justify-center gap-1.5 mb-4">
+        {members.slice(0, 5).map(m => (
+          <div key={m.id} className="hex-clip w-10 h-10 overflow-hidden flex-shrink-0">
+            {m.photo
+              ? <img src={m.photo} alt={m.name} className="w-full h-full object-cover"
+                  style={{ filter: 'grayscale(1) brightness(0.65)' }} />
+              : <div className="w-full h-full" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
+            }
+          </div>
+        ))}
+      </div>
+      <p className="text-white font-heading font-semibold text-base">{members.length} Board Members</p>
+      <p className="text-white/55 text-xs mt-1">Tap any photo above to view details</p>
+    </div>
+  );
+}
+
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-24">
-      <div
-        className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin"
-        style={{ borderColor: 'var(--color-accent)', borderTopColor: 'transparent' }}
-      />
+      <div className="w-10 h-10 border-4 border-t-transparent rounded-full animate-spin"
+        style={{ borderColor: 'var(--color-accent)', borderTopColor: 'transparent' }} />
     </div>
   );
 }
 
 function EmptyState() {
   return (
-    <div
-      className="text-center py-24 border rounded-3xl"
+    <div className="text-center py-20 border rounded-3xl"
       style={{
         borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
         backgroundColor: 'color-mix(in srgb, var(--color-accent) 4%, var(--color-page-bg))',
-      }}
-    >
-      <div
-        className="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6"
-        style={{
-          backgroundColor: 'color-mix(in srgb, var(--color-accent) 10%, transparent)',
-          color: 'color-mix(in srgb, var(--color-accent) 55%, transparent)',
-        }}
-      >
-        <Users size={48} />
+      }}>
+      <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-5"
+        style={{ backgroundColor: 'color-mix(in srgb, var(--color-accent) 10%, transparent)', color: 'var(--color-accent)' }}>
+        <Users size={40} />
       </div>
-      <h2 className="text-2xl font-bold font-heading mb-2" style={{ color: 'var(--color-primary)' }}>
-        Our board information will be posted soon.
+      <h2 className="text-xl font-bold font-heading mb-1" style={{ color: 'var(--color-primary)' }}>
+        Board info coming soon.
       </h2>
-      <p style={{ color: 'color-mix(in srgb, var(--color-primary) 45%, transparent)' }}>
-        Check back later for updates on our leadership team.
+      <p className="text-sm" style={{ color: 'color-mix(in srgb, var(--color-primary) 45%, transparent)' }}>
+        Check back later for updates.
       </p>
     </div>
   );
