@@ -1,607 +1,472 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../supabase';
-import { useTenant } from '../../hooks/useTenant';
+import { supabase } from '../supabase';
+import React, { useState, useEffect } from 'react';
+import { Users, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useTenant } from '../hooks/useTenant';
+import SEOHead from '../components/SEOHead';
 
-/* ── SVG Icons ─────────────────────────────────────────────────────────── */
-const EyeOpen = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-    <circle cx="12" cy="12" r="3"/>
-  </svg>
-);
-const EyeClosed = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
-    <line x1="1" y1="1" x2="23" y2="23"/>
-  </svg>
-);
-const Spinner = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"
-      style={{ animation: 'lr-spin 0.8s linear infinite', transformOrigin: 'center' }}
-    />
-  </svg>
-);
-const MailIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-    <polyline points="22,6 12,13 2,6"/>
-  </svg>
-);
-const LockIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-  </svg>
-);
-const CheckIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12"/>
-  </svg>
-);
+const STYLES = `
+  :root {
+    --hex-w: clamp(80px, 22vw, 160px);
+    --hex-h: calc(var(--hex-w) * 0.866);
+    --gap: 4px;
+    --col-width: calc(var(--hex-w) * 0.75 + var(--gap) * 0.866);
+    --row-height: calc(var(--hex-h) + var(--gap));
+  }
 
-/* ── Remember Me: controls whether session survives browser close ─────── */
-const REMEMBER_KEY = 'lr_remember';
-const getRemembered = () => { try { return localStorage.getItem(REMEMBER_KEY) === '1'; } catch { return false; } };
-const setRemembered = (v: boolean) => { try { v ? localStorage.setItem(REMEMBER_KEY, '1') : localStorage.removeItem(REMEMBER_KEY); } catch {} };
+  /* ── Neumorphic palette (mirrors Login page) ── */
+  .bd {
+    --neu-bg:    #e8eaf0;
+    --neu-dark:  #c8cad4;
+    --neu-light: #ffffff;
+    --neu-text:  #3d4468;
+    --neu-muted: #9499b7;
+    --accent:    var(--color-accent, #c41e50);
+    --accent-deep: color-mix(in srgb, var(--accent) 80%, black);
+    --accent-glow: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
 
-/* ═══════════════════════════════════════════════════════════════════════ */
-export default function Login() {
-  const { settings, tenant } = useTenant();
-  const clubName = settings.clubName || tenant.fullName;
+  .bd {
+    min-height: 100vh;
+    background: var(--neu-bg);
+    font-family: var(--font-body, sans-serif);
+  }
 
-  const [email, setEmail]           = useState('');
-  const [password, setPassword]     = useState('');
-  const [showPass, setShowPass]     = useState(false);
-  const [rememberMe, setRememberMe] = useState(getRemembered);
-  const [loading, setLoading]       = useState(false);
-  const [error, setError]           = useState<string | null>(null);
-  const [shake, setShake]           = useState(false);
-  const navigate                    = useNavigate();
-  const emailRef                    = useRef<HTMLInputElement>(null);
+  @keyframes bd-fadeUp {
+    from { opacity:0; transform:translateY(14px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+  @keyframes hexPop {
+    0%   { transform: scale(0.55); opacity: 0; }
+    72%  { transform: scale(1.07); }
+    100% { transform: scale(1);    opacity: 1; }
+  }
+  @keyframes cardIn {
+    from { transform: translateY(16px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
 
-  useEffect(() => { emailRef.current?.focus(); }, []);
+  .bd-header {
+    padding: 88px 24px 16px;
+    max-width: 900px;
+    margin: 0 auto;
+    animation: bd-fadeUp 0.4s ease both;
+  }
+  .bd-title {
+    font-family: var(--font-heading, sans-serif);
+    font-size: clamp(2rem, 8vw, 3rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--accent);
+    line-height: 1.05;
+    margin-bottom: 6px;
+  }
+  .bd-subtitle {
+    font-size: 13px;
+    color: var(--neu-muted);
+    font-weight: 400;
+  }
 
-  const triggerShake = () => {
-    setShake(true);
-    setTimeout(() => setShake(false), 600);
+  /* ── Neu card wrapper for hex grid ── */
+  .bd-grid-wrap {
+    margin: 0 16px 0;
+    padding: 24px 20px 28px;
+    background: var(--neu-bg);
+    border-radius: 28px;
+    box-shadow: 14px 14px 40px var(--neu-dark), -14px -14px 40px var(--neu-light);
+    animation: bd-fadeUp 0.45s 0.08s ease both;
+    overflow-x: auto;
+  }
+  .bd-grid-max { max-width: 900px; margin: 0 auto; }
+
+  /* ── Hex pieces ── */
+  .b-hex-border {
+    position: absolute;
+    inset: 0; width: 100%; height: 100%;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    transition: background 0.3s ease;
+    pointer-events: none;
+  }
+  .b-hex-inner {
+    position: absolute;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    overflow: hidden;
+    transition: top 0.28s ease, left 0.28s ease, right 0.28s ease, bottom 0.28s ease,
+                width 0.28s ease, height 0.28s ease;
+  }
+  .b-hpop { animation: hexPop 0.46s cubic-bezier(0.34,1.56,0.64,1) both; }
+  .b-card-in { animation: cardIn 0.35s cubic-bezier(0.22,1,0.36,1) both; }
+
+  .b-grid-container {
+    position: relative;
+    width: calc(var(--col-width) * 4 + var(--hex-w));
+    height: calc(var(--row-height) * 2 + (var(--row-height) * 0.5) + var(--hex-h));
+  }
+  .b-p1  { left: calc(var(--col-width) * 0); top: calc(var(--row-height) * 1 + var(--row-height) * 0.5); }
+  .b-p2  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 0); }
+  .b-p3  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 1); }
+  .b-p4  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 2); }
+  .b-p5  { left: calc(var(--col-width) * 2); top: calc(var(--row-height) * 0 + var(--row-height) * 0.5); }
+  .b-p6  { left: calc(var(--col-width) * 2); top: calc(var(--row-height) * 1 + var(--row-height) * 0.5); }
+  .b-p7  { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 0); }
+  .b-p8  { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 1); }
+  .b-p9  { left: calc(var(--col-width) * 4); top: calc(var(--row-height) * 0 + var(--row-height) * 0.5); }
+  .b-p10 { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 2); }
+
+  /* ── Member card panel (neumorphic raised) ── */
+  .bd-panel {
+    margin: 20px 16px 0;
+    padding: 24px 20px 28px;
+    background: var(--neu-bg);
+    border-radius: 28px;
+    box-shadow: 14px 14px 40px var(--neu-dark), -14px -14px 40px var(--neu-light);
+    animation: bd-fadeUp 0.4s 0.12s ease both;
+  }
+  .bd-panel-inner { max-width: 420px; margin: 0 auto; }
+
+  /* ── Member card (inside panel, inset style) ── */
+  .bd-member-card {
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: inset 5px 5px 12px var(--neu-dark), inset -5px -5px 12px var(--neu-light);
+  }
+  .bd-member-photo { position: relative; width: 100%; height: 180px; }
+  .bd-member-photo img { width:100%; height:100%; object-fit:cover; object-position:top; display:block; }
+  .bd-member-photo-fallback {
+    width:100%; height:100%; display:flex; align-items:center; justify-content:center;
+    font-size: 3rem; font-weight: 800; color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, var(--neu-bg));
+  }
+  .bd-photo-overlay {
+    position:absolute; inset:0;
+    background: linear-gradient(to top, rgba(0,0,0,0.7) 30%, transparent);
+  }
+  .bd-photo-info { position:absolute; bottom:12px; left:16px; right:16px; }
+  .bd-member-name {
+    font-family: var(--font-heading, sans-serif);
+    font-size: 18px; font-weight: 800; color: #fff;
+    line-height: 1.2; margin-bottom: 3px;
+  }
+  .bd-member-pos {
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.5px; color: rgba(255,255,255,0.65);
+  }
+  .bd-member-body { padding: 14px 16px 16px; background: var(--neu-bg); }
+  .bd-member-bio { font-size: 13px; line-height: 1.65; color: var(--neu-muted); }
+  .bd-member-bio-empty { font-size: 13px; color: color-mix(in srgb, var(--neu-muted) 50%, transparent); font-style: italic; }
+  .bd-member-links { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .bd-link-btn {
+    font-size: 11px; font-weight: 700; padding: 7px 16px; border-radius: 10px;
+    border: none; cursor: pointer; text-decoration: none;
+    color: var(--accent);
+    background: var(--neu-bg);
+    box-shadow: 4px 4px 10px var(--neu-dark), -4px -4px 10px var(--neu-light);
+    transition: box-shadow 0.2s ease;
+    letter-spacing: 0.3px;
+  }
+  .bd-link-btn:active {
+    box-shadow: inset 2px 2px 6px var(--neu-dark), inset -2px -2px 6px var(--neu-light);
+  }
+
+  /* ── Default / empty panel card ── */
+  .bd-default-card {
+    border-radius: 20px; padding: 20px 16px;
+    text-align: center;
+    box-shadow: inset 5px 5px 12px var(--neu-dark), inset -5px -5px 12px var(--neu-light);
+  }
+  .bd-default-hexes { display:flex; justify-content:center; gap:6px; margin-bottom:12px; }
+  .bd-default-name  { font-size:14px; font-weight:700; color:var(--neu-text); margin-bottom:3px; }
+  .bd-default-hint  { font-size:12px; color:var(--neu-muted); }
+
+  /* ── Nav row ── */
+  .bd-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 16px;
+  }
+  .bd-nav-btn {
+    width: 40px; height: 40px; border-radius: 12px; border: none;
+    cursor: pointer; display:flex; align-items:center; justify-content:center;
+    background: var(--neu-bg); color: var(--accent);
+    box-shadow: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
+    transition: box-shadow 0.2s ease, transform 0.15s ease;
+  }
+  .bd-nav-btn:active {
+    box-shadow: inset 3px 3px 7px var(--neu-dark), inset -3px -3px 7px var(--neu-light);
+    transform: scale(0.96);
+  }
+  .bd-dots { display:flex; gap:6px; align-items:center; }
+  .bd-dot {
+    border-radius: 9999px; height: 6px; border: none; cursor: pointer;
+    background: var(--neu-dark);
+    transition: width 0.2s ease, background 0.2s ease;
+    box-shadow: 2px 2px 5px var(--neu-dark), -2px -2px 5px var(--neu-light);
+  }
+  .bd-dot-active { background: var(--accent); }
+
+  /* ── Spinner / empty state ── */
+  .bd-spinner-wrap { display:flex; justify-content:center; padding: 48px 0; }
+  .bd-spinner {
+    width:36px; height:36px; border-radius:50%; border:3px solid transparent;
+    border-top-color: var(--accent);
+    box-shadow: 3px 3px 8px var(--neu-dark), -3px -3px 8px var(--neu-light);
+    animation: bd-spin 0.8s linear infinite;
+  }
+  @keyframes bd-spin { to { transform: rotate(360deg); } }
+
+  .bd-empty {
+    text-align:center; padding: 48px 20px;
+    box-shadow: inset 5px 5px 14px var(--neu-dark), inset -5px -5px 14px var(--neu-light);
+    border-radius: 24px;
+  }
+  .bd-empty-icon {
+    width:64px; height:64px; border-radius:50%; margin: 0 auto 16px;
+    display:flex; align-items:center; justify-content:center;
+    color: var(--accent);
+    box-shadow: 6px 6px 16px var(--neu-dark), -6px -6px 16px var(--neu-light);
+  }
+  .bd-empty-title { font-size:16px; font-weight:700; color:var(--neu-text); margin-bottom:4px; }
+  .bd-empty-sub   { font-size:13px; color:var(--neu-muted); }
+
+  @media (prefers-reduced-motion:reduce) {
+    .bd, .bd * { animation-duration:0.01ms !important; transition-duration:0.01ms !important; }
+  }
+`;
+
+const SLOT_CLASSES = ['b-p1','b-p2','b-p3','b-p4','b-p5','b-p6','b-p7','b-p8','b-p9','b-p10'];
+
+export default function Board() {
+  const { tenant } = useTenant();
+  const [boardMembers, setBoardMembers] = useState<any[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [activeIdx, setActiveIdx]       = useState<number | null>(null);
+
+  useEffect(() => {
+    supabase
+      .from('board').select('*').eq('tenant_id', tenant.id)
+      .order('sort_order', { ascending: true })
+      .then(({ data }) => { setBoardMembers(data || []); setLoading(false); },
+            err => { console.error(err); setLoading(false); });
+  }, [tenant.id]);
+
+  const go = (dir: number) => {
+    if (!boardMembers.length) return;
+    setActiveIdx(prev =>
+      prev === null ? 0 : (prev + dir + boardMembers.length) % boardMembers.length
+    );
   };
 
-  const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim()) {
-      setError('Please enter your email address.');
-      triggerShake(); return;
-    }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
-      triggerShake(); return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      if (signInError) throw signInError;
-
-      // Persist remember-me preference
-      setRemembered(rememberMe);
-      // If not remember me, sign out session on tab close via sessionStorage flag
-      if (!rememberMe) {
-        try { sessionStorage.setItem('lr_no_persist', '1'); } catch {}
-      } else {
-        try { sessionStorage.removeItem('lr_no_persist'); } catch {}
-      }
-
-      const { data: profile } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', data.user.id)
-        .single();
-      const role = profile?.role;
-      navigate(role === 'admin' || role === 'master_admin' ? '/admin' : '/dashboard');
-    } catch (err: any) {
-      setError(err.message || 'Sign in failed. Please try again.');
-      triggerShake();
-    } finally {
-      setLoading(false);
-    }
-  };
+  const active = activeIdx !== null ? boardMembers[activeIdx] ?? null : null;
 
   return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap');
+    <div className="bd">
+      <style>{STYLES}</style>
+      <SEOHead
+        title="Leadership & Board"
+        description={`Meet the leadership team and board members of ${tenant.fullName}.`}
+        canonicalPath="/board"
+      />
 
-        /* ── Neumorphic palette — zero hardcoded brand colors ── */
-        .lr {
-          --lr-logo-url: url('https://res.cloudinary.com/dpaeapdp6/image/upload/i7kkght9us3vc59fwmz5.svg');
-          --neu-bg:        #e8eaf0;
-          --neu-dark:      #c8cad4;
-          --neu-light:     #ffffff;
-          --neu-text:      #3d4468;
-          --neu-muted:     #9499b7;
-          --neu-icon:      #6c7293;
-          --neu-err:       #e53e3e;
-          --neu-err-bg:    #fff5f5;
-          --neu-err-bdr:   #fed7d7;
-          /* Brand: accent only, never primary */
-          --accent:        var(--color-accent, #c41e50);
-          --accent-deep:   color-mix(in srgb, var(--accent) 80%, black);
-          --accent-glow:   color-mix(in srgb, var(--accent) 25%, transparent);
-        }
+      {/* Header */}
+      <div className="bd-header">
+        <h1 className="bd-title">Our Board.</h1>
+        <p className="bd-subtitle">Meet the dedicated leaders guiding {tenant.shortName}.</p>
+      </div>
 
-        @keyframes lr-spin {
-          to { transform: rotate(360deg); }
-        }
-        @keyframes lr-fadeUp {
-          from { opacity:0; transform:translateY(18px); }
-          to   { opacity:1; transform:translateY(0); }
-        }
-        @keyframes lr-shake {
-          0%,100%{transform:translateX(0)}
-          15%{transform:translateX(-7px)}
-          30%{transform:translateX(7px)}
-          45%{transform:translateX(-4px)}
-          60%{transform:translateX(4px)}
-          75%{transform:translateX(-2px)}
-          90%{transform:translateX(2px)}
-        }
-
-        .lr, .lr * { margin:0; padding:0; box-sizing:border-box; }
-
-        /* Page wrapper */
-        .lr {
-          font-family: 'Nunito', var(--font-body, sans-serif);
-          min-height: 100vh;
-          background: var(--neu-bg);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 100px 20px 40px; /* top = navbar height + breathing room */
-        }
-
-        /* ── Single combined card ── */
-        .lr-card {
-          width: 100%;
-          max-width: 480px; /* mobile: form only */
-          background: var(--neu-bg);
-          border-radius: 30px;
-          box-shadow: 20px 20px 60px var(--neu-dark), -20px -20px 60px var(--neu-light);
-          animation: lr-fadeUp 0.45s ease both;
-          transition: box-shadow 0.3s ease;
-          overflow: hidden;
-        }
-        /* Desktop: two-column layout inside single card */
-        @media (min-width: 900px) {
-          .lr-card {
-            max-width: 920px;
-            display: flex;
-            flex-direction: row;
+      {/* Hex grid card */}
+      <div className="bd-grid-wrap">
+        <div className="bd-grid-max">
+          {loading
+            ? <div className="bd-spinner-wrap"><div className="bd-spinner" /></div>
+            : boardMembers.length === 0
+              ? <EmptyState />
+              : <HexGrid members={boardMembers} activeIdx={activeIdx} setActiveIdx={setActiveIdx} />
           }
-        }
-        .lr-card.shake { animation: lr-shake 0.5s ease; }
-
-        /* ── Left info column (desktop only) ── */
-        .lr-info {
-          display: none;
-        }
-        @media (min-width: 900px) {
-          .lr-info {
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            flex: 1;
-            padding: 48px 44px;
-            background: linear-gradient(160deg,
-              color-mix(in srgb, var(--neu-bg) 97%, var(--accent)),
-              var(--neu-bg)
-            );
-            border-right: 1px solid color-mix(in srgb, var(--neu-dark) 60%, transparent);
-          }
-        }
-
-        .lr-brand { display:flex; flex-direction:column; gap:4px; }
-        .lr-brand-name {
-          font-family: var(--font-heading, 'Nunito', sans-serif);
-          font-size:15px; font-weight:700; color:var(--accent); line-height:1.3;
-          letter-spacing:-0.01em;
-        }
-        .lr-brand-name span { display:block; font-weight:400; font-size:11px; color:var(--neu-muted); letter-spacing:0.3px; }
-
-        .lr-hero { flex:1; display:flex; flex-direction:column; justify-content:center; }
-        .lr-tag {
-          font-size:10px; font-weight:700; text-transform:uppercase;
-          letter-spacing:2px; color:var(--accent); margin-bottom:20px;
-        }
-        .lr-headline {
-          font-family: var(--font-heading, 'Nunito', sans-serif);
-          font-size: clamp(28px, 2.6vw, 38px);
-          font-weight:300; line-height:1.15;
-          color:var(--neu-text); margin-bottom:16px;
-        }
-        .lr-headline em { font-style:italic; color:var(--accent); }
-        .lr-body { font-size:13.5px; line-height:1.7; color:var(--neu-muted); font-weight:300; margin-bottom:32px; }
-        .lr-features { display:flex; flex-direction:column; gap:12px; }
-        .lr-feature { display:flex; align-items:center; gap:12px; font-size:13px; color:var(--neu-muted); }
-        .lr-feature-icon {
-          width:34px; height:34px; background:var(--neu-bg); border-radius:10px;
-          display:flex; align-items:center; justify-content:center;
-          box-shadow: 4px 4px 10px var(--neu-dark), -4px -4px 10px var(--neu-light);
-          flex-shrink:0;
-        }
-        .lr-info-footer {
-          font-size:11px; color:var(--neu-muted); font-weight:300;
-          border-top:1px solid color-mix(in srgb, var(--neu-dark) 50%, transparent);
-          padding-top:20px; margin-top:auto;
-        }
-
-        /* ── Right form column ── */
-        .lr-form-col {
-          padding: 36px 32px 32px;
-          display: flex;
-          flex-direction: column;
-        }
-        @media (min-width: 900px) {
-          .lr-form-col {
-            width: 400px;
-            flex-shrink: 0;
-            padding: 44px 40px;
-          }
-        }
-
-        /* ── Mobile logo circle ── */
-        .lr-logo-circle {
-          display:flex; justify-content:center; margin-bottom:24px;
-        }
-        @media (min-width:900px) { .lr-logo-circle { display:none !important; } }
-        .lr-logo-outer {
-          width:76px; height:76px; border-radius:50%;
-          background:var(--neu-bg);
-          display:flex; align-items:center; justify-content:center;
-          box-shadow: 8px 8px 20px var(--neu-dark), -8px -8px 20px var(--neu-light);
-        }
-        .lr-logo-mask {
-          width:42px; height:42px;
-          -webkit-mask-image: var(--lr-logo-url);
-          mask-image: var(--lr-logo-url);
-          -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
-          -webkit-mask-size: contain; mask-size: contain;
-          -webkit-mask-position: center; mask-position: center;
-          background-color: var(--accent);
-          flex-shrink:0;
-        }
-
-        /* ── Card header ── */
-        .lr-card-header { text-align:center; margin-bottom:28px; }
-        .lr-card-eyebrow {
-          font-size:11px; font-weight:700; text-transform:uppercase;
-          letter-spacing:2px; color:var(--accent); margin-bottom:10px;
-        }
-        .lr-card-title {
-          font-family: var(--font-heading, 'Nunito', sans-serif);
-          font-size:2rem; font-weight:700;
-          color:var(--neu-text); letter-spacing:-0.02em; margin-bottom:8px;
-        }
-        .lr-card-subtitle { font-size:15px; font-weight:400; color:var(--neu-muted); line-height:1.5; }
-
-        /* ── Error banner ── */
-        .lr-error {
-          background:var(--neu-err-bg); border:1px solid var(--neu-err-bdr);
-          border-radius:14px; padding:12px 16px; margin-bottom:24px;
-          display:flex; gap:10px; align-items:flex-start;
-          font-size:13.5px; color:var(--neu-err); line-height:1.4;
-        }
-        .lr-error svg { flex-shrink:0; margin-top:1px; }
-
-        /* ── Input fields ── */
-        .lr-field { margin-bottom:24px; }
-
-        .lr-neu-input {
-          position:relative; background:var(--neu-bg); border-radius:15px;
-          box-shadow: inset 8px 8px 16px var(--neu-dark), inset -8px -8px 16px var(--neu-light);
-          transition: box-shadow 0.3s ease;
-        }
-        .lr-neu-input:focus-within {
-          box-shadow:
-            inset 4px 4px 8px var(--neu-dark),
-            inset -4px -4px 8px var(--neu-light),
-            0 0 0 2px var(--accent-glow);
-        }
-        .lr-neu-input:focus-within .lr-icon-left { color:var(--accent); }
-
-        .lr-input {
-          width:100%; background:transparent; border:none;
-          padding:22px 52px 10px 54px;
-          color:var(--neu-text); font-size:15px; font-weight:500;
-          font-family:'Nunito', var(--font-body, sans-serif);
-          outline:none; transition:all 0.25s ease;
-        }
-        .lr-input::placeholder { color:transparent; }
-
-        /* Floating label */
-        .lr-float-label {
-          position:absolute; left:54px; top:50%; transform:translateY(-50%);
-          color:var(--neu-muted); font-size:15px; font-weight:400;
-          pointer-events:none;
-          transition:all 0.25s ease;
-          font-family:'Nunito', var(--font-body, sans-serif);
-          white-space:nowrap;
-        }
-        .lr-input:focus ~ .lr-float-label,
-        .lr-input:not(:placeholder-shown) ~ .lr-float-label {
-          top:10px; transform:none;
-          font-size:10px; font-weight:700;
-          color:var(--accent);
-          letter-spacing:0.6px; text-transform:uppercase;
-        }
-
-        .lr-icon-left {
-          position:absolute; left:18px; top:50%; transform:translateY(-50%);
-          color:var(--neu-muted); pointer-events:none; display:flex;
-          transition:color 0.25s ease;
-        }
-        /* Shift icon up when label floats */
-        .lr-neu-input:focus-within .lr-icon-left,
-        .lr-input:not(:placeholder-shown) ~ .lr-icon-left { transform:translateY(-4px); }
-        /* Can't do sibling-select above input in CSS — keep icon centered always */
-        .lr-icon-left { transform:translateY(-50%); }
-
-        .lr-eye-btn {
-          position:absolute; right:12px; top:50%; transform:translateY(-50%);
-          background:var(--neu-bg); border:none; cursor:pointer;
-          padding:8px; color:var(--neu-muted); border-radius:10px; display:flex;
-          box-shadow: 4px 4px 10px var(--neu-dark), -4px -4px 10px var(--neu-light);
-          transition:all 0.2s ease;
-        }
-        .lr-eye-btn:hover { color:var(--accent); }
-        .lr-eye-btn:active {
-          box-shadow: inset 2px 2px 5px var(--neu-dark), inset -2px -2px 5px var(--neu-light);
-        }
-        /* Extra right padding for password input */
-        .lr-input-pass { padding-right:52px; }
-
-        /* ── Remember me row ── */
-        .lr-options {
-          display:flex; align-items:center; justify-content:space-between;
-          margin-bottom:24px; gap:12px;
-        }
-        .lr-remember {
-          display:flex; align-items:center; gap:10px; cursor:pointer; user-select:none;
-        }
-        .lr-remember input[type="checkbox"] { display:none; }
-        .lr-checkbox {
-          width:22px; height:22px; border-radius:7px;
-          background:var(--neu-bg);
-          display:flex; align-items:center; justify-content:center;
-          box-shadow: 3px 3px 8px var(--neu-dark), -3px -3px 8px var(--neu-light);
-          transition:all 0.2s ease; flex-shrink:0;
-          color:transparent;
-        }
-        .lr-remember input[type="checkbox"]:checked + .lr-checkbox {
-          box-shadow: inset 2px 2px 5px var(--neu-dark), inset -2px -2px 5px var(--neu-light);
-          color:var(--accent);
-        }
-        .lr-remember-label {
-          font-size:13px; font-weight:600; color:var(--neu-muted);
-          font-family:'Nunito', var(--font-body, sans-serif);
-        }
-
-        /* ── Submit button ── */
-        .lr-btn {
-          width:100%;
-          background:linear-gradient(135deg, var(--accent), var(--accent-deep));
-          border:none; border-radius:15px; padding:17px 32px;
-          color:#fff; font-size:15px; font-weight:700;
-          font-family:'Nunito', var(--font-body, sans-serif);
-          cursor:pointer; position:relative; overflow:hidden;
-          display:flex; align-items:center; justify-content:center; gap:8px;
-          box-shadow: 6px 6px 16px rgba(0,0,0,0.14), -3px -3px 10px var(--neu-light);
-          transition:all 0.25s ease; letter-spacing:0.2px;
-        }
-        .lr-btn::before {
-          content:''; position:absolute; top:0; left:-100%; width:100%; height:100%;
-          background:linear-gradient(90deg,transparent,rgba(255,255,255,0.18),transparent);
-          transition:left 0.45s ease;
-        }
-        .lr-btn:hover:not(:disabled) {
-          transform:translateY(-2px);
-          box-shadow: 9px 9px 22px rgba(0,0,0,0.18), -4px -4px 12px var(--neu-light);
-        }
-        .lr-btn:hover:not(:disabled)::before { left:100%; }
-        .lr-btn:active:not(:disabled) {
-          transform:translateY(0);
-          box-shadow: inset 3px 3px 8px rgba(0,0,0,0.18), inset -2px -2px 5px rgba(255,255,255,0.08);
-        }
-        .lr-btn:disabled { opacity:0.65; cursor:not-allowed; }
-
-        /* ── Divider ── */
-        .lr-divider {
-          display:flex; align-items:center; margin:28px 0 20px; gap:14px;
-        }
-        .lr-divider-line {
-          flex:1; height:2px;
-          background:linear-gradient(90deg,transparent,var(--neu-dark),transparent);
-        }
-        .lr-divider span {
-          color:var(--neu-muted); font-size:11px; font-weight:700;
-          text-transform:uppercase; letter-spacing:1.2px; white-space:nowrap;
-        }
-
-        /* ── Footer note ── */
-        .lr-footer-note {
-          text-align:center; font-size:14px; color:var(--neu-muted);
-          font-weight:400; line-height:1.65;
-        }
-        .lr-footer-note strong { color:var(--accent); font-weight:700; cursor:pointer; }
-        .lr-club-name {
-          text-align:center; font-size:10px; font-weight:800;
-          color:var(--neu-icon); margin-top:22px;
-          text-transform:uppercase; letter-spacing:1.2px; line-height:1.4;
-          white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-        }
-        .lr-badge {
-          text-align:center; font-size:10px; color:var(--neu-muted);
-          margin-top:5px; letter-spacing:1px; text-transform:uppercase; font-weight:600;
-        }
-
-        @media (prefers-reduced-motion:reduce) {
-          .lr, .lr * { animation-duration:0.01ms !important; transition-duration:0.01ms !important; }
-        }
-        @media (max-width:480px) {
-          .lr-form-col { padding:28px 20px 24px; }
-          .lr-card-title { font-size:1.75rem; }
-        }
-      `}</style>
-
-      <div className="lr">
-        <div className={`lr-card${shake ? ' shake' : ''}`}>
-
-          {/* ── Left info column (desktop only) ── */}
-          <div className="lr-info">
-            <div className="lr-brand">
-              <div className="lr-brand-name">
-                {clubName}
-                <span>District 64 · Member Portal</span>
-              </div>
-            </div>
-
-            <div className="lr-hero">
-              <div className="lr-tag">Member dashboard</div>
-              <h1 className="lr-headline">Serve to change <em>lives.</em></h1>
-              <p className="lr-body">
-                Access project reports, member directory, governance tools, and club communications — all in one place.
-              </p>
-              <div className="lr-features">
-                <div className="lr-feature">
-                  <div className="lr-feature-icon">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{color:'var(--accent)'}}>
-                      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
-                      <rect x="9" y="3" width="6" height="4" rx="1"/>
-                      <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
-                    </svg>
-                  </div>
-                  Project management & reporting
-                </div>
-                <div className="lr-feature">
-                  <div className="lr-feature-icon">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{color:'var(--accent)'}}>
-                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                      <circle cx="9" cy="7" r="4"/>
-                      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                    </svg>
-                  </div>
-                  Member records & attendance
-                </div>
-                <div className="lr-feature">
-                  <div className="lr-feature-icon">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{color:'var(--accent)'}}>
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                      <polyline points="14 2 14 8 20 8"/>
-                      <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-                    </svg>
-                  </div>
-                  Governance & bylaws archive
-                </div>
-              </div>
-            </div>
-
-            <div className="lr-info-footer">
-              © {new Date().getFullYear()} {clubName} · Rotary International
-            </div>
-          </div>
-
-          {/* ── Right form column ── */}
-          <div className="lr-form-col">
-
-            {/* Mobile logo — hidden on desktop */}
-            <div className="lr-logo-circle">
-              <div className="lr-logo-outer">
-                <div className="lr-logo-mask" role="img" aria-label={clubName} />
-              </div>
-            </div>
-
-            <div className="lr-card-header">
-              <div className="lr-card-eyebrow">Sign in</div>
-              <h2 className="lr-card-title">Welcome back.</h2>
-              <p className="lr-card-subtitle">Access your dashboard to manage club activities.</p>
-            </div>
-
-            {error && (
-              <div className="lr-error" role="alert">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10"/>
-                  <line x1="12" y1="8" x2="12" y2="12"/>
-                  <line x1="12" y1="16" x2="12.01" y2="16"/>
-                </svg>
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={handleSignIn} noValidate>
-              <div className="lr-field">
-                <div className="lr-neu-input">
-                  <span className="lr-icon-left"><MailIcon /></span>
-                  <input
-                    id="lr-email" ref={emailRef} type="email"
-                    value={email} onChange={(e) => setEmail(e.target.value)}
-                    className="lr-input" placeholder=" "
-                    autoComplete="email" required
-                  />
-                  <label className="lr-float-label" htmlFor="lr-email">Email address</label>
-                </div>
-              </div>
-
-              <div className="lr-field">
-                <div className="lr-neu-input">
-                  <span className="lr-icon-left"><LockIcon /></span>
-                  <input
-                    id="lr-password"
-                    type={showPass ? 'text' : 'password'}
-                    value={password} onChange={(e) => setPassword(e.target.value)}
-                    className="lr-input lr-input-pass" placeholder=" "
-                    autoComplete="current-password" required
-                  />
-                  <label className="lr-float-label" htmlFor="lr-password">Password</label>
-                  <button
-                    type="button" className="lr-eye-btn"
-                    onClick={() => setShowPass(v => !v)}
-                    aria-label={showPass ? 'Hide password' : 'Show password'}
-                  >
-                    {showPass ? <EyeClosed /> : <EyeOpen />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="lr-options">
-                <label className="lr-remember">
-                  <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} />
-                  <span className="lr-checkbox"><CheckIcon /></span>
-                  <span className="lr-remember-label">Remember me</span>
-                </label>
-              </div>
-
-              <button type="submit" className="lr-btn" disabled={loading}>
-                {loading ? <><Spinner /> Signing in…</> : <>Sign In →</>}
-              </button>
-            </form>
-
-            <div className="lr-divider">
-              <div className="lr-divider-line" />
-              <span>Invitation only</span>
-              <div className="lr-divider-line" />
-            </div>
-
-            <p className="lr-footer-note">
-              Access is by invitation only.<br />
-              Contact your <strong>club administrator</strong> to get started.
-            </p>
-            <div className="lr-club-name">{clubName}</div>
-            <div className="lr-badge">Rotary International · District 64 · Bangladesh</div>
-          </div>
-
         </div>
       </div>
-    </>
+
+      {/* Member panel */}
+      {!loading && boardMembers.length > 0 && (
+        <div className="bd-panel" style={{ paddingBottom: 32 }}>
+          <div className="bd-panel-inner">
+            {active
+              ? <MemberCard key={active.id} member={active} />
+              : <DefaultCard members={boardMembers} />}
+
+            {active && (
+              <div className="bd-nav">
+                <button className="bd-nav-btn" onClick={() => go(-1)} aria-label="Previous">
+                  <ChevronLeft size={18} />
+                </button>
+                <div className="bd-dots">
+                  {boardMembers.map((_, i) => (
+                    <button
+                      key={i}
+                      className={`bd-dot${i === activeIdx ? ' bd-dot-active' : ''}`}
+                      style={{ width: i === activeIdx ? 20 : 6 }}
+                      onClick={() => setActiveIdx(i)}
+                      aria-label={`Go to member ${i + 1}`}
+                    />
+                  ))}
+                </div>
+                <button className="bd-nav-btn" onClick={() => go(1)} aria-label="Next">
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Bottom breathing room */}
+      <div style={{ height: 40 }} />
+    </div>
+  );
+}
+
+/* ── Hex grid ── */
+function HexGrid({ members, activeIdx, setActiveIdx }: {
+  members: any[];
+  activeIdx: number | null;
+  setActiveIdx: (i: number | null) => void;
+}) {
+  return (
+    <div className="b-grid-container">
+      {SLOT_CLASSES.map((slotClass, i) => {
+        const member = members[i];
+        if (!member) return null;
+        const isActive = activeIdx === i;
+        const isDimmed = activeIdx !== null && !isActive;
+        const insetPx  = isActive ? 3 : 2;
+
+        return (
+          <div
+            key={member.id}
+            className={`b-hpop ${slotClass}`}
+            style={{
+              position: 'absolute',
+              width: 'var(--hex-w)',
+              height: 'var(--hex-h)',
+              animationDelay: `${i * 50}ms`,
+              zIndex: isActive ? 10 : 1,
+              opacity: isDimmed ? 0.28 : 1,
+              transform: isActive ? 'scale(1.1)' : 'scale(1)',
+              transition: 'opacity 0.28s ease, transform 0.25s ease',
+              cursor: 'pointer',
+            }}
+            onClick={() => setActiveIdx(isActive ? null : i)}
+          >
+            {/* Border ring */}
+            <div className="b-hex-border" style={{
+              background: isActive
+                ? 'var(--accent)'
+                : 'color-mix(in srgb, var(--accent) 22%, #e8eaf0)',
+            }} />
+            {/* Photo */}
+            <div className="b-hex-inner" style={{
+              top: insetPx, left: insetPx, right: insetPx, bottom: insetPx,
+              width: `calc(100% - ${insetPx * 2}px)`,
+              height: `calc(100% - ${insetPx * 2}px)`,
+            }}>
+              {member.photo ? (
+                <img
+                  src={member.photo} alt={member.name}
+                  style={{
+                    width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                    filter: isActive ? 'grayscale(0) brightness(1.05)' : 'grayscale(1) brightness(0.72)',
+                  }}
+                />
+              ) : (
+                <div style={{
+                  width: '100%', height: '100%', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: 'color-mix(in srgb, var(--accent) 10%, #e8eaf0)',
+                  color: 'var(--accent)', fontWeight: 800, fontSize: '1.2rem',
+                }}>
+                  {member.name?.[0]}
+                </div>
+              )}
+              {/* Name overlay on active */}
+              <div style={{
+                position: 'absolute', inset: 'auto 0 0',
+                padding: '18px 4px 6px',
+                background: 'linear-gradient(to top, rgba(0,0,0,0.75) 60%, transparent)',
+                opacity: isActive ? 1 : 0,
+                transition: 'opacity 0.3s ease',
+                textAlign: 'center',
+              }}>
+                <span style={{ color: 'white', fontSize: 8, fontWeight: 700 }}>{member.name}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Member card ── */
+function MemberCard({ member }: { member: any }) {
+  return (
+    <div className="bd-member-card b-card-in">
+      <div className="bd-member-photo">
+        {member.photo
+          ? <img src={member.photo} alt={member.name} />
+          : <div className="bd-member-photo-fallback">{member.name?.[0]}</div>}
+        <div className="bd-photo-overlay" />
+        <div className="bd-photo-info">
+          <div className="bd-member-name">{member.name}</div>
+          {member.position && <div className="bd-member-pos">{member.position}</div>}
+        </div>
+      </div>
+      <div className="bd-member-body">
+        {member.bio
+          ? <p className="bd-member-bio">{member.bio}</p>
+          : <p className="bd-member-bio-empty">No bio available.</p>}
+        {(member.email || member.linkedin || member.profile_url) && (
+          <div className="bd-member-links">
+            {member.email && (
+              <a href={`mailto:${member.email}`} className="bd-link-btn">Email</a>
+            )}
+            {(member.linkedin || member.profile_url) && (
+              <a href={member.linkedin || member.profile_url} target="_blank" rel="noopener noreferrer" className="bd-link-btn">
+                Profile
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Default card ── */
+function DefaultCard({ members }: { members: any[] }) {
+  return (
+    <div className="bd-default-card">
+      <div className="bd-default-hexes">
+        {members.slice(0, 5).map(m => (
+          <div key={m.id} style={{
+            width: 38, height: 38, flexShrink: 0, overflow: 'hidden',
+            clipPath: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)',
+          }}>
+            {m.photo
+              ? <img src={m.photo} alt={m.name} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'grayscale(1) brightness(0.7)' }} />
+              : <div style={{ width: '100%', height: '100%', background: 'color-mix(in srgb, var(--accent) 10%, #e8eaf0)' }} />}
+          </div>
+        ))}
+      </div>
+      <p className="bd-default-name">{members.length} Board Members</p>
+      <p className="bd-default-hint">Tap any photo above to view details</p>
+    </div>
+  );
+}
+
+/* ── Empty state ── */
+function EmptyState() {
+  return (
+    <div className="bd-empty">
+      <div className="bd-empty-icon"><Users size={32} /></div>
+      <p className="bd-empty-title">Board info coming soon.</p>
+      <p className="bd-empty-sub">Check back later for updates.</p>
+    </div>
   );
 }
