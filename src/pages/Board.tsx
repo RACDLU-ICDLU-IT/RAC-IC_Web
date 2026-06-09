@@ -27,8 +27,9 @@ const STYLES = `
   }
   .b-hex-border {
     position: absolute;
-    width: var(--hex-w);
-    height: var(--hex-h);
+    inset: 0;
+    width: 100%;
+    height: 100%;
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
     transition: background 0.3s ease;
     pointer-events: none;
@@ -37,7 +38,6 @@ const STYLES = `
     position: absolute;
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
     overflow: hidden;
-    width: 100%; height: 100%;
     transition: inset 0.28s ease;
   }
   @keyframes hexPop {
@@ -56,7 +56,6 @@ const STYLES = `
     width: calc(var(--col-width) * 4 + var(--hex-w));
     height: calc(var(--row-height) * 2 + (var(--row-height) * 0.5) + var(--hex-h));
   }
-  /* Column positions — exact from your HTML */
   .b-p1  { left: calc(var(--col-width) * 0); top: calc(var(--row-height) * 1 + var(--row-height) * 0.5); }
   .b-p2  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 0); }
   .b-p3  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 1); }
@@ -69,7 +68,6 @@ const STYLES = `
   .b-p10 { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 2); }
 `;
 
-// Slot order matches p1..p10
 const SLOT_CLASSES = ['b-p1','b-p2','b-p3','b-p4','b-p5','b-p6','b-p7','b-p8','b-p9','b-p10'];
 
 export default function Board() {
@@ -104,7 +102,6 @@ export default function Board() {
         canonicalPath="/board"
       />
 
-      {/* Heading */}
       <section className="pt-28 pb-6 px-6 max-w-4xl mx-auto">
         <h1 className="text-6xl md:text-[96px] font-heading font-bold leading-none"
           style={{ color: 'var(--color-accent)' }}>
@@ -116,14 +113,12 @@ export default function Board() {
         </p>
       </section>
 
-      {/* Grid */}
       <section className="px-6 pb-0 max-w-4xl mx-auto overflow-x-auto">
         {loading ? <Spinner /> : boardMembers.length === 0 ? <EmptyState /> : (
           <HexGrid members={boardMembers} activeIdx={activeIdx} setActiveIdx={setActiveIdx} />
         )}
       </section>
 
-      {/* Accent panel */}
       {!loading && boardMembers.length > 0 && (
         <section className="mt-8 pt-10 pb-16 px-4"
           style={{ backgroundColor: 'var(--color-accent)' }}>
@@ -163,7 +158,6 @@ export default function Board() {
   );
 }
 
-/* ── Hex grid — your exact HTML layout ── */
 function HexGrid({ members, activeIdx, setActiveIdx }: {
   members: any[];
   activeIdx: number | null;
@@ -176,9 +170,11 @@ function HexGrid({ members, activeIdx, setActiveIdx }: {
         if (!member) return null;
         const isActive = activeIdx === i;
         const isDimmed = activeIdx !== null && !isActive;
+        const insetPx  = isActive ? 3 : 2;
 
         return (
-          <div key={member.id}
+          <div
+            key={member.id}
             className={`b-hpop ${slotClass}`}
             style={{
               position: 'absolute',
@@ -194,27 +190,54 @@ function HexGrid({ members, activeIdx, setActiveIdx }: {
             onClick={() => setActiveIdx(isActive ? null : i)}
           >
             {/* Border ring */}
-            <div className="b-hex-border" style={{
-              inset: 0,
-              background: isActive
-                ? 'var(--color-accent)'
-                : 'color-mix(in srgb, var(--color-accent) 20%, var(--color-page-bg))',
-            }} />
+            <div
+              className="b-hex-border"
+              style={{
+                background: isActive
+                  ? 'var(--color-accent)'
+                  : 'color-mix(in srgb, var(--color-accent) 20%, var(--color-page-bg))',
+              }}
+            />
             {/* Photo */}
-            <div className="b-hex-inner" style={{ inset: isActive ? 3 : 2 }}>
+            <div
+              className="b-hex-inner"
+              style={{
+                top: insetPx,
+                left: insetPx,
+                right: insetPx,
+                bottom: insetPx,
+                width: `calc(100% - ${insetPx * 2}px)`,
+                height: `calc(100% - ${insetPx * 2}px)`,
+              }}
+            >
               {member.photo ? (
-                <img src={member.photo} alt={member.name}
+                <img
+                  src={member.photo}
+                  alt={member.name}
                   style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    display: 'block',
                     filter: isActive
                       ? 'grayscale(0) brightness(1.05)'
                       : 'grayscale(1) brightness(0.72)',
-                  }} />
+                  }}
+                />
               ) : (
-                <div className="w-full h-full flex items-center justify-center font-heading font-bold text-xl"
+                <div
                   style={{
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     backgroundColor: 'color-mix(in srgb, var(--color-accent) 12%, var(--color-page-bg))',
                     color: 'var(--color-accent)',
-                  }}>
+                    fontWeight: 700,
+                    fontSize: '1.25rem',
+                  }}
+                >
                   {member.name?.[0]}
                 </div>
               )}
@@ -237,7 +260,6 @@ function HexGrid({ members, activeIdx, setActiveIdx }: {
   );
 }
 
-/* ── Member card ── */
 function MemberCard({ member }: { member: any }) {
   return (
     <div className="b-card-in rounded-2xl overflow-hidden"
@@ -288,7 +310,6 @@ function MemberCard({ member }: { member: any }) {
   );
 }
 
-/* ── Default card ── */
 function DefaultCard({ members }: { members: any[] }) {
   return (
     <div className="rounded-2xl p-5 text-center"
