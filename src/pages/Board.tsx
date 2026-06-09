@@ -5,74 +5,69 @@ import { useTenant } from '../hooks/useTenant';
 import SEOHead from '../components/SEOHead';
 
 const STYLES = `
+  /* POINTY-TOP hexagon */
   .hex-clip {
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
   }
   @keyframes hexPop {
-    0%   { transform: scale(0.55); opacity: 0; }
-    72%  { transform: scale(1.06); }
+    0%   { transform: scale(0.5); opacity: 0; }
+    72%  { transform: scale(1.07); }
     100% { transform: scale(1);    opacity: 1; }
   }
   .hex-pop { animation: hexPop 0.48s cubic-bezier(0.34,1.56,0.64,1) both; }
   @keyframes cardIn {
-    from { transform: translateY(20px); opacity: 0; }
+    from { transform: translateY(18px); opacity: 0; }
     to   { transform: translateY(0);    opacity: 1; }
   }
-  .card-in { animation: cardIn 0.38s cubic-bezier(0.22,1,0.36,1) both; }
+  .card-in { animation: cardIn 0.36s cubic-bezier(0.22,1,0.36,1) both; }
 `;
 
 /*
-  Exact pattern from the reference image (flat-top hexagons, all same size).
-  Container is 100% wide with a fixed aspect-ratio wrapper.
-  Coordinates are expressed as % of container width for both x and y.
+  POINTY-TOP hex grid (axial offset):
+    hex width  W
+    hex height H = W * (2/√3) ≈ W * 1.1547
+    row step   = H * 0.75
+    odd rows shift right by W * 0.5
 
-  Hex size: ~22% of container width (flat-top hex: width W, height W*0.866)
-  
-  Flat-top hex axial offset rules:
-    - Each column shifts right by W * 0.75
-    - Even columns: y baseline = 0
-    - Odd  columns: y baseline = H * 0.5  (H = W * 0.866)
+  Tracing the Canva reference cluster (10 hexes):
 
-  Traced from reference (col 0-4, rows mapped):
-  
-  Col 0 (x=0%):        row2 row3
-  Col 1 (x=16.5%):     row1 row2 row3 row4
-  Col 2 (x=33%):            row2 row3 row4
-  Col 3 (x=49.5%):     row1 row2 row3
-  Col 4 (x=66%):       row1 row2
+  Row 0 (top):     col 2, col 3, col 4   → 3 hexes (right side, top)
+  Row 1 (mid-top): col 1, col 2, col 3   → 3 hexes
+  Row 2 (mid-bot): col 0, col 1, col 2   → 3 hexes  (shifted left)
+  Row 3 (bottom):  col 1                 → 1 hex bottom-left
 
-  Mapping to 10 hexes (0-indexed members):
+  That's exactly 10.
 */
-const W = 22;           // hex width as % of container
-const H = W * 0.866;    // hex height
-const CX = W * 0.75;    // column x step
-const ODD_OFFSET = H * 0.5; // odd-col vertical offset
 
-// col, row  (row 0 = top)
+const W   = 23;               // hex width as % of container
+const H   = W * 1.1547;       // pointy-top hex height
+const RS  = H * 0.75;         // row vertical step
+const ODD = W * 0.5;          // odd-row horizontal offset
+
+// [col, row]
 const GRID: [number, number][] = [
-  [1, 0],  // 0
+  [2, 0],  // 0 — top right
   [3, 0],  // 1
-  [4, 0],  // 2
-  [0, 1],  // 3
-  [1, 1],  // 4
-  [2, 1],  // 5
-  [3, 1],  // 6
+  [4, 0],  // 2 — far right top
+  [1, 1],  // 3
+  [2, 1],  // 4 — center
+  [3, 1],  // 5
+  [0, 2],  // 6 — far left
   [1, 2],  // 7
   [2, 2],  // 8
-  [3, 2],  // 9
+  [1, 3],  // 9 — bottom
 ];
 
-// Convert grid [col,row] → {left%, top%}
-function gridToPos(col: number, row: number) {
-  const left = col * CX;
-  const top  = row * H + (col % 2 === 1 ? ODD_OFFSET : 0);
-  return { left, top };
+function pos(col: number, row: number) {
+  return {
+    left: col * W + (row % 2 === 1 ? ODD : 0),
+    top:  row * RS,
+  };
 }
 
-// Container height needed (max top + H)
-const allPos = GRID.map(([c, r]) => gridToPos(c, r));
-const maxTop = Math.max(...allPos.map(p => p.top));
-const CONTAINER_H_PCT = maxTop + H; // as % of container width
+const allPos     = GRID.map(([c, r]) => pos(c, r));
+const maxTop     = Math.max(...allPos.map(p => p.top));
+const CONT_H_PCT = maxTop + H;
 
 export default function Board() {
   const { tenant } = useTenant();
@@ -95,7 +90,7 @@ export default function Board() {
     );
   };
 
-  const activeMember = activeIdx !== null ? boardMembers[activeIdx] ?? null : null;
+  const active = activeIdx !== null ? boardMembers[activeIdx] ?? null : null;
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-page-bg)' }}>
@@ -106,8 +101,8 @@ export default function Board() {
         canonicalPath="/board"
       />
 
-      {/* ── Heading ── */}
-      <section className="pt-28 pb-8 px-6 max-w-3xl mx-auto">
+      {/* Heading */}
+      <section className="pt-28 pb-6 px-6 max-w-3xl mx-auto">
         <h1 className="text-6xl md:text-[96px] font-heading font-bold leading-none"
           style={{ color: 'var(--color-accent)' }}>
           Our Board.
@@ -118,25 +113,23 @@ export default function Board() {
         </p>
       </section>
 
-      {/* ── Hex cluster ── */}
-      <section className="max-w-md mx-auto px-6 pb-0">
-        {loading ? <Spinner /> : boardMembers.length === 0 ? <EmptyState /> : (
-          <HexCluster members={boardMembers} activeIdx={activeIdx} setActiveIdx={setActiveIdx} />
-        )}
+      {/* Hex cluster */}
+      <section className="max-w-md mx-auto px-4 pb-0">
+        {loading   ? <Spinner />    :
+         boardMembers.length === 0 ? <EmptyState /> :
+         <HexCluster members={boardMembers} activeIdx={activeIdx} setActiveIdx={setActiveIdx} />}
       </section>
 
-      {/* ── Accent section ── */}
+      {/* Accent panel */}
       {!loading && boardMembers.length > 0 && (
         <section className="mt-0 pt-10 pb-16 px-4"
           style={{ backgroundColor: 'var(--color-accent)' }}>
-
           <div className="max-w-sm mx-auto">
-            {activeMember
-              ? <MemberCard key={activeMember.id} member={activeMember} />
-              : <DefaultCard members={boardMembers} />
-            }
+            {active
+              ? <MemberCard key={active.id} member={active} />
+              : <DefaultCard members={boardMembers} />}
 
-            {activeMember && (
+            {active && (
               <div className="flex items-center justify-between mt-5 px-1">
                 <button onClick={() => go(-1)}
                   className="w-10 h-10 rounded-full flex items-center justify-center active:scale-95 transition-transform"
@@ -148,7 +141,8 @@ export default function Board() {
                     <button key={i} onClick={() => setActiveIdx(i)}
                       className="rounded-full transition-all duration-200"
                       style={{
-                        width: i === activeIdx ? 20 : 6, height: 6,
+                        width: i === activeIdx ? 20 : 6,
+                        height: 6,
                         backgroundColor: i === activeIdx ? 'white' : 'rgba(255,255,255,0.35)',
                       }} />
                   ))}
@@ -174,51 +168,51 @@ function HexCluster({ members, activeIdx, setActiveIdx }: {
   setActiveIdx: (i: number | null) => void;
 }) {
   return (
-    <div className="relative w-full" style={{ paddingBottom: `${CONTAINER_H_PCT}%` }}>
+    <div className="relative w-full select-none" style={{ paddingBottom: `${CONT_H_PCT}%` }}>
       {GRID.map(([col, row], i) => {
-        const member = members[i];
+        const member   = members[i];
         if (!member) return null;
-        const { left, top } = gridToPos(col, row);
+        const { left, top } = pos(col, row);
         const isActive = activeIdx === i;
         const isDimmed = activeIdx !== null && !isActive;
+
         return (
-          <div
-            key={member.id}
-            className="hex-pop absolute cursor-pointer select-none"
+          <div key={member.id}
+            className="hex-pop absolute cursor-pointer"
             style={{
-              left:   `${left}%`,
-              top:    `${top}%`,
-              width:  `${W}%`,
-              paddingBottom: `${W}%`,
+              left:          `${left}%`,
+              top:           `${top}%`,
+              width:         `${W}%`,
+              paddingBottom: `${H}%`,
               animationDelay: `${i * 50}ms`,
-              zIndex: isActive ? 10 : 1,
-              opacity: isDimmed ? 0.3 : 1,
-              transform: isActive ? 'scale(1.1)' : 'scale(1)',
+              zIndex:    isActive ? 10 : 1,
+              opacity:   isDimmed ? 0.28 : 1,
+              transform: isActive ? 'scale(1.11)' : 'scale(1)',
               transition: 'opacity 0.28s ease, transform 0.25s ease',
             }}
             onClick={() => setActiveIdx(isActive ? null : i)}
           >
-            {/* Accent border */}
+            {/* Border layer */}
             <div className="hex-clip absolute inset-0" style={{
               background: isActive
                 ? 'var(--color-accent)'
-                : 'color-mix(in srgb, var(--color-accent) 20%, var(--color-page-bg))',
+                : 'color-mix(in srgb, var(--color-accent) 22%, var(--color-page-bg))',
               transition: 'background 0.3s ease',
             }} />
-            {/* Photo */}
+            {/* Photo layer */}
             <div className="hex-clip absolute overflow-hidden"
-              style={{ inset: isActive ? '3px' : '2px', transition: 'inset 0.3s ease' }}>
+              style={{ inset: isActive ? '3px' : '2px', transition: 'inset 0.28s ease' }}>
               {member.photo ? (
                 <img src={member.photo} alt={member.name}
                   className="absolute inset-0 w-full h-full object-cover"
                   style={{
                     filter: isActive
                       ? 'grayscale(0) brightness(1.05)'
-                      : 'grayscale(1) brightness(0.72)',
+                      : 'grayscale(1) brightness(0.7)',
                     transition: 'filter 0.4s ease',
                   }} />
               ) : (
-                <div className="absolute inset-0 flex items-center justify-center font-heading font-bold text-xl"
+                <div className="absolute inset-0 flex items-center justify-center font-heading font-bold text-lg"
                   style={{
                     backgroundColor: 'color-mix(in srgb, var(--color-accent) 12%, var(--color-page-bg))',
                     color: 'var(--color-accent)',
@@ -226,14 +220,14 @@ function HexCluster({ members, activeIdx, setActiveIdx }: {
                   {member.name?.[0]}
                 </div>
               )}
-              {/* Active name overlay */}
-              <div className="absolute inset-x-0 bottom-0 pb-2 px-1 flex flex-col items-center justify-end"
+              {/* Name overlay on active */}
+              <div className="absolute inset-x-0 bottom-0 pb-2 px-1 flex flex-col items-center"
                 style={{
                   background: 'linear-gradient(to top, rgba(0,0,0,0.72) 55%, transparent)',
                   opacity: isActive ? 1 : 0,
                   transition: 'opacity 0.3s ease',
                 }}>
-                <span className="text-white text-[7px] font-bold text-center leading-tight line-clamp-1 w-full text-center">
+                <span className="text-white text-[7px] font-bold text-center leading-tight line-clamp-1 w-full">
                   {member.name}
                 </span>
               </div>
@@ -259,8 +253,7 @@ function MemberCard({ member }: { member: any }) {
           ? <img src={member.photo} alt={member.name} className="w-full h-full object-cover object-top" />
           : <div className="w-full h-full flex items-center justify-center text-5xl font-heading font-bold text-white/30">
               {member.name?.[0]}
-            </div>
-        }
+            </div>}
         <div className="absolute inset-0"
           style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.65) 35%, transparent)' }} />
         <div className="absolute bottom-3 left-4 right-4">
@@ -273,8 +266,7 @@ function MemberCard({ member }: { member: any }) {
       <div className="px-4 py-4">
         {member.bio
           ? <p className="text-white/80 text-sm leading-relaxed">{member.bio}</p>
-          : <p className="text-white/40 text-sm italic">No bio available.</p>
-        }
+          : <p className="text-white/40 text-sm italic">No bio available.</p>}
         {(member.email || member.linkedin || member.profile_url) && (
           <div className="flex gap-2 mt-3 flex-wrap">
             {member.email && (
@@ -302,18 +294,14 @@ function MemberCard({ member }: { member: any }) {
 function DefaultCard({ members }: { members: any[] }) {
   return (
     <div className="rounded-2xl p-5 text-center"
-      style={{
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        border: '1px solid rgba(255,255,255,0.15)',
-      }}>
+      style={{ backgroundColor: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)' }}>
       <div className="flex justify-center gap-1.5 mb-4">
         {members.slice(0, 5).map(m => (
           <div key={m.id} className="hex-clip w-10 h-10 overflow-hidden flex-shrink-0">
             {m.photo
               ? <img src={m.photo} alt={m.name} className="w-full h-full object-cover"
                   style={{ filter: 'grayscale(1) brightness(0.65)' }} />
-              : <div className="w-full h-full" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
-            }
+              : <div className="w-full h-full" style={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />}
           </div>
         ))}
       </div>
