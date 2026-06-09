@@ -1,4 +1,3 @@
-
 import { supabase } from '../supabase';
 import React, { useState, useEffect } from 'react';
 import { Users, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -14,7 +13,6 @@ const STYLES = `
     --row-height: calc(var(--hex-h) + var(--gap));
   }
 
-  /* ── Neumorphic palette (mirrors Login page) ── */
   .bd {
     --neu-bg:    #e8eaf0;
     --neu-dark:  #c8cad4;
@@ -23,9 +21,7 @@ const STYLES = `
     --neu-muted: #9499b7;
     --accent:    var(--color-accent, #c41e50);
     --accent-deep: color-mix(in srgb, var(--accent) 80%, black);
-    --accent-glow: color-mix(in srgb, var(--accent) 22%, transparent);
   }
-
   .bd {
     min-height: 100vh;
     background: var(--neu-bg);
@@ -48,60 +44,52 @@ const STYLES = `
 
   .bd-header {
     padding: 88px 24px 16px;
-    max-width: 900px;
-    margin: 0 auto;
+    max-width: 900px; margin: 0 auto;
     animation: bd-fadeUp 0.4s ease both;
   }
   .bd-title {
     font-family: var(--font-heading, sans-serif);
     font-size: clamp(2rem, 8vw, 3rem);
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    color: var(--accent);
-    line-height: 1.05;
-    margin-bottom: 6px;
+    font-weight: 800; letter-spacing: -0.03em;
+    color: var(--accent); line-height: 1.05; margin-bottom: 6px;
   }
-  .bd-subtitle {
-    font-size: 13px;
-    color: var(--neu-muted);
-    font-weight: 400;
-  }
+  .bd-subtitle { font-size: 13px; color: var(--neu-muted); font-weight: 400; }
 
-  /* ── Neu card wrapper for hex grid ── */
+  /* Grid area — no group card */
   .bd-grid-wrap {
-    margin: 0 16px 0;
-    padding: 24px 20px 28px;
-    background: var(--neu-bg);
-    border-radius: 28px;
-    box-shadow: 14px 14px 40px var(--neu-dark), -14px -14px 40px var(--neu-light);
+    margin: 0 16px;
+    padding: 16px 20px 20px;
     animation: bd-fadeUp 0.45s 0.08s ease both;
     overflow-x: auto;
   }
   .bd-grid-max { max-width: 900px; margin: 0 auto; }
-
-  /* ── Hex pieces ── */
-  .b-hex-border {
-    position: absolute;
-    inset: 0; width: 100%; height: 100%;
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    transition: background 0.3s ease;
-    pointer-events: none;
-  }
-  .b-hex-inner {
-    position: absolute;
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    overflow: hidden;
-    transition: top 0.28s ease, left 0.28s ease, right 0.28s ease, bottom 0.28s ease,
-                width 0.28s ease, height 0.28s ease;
-  }
-  .b-hpop { animation: hexPop 0.46s cubic-bezier(0.34,1.56,0.64,1) both; }
-  .b-card-in { animation: cardIn 0.35s cubic-bezier(0.22,1,0.36,1) both; }
 
   .b-grid-container {
     position: relative;
     width: calc(var(--col-width) * 4 + var(--hex-w));
     height: calc(var(--row-height) * 2 + (var(--row-height) * 0.5) + var(--hex-h));
   }
+
+  /* ── Per-hex shadow wrapper ──
+     drop-shadow() follows clip-path contour of the child,
+     giving each hex its own individual neumorphic shadow.        */
+  .bd-hex-shadow {
+    position: absolute;
+    width: var(--hex-w);
+    height: var(--hex-h);
+    cursor: pointer;
+    transition: filter 0.28s ease, opacity 0.28s ease, transform 0.25s ease;
+    filter:
+      drop-shadow(3px 3px 6px var(--neu-dark))
+      drop-shadow(-3px -3px 6px var(--neu-light));
+  }
+  .bd-hex-shadow.is-active {
+    filter:
+      drop-shadow(5px 5px 12px var(--neu-dark))
+      drop-shadow(-3px -3px 8px var(--neu-light));
+  }
+
+  /* Hex position slots */
   .b-p1  { left: calc(var(--col-width) * 0); top: calc(var(--row-height) * 1 + var(--row-height) * 0.5); }
   .b-p2  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 0); }
   .b-p3  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 1); }
@@ -113,21 +101,36 @@ const STYLES = `
   .b-p9  { left: calc(var(--col-width) * 4); top: calc(var(--row-height) * 0 + var(--row-height) * 0.5); }
   .b-p10 { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 2); }
 
-  /* ── Member card panel (neumorphic raised) ── */
+  /* Inner clipped hex (no shadow — parent handles it) */
+  .b-hex-border {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    transition: background 0.3s ease;
+    pointer-events: none;
+  }
+  .b-hex-inner {
+    position: absolute;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    overflow: hidden;
+    transition: top 0.28s ease, left 0.28s ease, right 0.28s ease, bottom 0.28s ease,
+                width 0.28s ease, height 0.28s ease;
+  }
+
+  .b-hpop  { animation: hexPop 0.46s cubic-bezier(0.34,1.56,0.64,1) both; }
+  .b-card-in { animation: cardIn 0.35s cubic-bezier(0.22,1,0.36,1) both; }
+
+  /* ── Member panel ── */
   .bd-panel {
     margin: 20px 16px 0;
     padding: 24px 20px 28px;
-    background: var(--neu-bg);
-    border-radius: 28px;
+    background: var(--neu-bg); border-radius: 28px;
     box-shadow: 14px 14px 40px var(--neu-dark), -14px -14px 40px var(--neu-light);
     animation: bd-fadeUp 0.4s 0.12s ease both;
   }
   .bd-panel-inner { max-width: 420px; margin: 0 auto; }
 
-  /* ── Member card (inside panel, inset style) ── */
   .bd-member-card {
-    border-radius: 20px;
-    overflow: hidden;
+    border-radius: 20px; overflow: hidden;
     box-shadow: inset 5px 5px 12px var(--neu-dark), inset -5px -5px 12px var(--neu-light);
   }
   .bd-member-photo { position: relative; width: 100%; height: 180px; }
@@ -137,55 +140,35 @@ const STYLES = `
     font-size: 3rem; font-weight: 800; color: var(--accent);
     background: color-mix(in srgb, var(--accent) 8%, var(--neu-bg));
   }
-  .bd-photo-overlay {
-    position:absolute; inset:0;
-    background: linear-gradient(to top, rgba(0,0,0,0.7) 30%, transparent);
-  }
+  .bd-photo-overlay { position:absolute; inset:0; background: linear-gradient(to top, rgba(0,0,0,0.7) 30%, transparent); }
   .bd-photo-info { position:absolute; bottom:12px; left:16px; right:16px; }
-  .bd-member-name {
-    font-family: var(--font-heading, sans-serif);
-    font-size: 18px; font-weight: 800; color: #fff;
-    line-height: 1.2; margin-bottom: 3px;
-  }
-  .bd-member-pos {
-    font-size: 9px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 1.5px; color: rgba(255,255,255,0.65);
-  }
+  .bd-member-name { font-family: var(--font-heading, sans-serif); font-size: 18px; font-weight: 800; color: #fff; line-height: 1.2; margin-bottom: 3px; }
+  .bd-member-pos  { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: rgba(255,255,255,0.65); }
   .bd-member-body { padding: 14px 16px 16px; background: var(--neu-bg); }
-  .bd-member-bio { font-size: 13px; line-height: 1.65; color: var(--neu-muted); }
+  .bd-member-bio  { font-size: 13px; line-height: 1.65; color: var(--neu-muted); }
   .bd-member-bio-empty { font-size: 13px; color: color-mix(in srgb, var(--neu-muted) 50%, transparent); font-style: italic; }
   .bd-member-links { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
   .bd-link-btn {
     font-size: 11px; font-weight: 700; padding: 7px 16px; border-radius: 10px;
-    border: none; cursor: pointer; text-decoration: none;
-    color: var(--accent);
+    border: none; cursor: pointer; text-decoration: none; color: var(--accent);
     background: var(--neu-bg);
     box-shadow: 4px 4px 10px var(--neu-dark), -4px -4px 10px var(--neu-light);
     transition: box-shadow 0.2s ease;
-    letter-spacing: 0.3px;
   }
-  .bd-link-btn:active {
-    box-shadow: inset 2px 2px 6px var(--neu-dark), inset -2px -2px 6px var(--neu-light);
-  }
+  .bd-link-btn:active { box-shadow: inset 2px 2px 6px var(--neu-dark), inset -2px -2px 6px var(--neu-light); }
 
-  /* ── Default / empty panel card ── */
   .bd-default-card {
-    border-radius: 20px; padding: 20px 16px;
-    text-align: center;
+    border-radius: 20px; padding: 20px 16px; text-align: center;
     box-shadow: inset 5px 5px 12px var(--neu-dark), inset -5px -5px 12px var(--neu-light);
   }
   .bd-default-hexes { display:flex; justify-content:center; gap:6px; margin-bottom:12px; }
   .bd-default-name  { font-size:14px; font-weight:700; color:var(--neu-text); margin-bottom:3px; }
   .bd-default-hint  { font-size:12px; color:var(--neu-muted); }
 
-  /* ── Nav row ── */
-  .bd-nav {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-top: 16px;
-  }
+  .bd-nav { display:flex; align-items:center; justify-content:space-between; margin-top:16px; }
   .bd-nav-btn {
-    width: 40px; height: 40px; border-radius: 12px; border: none;
-    cursor: pointer; display:flex; align-items:center; justify-content:center;
+    width:40px; height:40px; border-radius:12px; border:none; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
     background: var(--neu-bg); color: var(--accent);
     box-shadow: 5px 5px 12px var(--neu-dark), -5px -5px 12px var(--neu-light);
     transition: box-shadow 0.2s ease, transform 0.15s ease;
@@ -196,15 +179,14 @@ const STYLES = `
   }
   .bd-dots { display:flex; gap:6px; align-items:center; }
   .bd-dot {
-    border-radius: 9999px; height: 6px; border: none; cursor: pointer;
+    border-radius: 9999px; height:6px; border:none; cursor:pointer;
     background: var(--neu-dark);
     transition: width 0.2s ease, background 0.2s ease;
     box-shadow: 2px 2px 5px var(--neu-dark), -2px -2px 5px var(--neu-light);
   }
   .bd-dot-active { background: var(--accent); }
 
-  /* ── Spinner / empty state ── */
-  .bd-spinner-wrap { display:flex; justify-content:center; padding: 48px 0; }
+  .bd-spinner-wrap { display:flex; justify-content:center; padding:48px 0; }
   .bd-spinner {
     width:36px; height:36px; border-radius:50%; border:3px solid transparent;
     border-top-color: var(--accent);
@@ -214,14 +196,12 @@ const STYLES = `
   @keyframes bd-spin { to { transform: rotate(360deg); } }
 
   .bd-empty {
-    text-align:center; padding: 48px 20px;
+    text-align:center; padding:48px 20px; border-radius:24px;
     box-shadow: inset 5px 5px 14px var(--neu-dark), inset -5px -5px 14px var(--neu-light);
-    border-radius: 24px;
   }
   .bd-empty-icon {
-    width:64px; height:64px; border-radius:50%; margin: 0 auto 16px;
-    display:flex; align-items:center; justify-content:center;
-    color: var(--accent);
+    width:64px; height:64px; border-radius:50%; margin:0 auto 16px;
+    display:flex; align-items:center; justify-content:center; color:var(--accent);
     box-shadow: 6px 6px 16px var(--neu-dark), -6px -6px 16px var(--neu-light);
   }
   .bd-empty-title { font-size:16px; font-weight:700; color:var(--neu-text); margin-bottom:4px; }
@@ -266,13 +246,11 @@ export default function Board() {
         canonicalPath="/board"
       />
 
-      {/* Header */}
       <div className="bd-header">
         <h1 className="bd-title">Our Board.</h1>
         <p className="bd-subtitle">Meet the dedicated leaders guiding {tenant.shortName}.</p>
       </div>
 
-      {/* Hex grid card */}
       <div className="bd-grid-wrap">
         <div className="bd-grid-max">
           {loading
@@ -284,14 +262,12 @@ export default function Board() {
         </div>
       </div>
 
-      {/* Member panel */}
       {!loading && boardMembers.length > 0 && (
         <div className="bd-panel" style={{ paddingBottom: 32 }}>
           <div className="bd-panel-inner">
             {active
               ? <MemberCard key={active.id} member={active} />
               : <DefaultCard members={boardMembers} />}
-
             {active && (
               <div className="bd-nav">
                 <button className="bd-nav-btn" onClick={() => go(-1)} aria-label="Previous">
@@ -317,7 +293,6 @@ export default function Board() {
         </div>
       )}
 
-      {/* Bottom breathing room */}
       <div style={{ height: 40 }} />
     </div>
   );
@@ -339,29 +314,25 @@ function HexGrid({ members, activeIdx, setActiveIdx }: {
         const insetPx  = isActive ? 3 : 2;
 
         return (
+          /* Outer wrapper: carries drop-shadow (follows child clip-path contour) */
           <div
             key={member.id}
-            className={`b-hpop ${slotClass}`}
+            className={`b-hpop bd-hex-shadow ${slotClass}${isActive ? ' is-active' : ''}`}
             style={{
-              position: 'absolute',
-              width: 'var(--hex-w)',
-              height: 'var(--hex-h)',
               animationDelay: `${i * 50}ms`,
               zIndex: isActive ? 10 : 1,
-              opacity: isDimmed ? 0.28 : 1,
+              opacity: isDimmed ? 0.3 : 1,
               transform: isActive ? 'scale(1.1)' : 'scale(1)',
-              transition: 'opacity 0.28s ease, transform 0.25s ease',
-              cursor: 'pointer',
             }}
             onClick={() => setActiveIdx(isActive ? null : i)}
           >
-            {/* Border ring */}
+            {/* Border ring — clipped hex shape */}
             <div className="b-hex-border" style={{
               background: isActive
                 ? 'var(--accent)'
                 : 'color-mix(in srgb, var(--accent) 22%, #e8eaf0)',
             }} />
-            {/* Photo */}
+            {/* Photo — inset from border */}
             <div className="b-hex-inner" style={{
               top: insetPx, left: insetPx, right: insetPx, bottom: insetPx,
               width: `calc(100% - ${insetPx * 2}px)`,
@@ -385,7 +356,6 @@ function HexGrid({ members, activeIdx, setActiveIdx }: {
                   {member.name?.[0]}
                 </div>
               )}
-              {/* Name overlay on active */}
               <div style={{
                 position: 'absolute', inset: 'auto 0 0',
                 padding: '18px 4px 6px',
@@ -404,7 +374,6 @@ function HexGrid({ members, activeIdx, setActiveIdx }: {
   );
 }
 
-/* ── Member card ── */
 function MemberCard({ member }: { member: any }) {
   return (
     <div className="bd-member-card b-card-in">
@@ -439,7 +408,6 @@ function MemberCard({ member }: { member: any }) {
   );
 }
 
-/* ── Default card ── */
 function DefaultCard({ members }: { members: any[] }) {
   return (
     <div className="bd-default-card">
@@ -461,7 +429,6 @@ function DefaultCard({ members }: { members: any[] }) {
   );
 }
 
-/* ── Empty state ── */
 function EmptyState() {
   return (
     <div className="bd-empty">
