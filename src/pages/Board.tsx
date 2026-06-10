@@ -63,31 +63,14 @@ const PAGE_STYLES = `
   .tm-page {
     min-height: 100vh;
     background-color: var(--color-page-bg);
+    padding-bottom: 60px;
   }
 
   /* ── Hero ── */
   .tm-hero {
-    padding: 80px 20px 0;
+    padding: 80px 20px 32px;
     max-width: 900px;
     margin: 0 auto;
-  }
-  .tm-eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--color-accent);
-    margin-bottom: 16px;
-  }
-  .tm-eyebrow-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--color-accent);
-    opacity: 0.6;
   }
   .tm-heading {
     font-size: clamp(2.4rem, 8vw, 4rem);
@@ -103,46 +86,12 @@ const PAGE_STYLES = `
     line-height: 1.65;
     color: #6b7280;
     max-width: 460px;
-    margin: 0 0 28px;
-  }
-
-  /* ── Stat strip ── */
-  .tm-stats {
-    display: flex;
-    gap: 0;
-    margin-bottom: 48px;
-    border: 1px solid rgba(212, 19, 103, 0.12);
-    border-radius: 14px;
-    overflow: hidden;
-    width: fit-content;
-  }
-  .tm-stat {
-    padding: 14px 28px;
-    text-align: center;
-    min-width: 100px;
-  }
-  .tm-stat + .tm-stat {
-    border-left: 1px solid rgba(212, 19, 103, 0.12);
-  }
-  .tm-stat-num {
-    font-size: 1.6rem;
-    font-weight: 800;
-    color: var(--color-accent);
-    line-height: 1;
-    letter-spacing: -0.02em;
-  }
-  .tm-stat-label {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: #9ca3af;
-    margin-top: 4px;
+    margin: 0;
   }
 
   /* ── Grid section wrapper ── */
   .tm-grid-section {
-    padding: 0 16px 20px;
+    padding: 0 16px 16px;
     max-width: 900px;
     margin: 0 auto;
   }
@@ -188,7 +137,7 @@ const PAGE_STYLES = `
 
   /* ── Member detail card ── */
   .tm-detail-section {
-    padding: 0 16px 60px;
+    padding: 0 16px 40px;
     max-width: 900px;
     margin: 0 auto;
   }
@@ -390,37 +339,11 @@ export default function Board() {
 
       {/* ── Hero ── */}
       <div className="tm-hero">
-        <div className="tm-eyebrow">
-          <span className="tm-eyebrow-dot" />
-          {tenant.shortName}
-        </div>
         <h1 className="tm-heading">The people<br />behind the work.</h1>
         <p className="tm-subtext">
           Every initiative, every event, every milestone — driven by this team.
           From the board to every active member, this is who makes {tenant.shortName} run.
         </p>
-
-        {/* Stat strip — only when data loaded */}
-        {!loading && members.length > 0 && (
-          <div className="tm-stats">
-            <div className="tm-stat">
-              <div className="tm-stat-num">{members.length}</div>
-              <div className="tm-stat-label">Members</div>
-            </div>
-            <div className="tm-stat">
-              <div className="tm-stat-num">
-                {[...new Set(members.map(m => m.role).filter(Boolean))].length || '—'}
-              </div>
-              <div className="tm-stat-label">Roles</div>
-            </div>
-            <div className="tm-stat">
-              <div className="tm-stat-num">
-                {new Date().getFullYear() - (tenant.foundedYear || new Date().getFullYear()) || '1'}
-              </div>
-              <div className="tm-stat-label">Year{(new Date().getFullYear() - (tenant.foundedYear || new Date().getFullYear()) || 1) !== 1 ? 's' : ''}</div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ── Hex Grid Panel ── */}
@@ -443,8 +366,8 @@ export default function Board() {
       </div>
 
       {/* ── Member Detail Card ── */}
-      <div className="tm-detail-section" ref={detailRef}>
-        {activeMember && (
+      {activeMember && (
+        <div className="tm-detail-section" ref={detailRef}>
           <div className="tm-detail-card" key={activeMember.id}>
             <div className="tm-card-accent-bar" />
             <div className="tm-card-body">
@@ -495,14 +418,7 @@ export default function Board() {
               Close
             </button>
           </div>
-        )}
-      </div>
-
-      {/* ── Footer note ── */}
-      {!loading && members.length > 0 && (
-        <p className="tm-footer-note">
-          <strong>{tenant.shortName}</strong> · Rotary International District 3281
-        </p>
+        </div>
       )}
     </div>
   );
