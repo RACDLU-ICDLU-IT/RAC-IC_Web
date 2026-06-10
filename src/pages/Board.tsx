@@ -130,7 +130,7 @@ function HexGrid({ members, activeIdx, setActiveIdx }: {
               style={{
                 background: isActive
                   ? 'var(--color-accent)'
-                  : 'color-mix(in srgb, var(--color-accent) 20%, var(--color-page-bg))',
+                  : 'var(--color-page-bg)',
               }}
             />
             <div
