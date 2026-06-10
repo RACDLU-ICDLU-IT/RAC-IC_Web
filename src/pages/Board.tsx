@@ -75,11 +75,7 @@ export default function Board() {
         canonicalPath="/board"
       />
 
-      <section className="pt-20 pb-2 px-6 max-w-4xl mx-auto">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] mb-1"
-          style={{ color: 'color-mix(in srgb, var(--color-accent) 60%, transparent)' }}>
-          Leadership
-        </p>
+      <section className="pt-20 pb-2 px-3 max-w-4xl mx-auto">
         <h1 className="text-3xl md:text-5xl font-heading font-bold leading-tight"
           style={{ color: 'var(--color-accent)' }}>
           Our Board.
@@ -90,7 +86,7 @@ export default function Board() {
         </p>
       </section>
 
-      <section className="px-6 pb-14 max-w-4xl mx-auto">
+      <section className="px-0 pb-14 max-w-4xl mx-auto flex justify-center">
         {loading ? <Spinner /> : boardMembers.length === 0 ? <EmptyState /> : (
           <HexGrid members={boardMembers} activeIdx={activeIdx} setActiveIdx={setActiveIdx} />
         )}
