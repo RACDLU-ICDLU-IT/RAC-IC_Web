@@ -14,16 +14,16 @@ const STYLES = `
   }
 
   .bd {
-    --neu-bg:    #e8eaf0;
+    --neu-bg:    #e0e0e0;
     --neu-text:  #3d4468;
     --neu-muted: #9499b7;
-    --neu-dark:  #c8cad4;
-    --neu-light: #ffffff;
+    --neu-dark:  rgba(0,0,0,0.15);
+    --neu-light: rgba(255,255,255,0.7);
     --accent:    var(--color-accent, #c41e50);
   }
   .bd {
     min-height: 100vh;
-    background: var(--neu-bg);
+    background: #e0e0e0;
     font-family: var(--font-body, sans-serif);
   }
 
@@ -101,7 +101,7 @@ const STYLES = `
     width: 100%;
     height: 100%;
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    background-color: var(--neu-bg);
+    background-color: #e0e0e0;
     overflow: hidden;
     position: relative;
   }
@@ -131,7 +131,7 @@ const STYLES = `
     margin: 4px 16px 0;
     padding: 24px 20px 28px;
     background: var(--neu-bg); border-radius: 28px;
-    box-shadow: 14px 14px 40px var(--neu-dark), -14px -14px 40px var(--neu-light);
+    box-shadow: 14px 14px 40px rgba(0,0,0,0.15), -14px -14px 40px rgba(255,255,255,0.7);
     animation: bd-fadeUp 0.4s 0.12s ease both;
   }
   .bd-panel-inner { max-width: 420px; margin: 0 auto; }
@@ -158,7 +158,7 @@ const STYLES = `
   .bd-link-btn {
     font-size: 11px; font-weight: 700; padding: 7px 16px; border-radius: 10px;
     border: none; cursor: pointer; text-decoration: none; color: var(--accent);
-    background: var(--neu-bg);
+    background: #e0e0e0;
     box-shadow: 4px 4px 10px var(--neu-dark), -4px -4px 10px var(--neu-light);
     transition: box-shadow 0.2s ease;
   }
@@ -407,7 +407,7 @@ function DefaultCard({ members }: { members: any[] }) {
           }}>
             {m.photo
               ? <img src={m.photo} alt={m.name} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'grayscale(1) brightness(0.7)' }} />
-              : <div style={{ width: '100%', height: '100%', background: 'color-mix(in srgb, var(--accent) 10%, #e8eaf0)' }} />}
+              : <div style={{ width: '100%', height: '100%', background: '#e0e0e0' }} />}
           </div>
         ))}
       </div>
