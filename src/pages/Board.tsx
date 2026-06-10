@@ -8,7 +8,7 @@ const STYLES = `
   :root {
     --hex-w: clamp(80px, 22vw, 160px);
     --hex-h: calc(var(--hex-w) * 0.866);
-    --gap: 4px;
+    --gap: 1px;
     --col-width: calc(var(--hex-w) * 0.75 + var(--gap) * 0.866);
     --row-height: calc(var(--hex-h) + var(--gap));
   }
