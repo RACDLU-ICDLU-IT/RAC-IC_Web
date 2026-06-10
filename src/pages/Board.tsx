@@ -6,9 +6,9 @@ import SEOHead from '../components/SEOHead';
 
 const STYLES = `
   :root {
-    --hex-w: clamp(80px, 22vw, 160px);
+    --hex-w: clamp(60px, 17vw, 160px);
     --hex-h: calc(var(--hex-w) * 0.866);
-    --gap: 12px;
+    --gap: 10px;
     --col-width: calc(var(--hex-w) * 0.75 + var(--gap) * 0.866);
     --row-height: calc(var(--hex-h) + var(--gap));
   }
@@ -58,7 +58,7 @@ const STYLES = `
     margin: 0 16px;
     padding: 20px 20px 28px;
     animation: bd-fadeUp 0.45s 0.08s ease both;
-    overflow-x: auto;
+    overflow: hidden;
   }
   .bd-grid-max { max-width: 900px; margin: 0 auto; }
 
@@ -110,6 +110,14 @@ const STYLES = `
     opacity: 0.95;
     transition: filter 0.35s ease;
   }
+  /* Accent border ring on active */
+  .bd-hex-ring {
+    position: absolute; inset: 0; pointer-events: none; z-index: 5;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    box-shadow: inset 0 0 0 4px var(--accent);
+    opacity: 0; transition: opacity 0.25s ease;
+  }
+  .bd-hex.is-active .bd-hex-ring { opacity: 1; }
 
   /* Hex slots */
   .b-p1  { left: calc(var(--col-width) * 0); top: calc(var(--row-height) * 1 + var(--row-height) * 0.5); }
@@ -354,6 +362,8 @@ function HexGrid({ members, activeIdx, setActiveIdx }: {
               }}>
                 <span style={{ color: 'white', fontSize: 9, fontWeight: 700 }}>{member.name}</span>
               </div>
+              {/* Accent ring */}
+              <div className="bd-hex-ring" />
             </div>
           </div>
         );
