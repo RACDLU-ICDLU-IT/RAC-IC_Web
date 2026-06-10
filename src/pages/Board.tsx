@@ -8,7 +8,7 @@ const STYLES = `
   :root {
     --hex-w: clamp(80px, 22vw, 160px);
     --hex-h: calc(var(--hex-w) * 0.866);
-    --gap: 4px;
+    --gap: 12px;
     --col-width: calc(var(--hex-w) * 0.75 + var(--gap) * 0.866);
     --row-height: calc(var(--hex-h) + var(--gap));
   }
@@ -54,10 +54,9 @@ const STYLES = `
   }
   .bd-subtitle { font-size: 13px; color: var(--neu-muted); font-weight: 400; }
 
-  /* Grid area — plain bg, no card */
   .bd-grid-wrap {
     margin: 0 16px;
-    padding: 20px 20px 24px;
+    padding: 20px 20px 28px;
     animation: bd-fadeUp 0.45s 0.08s ease both;
     overflow-x: auto;
   }
@@ -68,6 +67,62 @@ const STYLES = `
     width: calc(var(--col-width) * 4 + var(--hex-w));
     height: calc(var(--row-height) * 2 + (var(--row-height) * 0.5) + var(--hex-h));
   }
+
+  /*
+   * NEUMORPHIC HEX — exact same technique as the HTML reference:
+   * - filter: drop-shadow on the OUTER wrapper (no clip-path here)
+   * - clip-path only on the INNER child
+   * drop-shadow() follows the child's clipped contour through the parent.
+   */
+  .bd-hex {
+    position: absolute;
+    width: var(--hex-w);
+    height: var(--hex-h);
+    cursor: pointer;
+    filter:
+      drop-shadow(5px 5px 8px rgba(0,0,0,0.15))
+      drop-shadow(-5px -5px 8px rgba(255,255,255,0.85));
+    transition: transform 0.28s ease, filter 0.28s ease, opacity 0.28s ease;
+  }
+  .bd-hex.is-dimmed {
+    opacity: 0.32;
+  }
+  .bd-hex.is-active {
+    transform: scale(1.1);
+    filter:
+      drop-shadow(3px 3px 5px rgba(0,0,0,0.18))
+      drop-shadow(-3px -3px 5px rgba(255,255,255,0.9));
+  }
+  .bd-hex:active:not(.is-active) {
+    filter:
+      drop-shadow(2px 2px 4px rgba(0,0,0,0.15))
+      drop-shadow(-2px -2px 4px rgba(255,255,255,0.7));
+    transform: scale(0.97);
+  }
+
+  /* Inner clipped shape — clip-path lives HERE, not on parent */
+  .bd-hex-inner {
+    width: 100%;
+    height: 100%;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    background: var(--neu-bg);
+    overflow: hidden;
+    position: relative;
+  }
+  .bd-hex-inner img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    transition: filter 0.35s ease;
+  }
+
+  /* Accent border ring — rendered as a slightly larger clipped div behind */
+  .bd-hex-ring {
+    position: absolute;
+    inset: 0;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    pointer-events: none;
+    z-index: 2;
+  }
+  /* ring is achieved via box-shadow inset trick inside hex-inner */
 
   /* Hex position slots */
   .b-p1  { left: calc(var(--col-width) * 0); top: calc(var(--row-height) * 1 + var(--row-height) * 0.5); }
@@ -81,72 +136,12 @@ const STYLES = `
   .b-p9  { left: calc(var(--col-width) * 4); top: calc(var(--row-height) * 0 + var(--row-height) * 0.5); }
   .b-p10 { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 2); }
 
-  /*
-   * Per-hex 3D neu effect strategy:
-   * clip-path kills box-shadow, so we use a 3-layer approach:
-   *   1. .bd-hex-shadow  — sits BEHIND, slightly offset, clipped hex filled with --neu-dark
-   *                        creates the "bottom/right shadow" of a raised button
-   *   2. .bd-hex-light   — sits BEHIND on opposite side, filled with --neu-light
-   *                        creates the "top/left highlight"
-   *   3. .bd-hex-face    — the actual hex on top (border ring + photo)
-   * Together they fake the neu raised look without needing box-shadow.
-   */
-  .bd-hex-wrap {
-    position: absolute;
-    width: var(--hex-w);
-    height: var(--hex-h);
-    cursor: pointer;
-    transition: opacity 0.28s ease, transform 0.25s ease;
-  }
-  /* Dark shadow layer — shifted bottom-right */
-  .bd-hex-shadow-layer {
-    position: absolute;
-    inset: 0;
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    background: var(--neu-dark);
-    transform: translate(5px, 5px);
-    transition: transform 0.25s ease;
-  }
-  /* Light highlight layer — shifted top-left */
-  .bd-hex-light-layer {
-    position: absolute;
-    inset: 0;
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    background: var(--neu-light);
-    transform: translate(-5px, -5px);
-    transition: transform 0.25s ease;
-  }
-  /* Face — the actual visible hex */
-  .bd-hex-face {
-    position: absolute;
-    inset: 0;
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    overflow: hidden;
-  }
-  /* Active state — flatten shadow (pressed-in feel) */
-  .bd-hex-wrap.is-active .bd-hex-shadow-layer { transform: translate(2px, 2px); }
-  .bd-hex-wrap.is-active .bd-hex-light-layer  { transform: translate(-2px, -2px); }
-
-  /* Border ring inside face */
-  .b-hex-border {
-    position: absolute; inset: 0; width: 100%; height: 100%;
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    pointer-events: none;
-  }
-  .b-hex-inner {
-    position: absolute;
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    overflow: hidden;
-    transition: top 0.28s ease, left 0.28s ease, right 0.28s ease, bottom 0.28s ease,
-                width 0.28s ease, height 0.28s ease;
-  }
-
   .b-hpop    { animation: hexPop 0.46s cubic-bezier(0.34,1.56,0.64,1) both; }
   .b-card-in { animation: cardIn 0.35s cubic-bezier(0.22,1,0.36,1) both; }
 
   /* ── Member panel ── */
   .bd-panel {
-    margin: 20px 16px 0;
+    margin: 4px 16px 0;
     padding: 24px 20px 28px;
     background: var(--neu-bg); border-radius: 28px;
     box-shadow: 14px 14px 40px var(--neu-dark), -14px -14px 40px var(--neu-light);
@@ -335,66 +330,54 @@ function HexGrid({ members, activeIdx, setActiveIdx }: {
         if (!member) return null;
         const isActive = activeIdx === i;
         const isDimmed = activeIdx !== null && !isActive;
-        const insetPx  = isActive ? 4 : 3;
 
         return (
+          /* Outer wrapper: NO clip-path — drop-shadow lives here */
           <div
             key={member.id}
-            className={`b-hpop bd-hex-wrap ${slotClass}${isActive ? ' is-active' : ''}`}
-            style={{
-              animationDelay: `${i * 50}ms`,
-              zIndex: isActive ? 10 : 1,
-              opacity: isDimmed ? 0.32 : 1,
-              transform: isActive ? 'scale(1.1)' : 'scale(1)',
-            }}
+            className={`b-hpop bd-hex ${slotClass}${isActive ? ' is-active' : ''}${isDimmed ? ' is-dimmed' : ''}`}
+            style={{ animationDelay: `${i * 50}ms`, zIndex: isActive ? 10 : 1 }}
             onClick={() => setActiveIdx(isActive ? null : i)}
           >
-            {/* Dark shadow layer */}
-            <div className="bd-hex-shadow-layer" />
-            {/* Light highlight layer */}
-            <div className="bd-hex-light-layer" />
-            {/* Face — border ring + photo */}
-            <div className="bd-hex-face">
-              {/* Border ring */}
-              <div className="b-hex-border" style={{
+            {/* Inner child: clip-path lives here, matching HTML reference exactly */}
+            <div
+              className="bd-hex-inner"
+              style={{
                 background: isActive
-                  ? 'var(--accent)'
-                  : 'color-mix(in srgb, var(--accent) 20%, #e8eaf0)',
-              }} />
-              {/* Photo */}
-              <div className="b-hex-inner" style={{
-                top: insetPx, left: insetPx, right: insetPx, bottom: insetPx,
-                width: `calc(100% - ${insetPx * 2}px)`,
-                height: `calc(100% - ${insetPx * 2}px)`,
-              }}>
-                {member.photo ? (
-                  <img
-                    src={member.photo} alt={member.name}
-                    style={{
-                      width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-                      filter: isActive ? 'grayscale(0) brightness(1.05)' : 'grayscale(1) brightness(0.72)',
-                    }}
-                  />
-                ) : (
-                  <div style={{
-                    width: '100%', height: '100%', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center',
-                    backgroundColor: 'color-mix(in srgb, var(--accent) 10%, #e8eaf0)',
-                    color: 'var(--accent)', fontWeight: 800, fontSize: '1.2rem',
-                  }}>
-                    {member.name?.[0]}
-                  </div>
-                )}
+                  ? `linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, var(--neu-bg)), var(--neu-bg))`
+                  : 'var(--neu-bg)',
+                outline: isActive ? `3px solid var(--accent)` : 'none',
+                outlineOffset: '-3px',
+              }}
+            >
+              {member.photo ? (
+                <img
+                  src={member.photo} alt={member.name}
+                  style={{
+                    filter: isActive
+                      ? 'grayscale(0) brightness(1.05)'
+                      : 'grayscale(1) brightness(0.72)',
+                  }}
+                />
+              ) : (
                 <div style={{
-                  position: 'absolute', inset: 'auto 0 0',
-                  padding: '18px 4px 6px',
-                  background: 'linear-gradient(to top, rgba(0,0,0,0.75) 60%, transparent)',
-                  opacity: isActive ? 1 : 0,
-                  transition: 'opacity 0.3s ease',
-                  textAlign: 'center',
+                  width: '100%', height: '100%', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--accent)', fontWeight: 800, fontSize: '1.4rem',
                 }}>
-                  <span style={{ color: 'white', fontSize: 8, fontWeight: 700 }}>{member.name}</span>
+                  {member.name?.[0]}
                 </div>
+              )}
+              {/* Name overlay on active */}
+              <div style={{
+                position: 'absolute', inset: 'auto 0 0',
+                padding: '20px 4px 8px',
+                background: 'linear-gradient(to top, rgba(0,0,0,0.75) 60%, transparent)',
+                opacity: isActive ? 1 : 0,
+                transition: 'opacity 0.3s ease',
+                textAlign: 'center',
+              }}>
+                <span style={{ color: 'white', fontSize: 9, fontWeight: 700 }}>{member.name}</span>
               </div>
             </div>
           </div>
