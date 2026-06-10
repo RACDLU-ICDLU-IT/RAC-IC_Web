@@ -15,10 +15,10 @@ const STYLES = `
 
   .bd {
     --neu-bg:    #e8eaf0;
-    --neu-dark:  #c8cad4;
-    --neu-light: #ffffff;
     --neu-text:  #3d4468;
     --neu-muted: #9499b7;
+    --neu-dark:  #c8cad4;
+    --neu-light: #ffffff;
     --accent:    var(--color-accent, #c41e50);
   }
   .bd {
@@ -68,12 +68,10 @@ const STYLES = `
     height: calc(var(--row-height) * 2 + (var(--row-height) * 0.5) + var(--hex-h));
   }
 
-  /*
-   * NEUMORPHIC HEX — exact same technique as the HTML reference:
-   * - filter: drop-shadow on the OUTER wrapper (no clip-path here)
-   * - clip-path only on the INNER child
-   * drop-shadow() follows the child's clipped contour through the parent.
-   */
+  /* ── Exact HTML reference technique ──
+     Outer .hex: NO clip-path, carries drop-shadow (follows child contour)
+     Inner .hex-inner: clip-path here only, background matches page bg for extruded look
+  */
   .bd-hex {
     position: absolute;
     width: var(--hex-w);
@@ -81,50 +79,39 @@ const STYLES = `
     cursor: pointer;
     filter:
       drop-shadow(5px 5px 8px rgba(0,0,0,0.15))
-      drop-shadow(-5px -5px 8px rgba(255,255,255,0.85));
-    transition: transform 0.28s ease, filter 0.28s ease, opacity 0.28s ease;
+      drop-shadow(-5px -5px 8px rgba(255,255,255,0.7));
+    transition: transform 0.3s ease, filter 0.3s ease, opacity 0.28s ease;
   }
-  .bd-hex.is-dimmed {
-    opacity: 0.32;
-  }
+  .bd-hex.is-dimmed { opacity: 0.35; }
   .bd-hex.is-active {
     transform: scale(1.1);
     filter:
-      drop-shadow(3px 3px 5px rgba(0,0,0,0.18))
-      drop-shadow(-3px -3px 5px rgba(255,255,255,0.9));
+      drop-shadow(5px 5px 8px rgba(0,0,0,0.15))
+      drop-shadow(-5px -5px 8px rgba(255,255,255,0.7));
+    z-index: 10;
   }
-  .bd-hex:active:not(.is-active) {
+  .bd-hex:active {
+    transform: scale(0.97);
     filter:
       drop-shadow(2px 2px 4px rgba(0,0,0,0.15))
       drop-shadow(-2px -2px 4px rgba(255,255,255,0.7));
-    transform: scale(0.97);
   }
 
-  /* Inner clipped shape — clip-path lives HERE, not on parent */
   .bd-hex-inner {
     width: 100%;
     height: 100%;
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    background: var(--neu-bg);
+    background-color: var(--neu-bg);
     overflow: hidden;
     position: relative;
   }
   .bd-hex-inner img {
     width: 100%; height: 100%; object-fit: cover; display: block;
+    opacity: 0.95;
     transition: filter 0.35s ease;
   }
 
-  /* Accent border ring — rendered as a slightly larger clipped div behind */
-  .bd-hex-ring {
-    position: absolute;
-    inset: 0;
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    pointer-events: none;
-    z-index: 2;
-  }
-  /* ring is achieved via box-shadow inset trick inside hex-inner */
-
-  /* Hex position slots */
+  /* Hex slots */
   .b-p1  { left: calc(var(--col-width) * 0); top: calc(var(--row-height) * 1 + var(--row-height) * 0.5); }
   .b-p2  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 0); }
   .b-p3  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 1); }
@@ -202,7 +189,6 @@ const STYLES = `
     border-radius: 9999px; height:6px; border:none; cursor:pointer;
     background: var(--neu-dark);
     transition: width 0.2s ease, background 0.2s ease;
-    box-shadow: 2px 2px 5px var(--neu-dark), -2px -2px 5px var(--neu-light);
   }
   .bd-dot-active { background: var(--accent); }
 
@@ -317,7 +303,6 @@ export default function Board() {
   );
 }
 
-/* ── Hex grid ── */
 function HexGrid({ members, activeIdx, setActiveIdx }: {
   members: any[];
   activeIdx: number | null;
@@ -332,27 +317,17 @@ function HexGrid({ members, activeIdx, setActiveIdx }: {
         const isDimmed = activeIdx !== null && !isActive;
 
         return (
-          /* Outer wrapper: NO clip-path — drop-shadow lives here */
           <div
             key={member.id}
             className={`b-hpop bd-hex ${slotClass}${isActive ? ' is-active' : ''}${isDimmed ? ' is-dimmed' : ''}`}
             style={{ animationDelay: `${i * 50}ms`, zIndex: isActive ? 10 : 1 }}
             onClick={() => setActiveIdx(isActive ? null : i)}
           >
-            {/* Inner child: clip-path lives here, matching HTML reference exactly */}
-            <div
-              className="bd-hex-inner"
-              style={{
-                background: isActive
-                  ? `linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, var(--neu-bg)), var(--neu-bg))`
-                  : 'var(--neu-bg)',
-                outline: isActive ? `3px solid var(--accent)` : 'none',
-                outlineOffset: '-3px',
-              }}
-            >
+            <div className="bd-hex-inner">
               {member.photo ? (
                 <img
-                  src={member.photo} alt={member.name}
+                  src={member.photo}
+                  alt={member.name}
                   style={{
                     filter: isActive
                       ? 'grayscale(0) brightness(1.05)'
