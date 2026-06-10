@@ -48,6 +48,19 @@ const STYLES = `
   .b-p8  { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 1); }
   .b-p9  { left: calc(var(--col-width) * 4); top: calc(var(--row-height) * 0 + var(--row-height) * 0.5); }
   .b-p10 { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 2); }
+  @keyframes hintPulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+  }
+  .b-hint-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    animation: hintPulse 2.2s ease-in-out infinite;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
 `;
 
 const SLOT_CLASSES = ['b-p1','b-p2','b-p3','b-p4','b-p5','b-p6','b-p7','b-p8','b-p9','b-p10'];
@@ -70,27 +83,76 @@ export default function Board() {
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-page-bg)' }}>
       <style>{STYLES}</style>
       <SEOHead
-        title="Leadership & Board"
-        description={`Meet the leadership team and board members of ${tenant.fullName}.`}
+        title="Leadership & Team"
+        description={`Meet the leadership team and members of ${tenant.fullName}.`}
         canonicalPath="/board"
       />
 
+      {/* ── Header ── */}
       <section className="pt-20 pb-2 px-3 max-w-4xl mx-auto">
-        <h1 className="text-3xl md:text-5xl font-heading font-bold leading-tight"
-          style={{ color: 'var(--color-accent)' }}>
-          Our Board.
+        <span
+          className="inline-block text-xs font-semibold tracking-widest uppercase mb-3"
+          style={{ color: 'color-mix(in srgb, var(--color-accent) 60%, transparent)', letterSpacing: '0.2em' }}
+        >
+          People
+        </span>
+        <h1
+          className="text-3xl md:text-5xl font-heading font-bold leading-tight"
+          style={{ color: 'var(--color-accent)' }}
+        >
+          Our Team.
         </h1>
-        <p className="mt-1 text-sm max-w-xs"
-          style={{ color: 'color-mix(in srgb, var(--color-primary) 45%, transparent)' }}>
+        <p
+          className="mt-1 text-sm max-w-xs"
+          style={{ color: 'color-mix(in srgb, var(--color-primary) 45%, transparent)' }}
+        >
           Meet the dedicated leaders guiding {tenant.shortName}.
         </p>
+
+        {/* Divider + about copy */}
+        <div
+          className="mt-5 pt-5 max-w-sm"
+          style={{ borderTop: '1px solid color-mix(in srgb, var(--color-accent) 14%, transparent)' }}
+        >
+          <p
+            className="text-sm leading-relaxed"
+            style={{ color: 'color-mix(in srgb, var(--color-primary) 55%, transparent)' }}
+          >
+            Every role here is a commitment — to the club, its members, and the community we serve.
+            This is the group that keeps things moving, decisions grounded, and the mission alive.
+          </p>
+        </div>
       </section>
 
-      <section className="px-0 pb-14 max-w-4xl mx-auto flex justify-center">
+      {/* ── Hex Grid ── */}
+      <section className="px-0 pb-6 max-w-4xl mx-auto flex justify-center">
         {loading ? <Spinner /> : boardMembers.length === 0 ? <EmptyState /> : (
           <HexGrid members={boardMembers} activeIdx={activeIdx} setActiveIdx={setActiveIdx} />
         )}
       </section>
+
+      {/* ── Interaction hint ── */}
+      {!loading && boardMembers.length > 0 && (
+        <div className="pb-14 px-3 max-w-4xl mx-auto flex justify-center">
+          <div
+            className="flex items-start gap-2.5 px-4 py-3 rounded-xl text-xs"
+            style={{
+              borderLeft: '2px solid var(--color-accent)',
+              backgroundColor: 'color-mix(in srgb, var(--color-accent) 5%, var(--color-page-bg))',
+              color: 'color-mix(in srgb, var(--color-primary) 50%, transparent)',
+              maxWidth: '320px',
+            }}
+          >
+            <span
+              className="b-hint-dot"
+              style={{ backgroundColor: 'var(--color-accent)' }}
+            />
+            <span>
+              Tap any photo to highlight a member and view their full details.
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -185,7 +247,7 @@ function EmptyState() {
         <Users size={40} />
       </div>
       <h2 className="text-xl font-bold font-heading mb-1" style={{ color: 'var(--color-primary)' }}>
-        Board info coming soon.
+        Team info coming soon.
       </h2>
       <p className="text-sm" style={{ color: 'color-mix(in srgb, var(--color-primary) 45%, transparent)' }}>
         Check back later for updates.
