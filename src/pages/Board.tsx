@@ -19,109 +19,102 @@ import { Users, ChevronDown, MapPin, Mail, Star } from 'lucide-react';
    Both are already defined in :root as --col-width / --row-height.
 ═══════════════════════════════════════════════════════════════ */
 
-// ── Layout A: 10 slots ──────────────────────────────────────────
-// Fill order: true visual top-to-bottom, left-to-right by actual pixel position.
-// top=0:   p2(col1), p7(col3)
-// top=0.5: p5(col2), p9(col4)
-// top=1:   p3(col1), p8(col3)
-// top=1.5: p1(col0), p6(col2)
-// top=2:   p4(col1), p10(col3)
-// Empty slots always fall on the bottom-right edge — never floating islands.
+// ── Layout A: 10 slots — center-outward BFS ────────────────────
+// Grid center: (2.00, 1.30). Sorted by Euclidean distance.
+// At any count 1-10, filled hexes form a tight contiguous cluster.
 const SLOTS_10 = [
-  { cls: 'b-p2',  logo: false }, // row0   col1
-  { cls: 'b-p7',  logo: false }, // row0   col3
-  { cls: 'b-p5',  logo: false }, // row0.5 col2
-  { cls: 'b-p9',  logo: false }, // row0.5 col4
-  { cls: 'b-p3',  logo: false }, // row1   col1
-  { cls: 'b-p8',  logo: false }, // row1   col3
-  { cls: 'b-p1',  logo: false }, // row1.5 col0
-  { cls: 'b-p6',  logo: false }, // row1.5 col2
-  { cls: 'b-p4',  logo: false }, // row2   col1
-  { cls: 'b-p10', logo: false }, // row2   col3
+  { cls: 'b-p5',  logo: false }, // #1  dist=0.433 — center-top
+  { cls: 'b-p6',  logo: false }, // #2  dist=0.433 — center-bot
+  { cls: 'b-p3',  logo: false }, // #3  dist=0.750
+  { cls: 'b-p8',  logo: false }, // #4  dist=0.750
+  { cls: 'b-p2',  logo: false }, // #5  dist=1.146
+  { cls: 'b-p4',  logo: false }, // #6  dist=1.146
+  { cls: 'b-p7',  logo: false }, // #7  dist=1.146
+  { cls: 'b-p10', logo: false }, // #8  dist=1.146
+  { cls: 'b-p1',  logo: false }, // #9  dist=1.561 — far edge
+  { cls: 'b-p9',  logo: false }, // #10 dist=1.561 — far edge
 ];
 
-// ── Layout B: 18 slots ──────────────────────────────────────────
-// Continues the 10-slot top-to-bottom order, then appends lower rows.
-// row2.5: p14(col2), p18(col4)
-// row3:   p12(col1), p16(col3)
-// row3.5: p11(col0), p15(col2)
-// row4:   p13(col1), p17(col3)
+// ── Layout B: 18 slots — center-outward BFS ────────────────────
+// Grid center shifts to (2.00, 2.165) when all 18 slots are considered.
+// Members always fill inward first; empty slots land on the outer corners.
 const SLOTS_18 = [
-  { cls: 'b-p2',  logo: false }, // row0   col1
-  { cls: 'b-p7',  logo: false }, // row0   col3
-  { cls: 'b-p5',  logo: false }, // row0.5 col2
-  { cls: 'b-p9',  logo: false }, // row0.5 col4
-  { cls: 'b-p3',  logo: false }, // row1   col1
-  { cls: 'b-p8',  logo: false }, // row1   col3
-  { cls: 'b-p1',  logo: false }, // row1.5 col0
-  { cls: 'b-p6',  logo: false }, // row1.5 col2
-  { cls: 'b-p4',  logo: false }, // row2   col1
-  { cls: 'b-p10', logo: false }, // row2   col3
-  { cls: 'b-p14', logo: false }, // row2.5 col2
-  { cls: 'b-p18', logo: false }, // row2.5 col4
-  { cls: 'b-p12', logo: false }, // row3   col1
-  { cls: 'b-p16', logo: false }, // row3   col3
-  { cls: 'b-p11', logo: false }, // row3.5 col0
-  { cls: 'b-p15', logo: false }, // row3.5 col2
-  { cls: 'b-p13', logo: false }, // row4   col1
-  { cls: 'b-p17', logo: false }, // row4   col3
+  { cls: 'b-p14', logo: false }, // #1  dist=0.433
+  { cls: 'b-p6',  logo: false }, // #2  dist=0.433
+  { cls: 'b-p4',  logo: false }, // #3  dist=0.750
+  { cls: 'b-p10', logo: false }, // #4  dist=0.750
+  { cls: 'b-p12', logo: false }, // #5  dist=1.146
+  { cls: 'b-p16', logo: false }, // #6  dist=1.146
+  { cls: 'b-p3',  logo: false }, // #7  dist=1.146
+  { cls: 'b-p8',  logo: false }, // #8  dist=1.146
+  { cls: 'b-p15', logo: false }, // #9  dist=1.299
+  { cls: 'b-p5',  logo: false }, // #10 dist=1.299
+  { cls: 'b-p1',  logo: false }, // #11 dist=1.561
+  { cls: 'b-p18', logo: false }, // #12 dist=1.561
+  { cls: 'b-p13', logo: false }, // #13 dist=1.887
+  { cls: 'b-p17', logo: false }, // #14 dist=1.887
+  { cls: 'b-p2',  logo: false }, // #15 dist=1.887
+  { cls: 'b-p7',  logo: false }, // #16 dist=1.887
+  { cls: 'b-p11', logo: false }, // #17 dist=1.984 — far corner
+  { cls: 'b-p9',  logo: false }, // #18 dist=1.984 — far corner
 ];
 
-// ── Layout C: 22 slots (symmetric 5-col with center LOGO slot) ──
-// x2-y2 is the LOGO — skipped for member assignment
-// 22 member slots + 1 logo = 23 total hex positions
+// ── Layout C: 22 slots (logo in exact center x2y2) ─────────────
+// Grid center: (2.00, 2.165). x2y2 is logo — always rendered last, never a member.
+// Members fill the 22 surrounding slots center-outward.
 const SLOTS_22 = [
-  { cls: 'b-q-x2y1', logo: false }, // center col, above logo
-  { cls: 'b-q-x2y3', logo: false }, // center col, below logo
-  { cls: 'b-q-x1y1', logo: false },
-  { cls: 'b-q-x3y1', logo: false },
-  { cls: 'b-q-x1y2', logo: false },
-  { cls: 'b-q-x3y2', logo: false },
-  { cls: 'b-q-x0y2', logo: false },
-  { cls: 'b-q-x4y2', logo: false },
-  { cls: 'b-q-x2y0', logo: false },
-  { cls: 'b-q-x2y4', logo: false },
-  { cls: 'b-q-x1y0', logo: false },
-  { cls: 'b-q-x3y0', logo: false },
-  { cls: 'b-q-x1y3', logo: false },
-  { cls: 'b-q-x3y3', logo: false },
-  { cls: 'b-q-x0y1', logo: false },
-  { cls: 'b-q-x4y1', logo: false },
-  { cls: 'b-q-x0y3', logo: false },
-  { cls: 'b-q-x4y3', logo: false },
-  { cls: 'b-q-x0y0', logo: false },
-  { cls: 'b-q-x4y0', logo: false },
-  { cls: 'b-q-x0y4', logo: false },
-  { cls: 'b-q-x4y4', logo: false },
-  // logo slot — always last in list, never gets a member
-  { cls: 'b-q-x2y2', logo: true  },
+  { cls: 'b-q-x2y1', logo: false }, // #1  dist=0.866
+  { cls: 'b-q-x2y3', logo: false }, // #2  dist=0.866
+  { cls: 'b-q-x1y1', logo: false }, // #3  dist=0.866
+  { cls: 'b-q-x3y1', logo: false }, // #4  dist=0.866
+  { cls: 'b-q-x1y2', logo: false }, // #5  dist=0.866
+  { cls: 'b-q-x3y2', logo: false }, // #6  dist=0.866
+  { cls: 'b-q-x1y0', logo: false }, // #7  dist=1.500
+  { cls: 'b-q-x3y0', logo: false }, // #8  dist=1.500
+  { cls: 'b-q-x1y3', logo: false }, // #9  dist=1.500
+  { cls: 'b-q-x3y3', logo: false }, // #10 dist=1.500
+  { cls: 'b-q-x0y2', logo: false }, // #11 dist=1.500
+  { cls: 'b-q-x4y2', logo: false }, // #12 dist=1.500
+  { cls: 'b-q-x2y0', logo: false }, // #13 dist=1.732
+  { cls: 'b-q-x2y4', logo: false }, // #14 dist=1.732
+  { cls: 'b-q-x0y1', logo: false }, // #15 dist=1.732
+  { cls: 'b-q-x4y1', logo: false }, // #16 dist=1.732
+  { cls: 'b-q-x0y3', logo: false }, // #17 dist=1.732
+  { cls: 'b-q-x4y3', logo: false }, // #18 dist=1.732
+  { cls: 'b-q-x0y0', logo: false }, // #19 dist=2.291 — corner
+  { cls: 'b-q-x0y4', logo: false }, // #20 dist=2.291 — corner
+  { cls: 'b-q-x4y0', logo: false }, // #21 dist=2.291 — corner
+  { cls: 'b-q-x4y4', logo: false }, // #22 dist=2.291 — corner
+  { cls: 'b-q-x2y2', logo: true  }, // logo — always center, never a member
 ];
 
-// ── Layout D: 23 slots (same grid, x2-y2 is a regular member slot) ──
+// ── Layout D: 23 slots — center-outward, all member slots ──────
+// x2y2 (the exact center) is slot #1 — the most prominent member.
+// Expands outward identically to Layout C thereafter.
 const SLOTS_23 = [
-  { cls: 'b-q-x2y2', logo: false }, // the center — fills first as most prominent
-  { cls: 'b-q-x2y1', logo: false },
-  { cls: 'b-q-x2y3', logo: false },
-  { cls: 'b-q-x1y1', logo: false },
-  { cls: 'b-q-x3y1', logo: false },
-  { cls: 'b-q-x1y2', logo: false },
-  { cls: 'b-q-x3y2', logo: false },
-  { cls: 'b-q-x0y2', logo: false },
-  { cls: 'b-q-x4y2', logo: false },
-  { cls: 'b-q-x2y0', logo: false },
-  { cls: 'b-q-x2y4', logo: false },
-  { cls: 'b-q-x1y0', logo: false },
-  { cls: 'b-q-x3y0', logo: false },
-  { cls: 'b-q-x1y3', logo: false },
-  { cls: 'b-q-x3y3', logo: false },
-  { cls: 'b-q-x0y1', logo: false },
-  { cls: 'b-q-x4y1', logo: false },
-  { cls: 'b-q-x0y3', logo: false },
-  { cls: 'b-q-x4y3', logo: false },
-  { cls: 'b-q-x0y0', logo: false },
-  { cls: 'b-q-x4y0', logo: false },
-  { cls: 'b-q-x0y4', logo: false },
-  { cls: 'b-q-x4y4', logo: false },
+  { cls: 'b-q-x2y2', logo: false }, // #1  dist=0.000 — dead center
+  { cls: 'b-q-x2y1', logo: false }, // #2  dist=0.866
+  { cls: 'b-q-x2y3', logo: false }, // #3  dist=0.866
+  { cls: 'b-q-x1y1', logo: false }, // #4  dist=0.866
+  { cls: 'b-q-x3y1', logo: false }, // #5  dist=0.866
+  { cls: 'b-q-x1y2', logo: false }, // #6  dist=0.866
+  { cls: 'b-q-x3y2', logo: false }, // #7  dist=0.866
+  { cls: 'b-q-x1y0', logo: false }, // #8  dist=1.500
+  { cls: 'b-q-x3y0', logo: false }, // #9  dist=1.500
+  { cls: 'b-q-x1y3', logo: false }, // #10 dist=1.500
+  { cls: 'b-q-x3y3', logo: false }, // #11 dist=1.500
+  { cls: 'b-q-x0y2', logo: false }, // #12 dist=1.500
+  { cls: 'b-q-x4y2', logo: false }, // #13 dist=1.500
+  { cls: 'b-q-x2y0', logo: false }, // #14 dist=1.732
+  { cls: 'b-q-x2y4', logo: false }, // #15 dist=1.732
+  { cls: 'b-q-x0y1', logo: false }, // #16 dist=1.732
+  { cls: 'b-q-x4y1', logo: false }, // #17 dist=1.732
+  { cls: 'b-q-x0y3', logo: false }, // #18 dist=1.732
+  { cls: 'b-q-x4y3', logo: false }, // #19 dist=1.732
+  { cls: 'b-q-x0y0', logo: false }, // #20 dist=2.291 — corner
+  { cls: 'b-q-x0y4', logo: false }, // #21 dist=2.291 — corner
+  { cls: 'b-q-x4y0', logo: false }, // #22 dist=2.291 — corner
+  { cls: 'b-q-x4y4', logo: false }, // #23 dist=2.291 — corner
 ];
 
 function getLayout(count: number) {
