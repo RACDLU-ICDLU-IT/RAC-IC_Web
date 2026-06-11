@@ -20,41 +20,51 @@ import { Users, ChevronDown, MapPin, Mail, Star } from 'lucide-react';
 ═══════════════════════════════════════════════════════════════ */
 
 // ── Layout A: 10 slots ──────────────────────────────────────────
-// Fill order: center hexes first (p5,p6 = col2 center), then col1/col3, then edges
+// Fill order: true visual top-to-bottom, left-to-right by actual pixel position.
+// top=0:   p2(col1), p7(col3)
+// top=0.5: p5(col2), p9(col4)
+// top=1:   p3(col1), p8(col3)
+// top=1.5: p1(col0), p6(col2)
+// top=2:   p4(col1), p10(col3)
+// Empty slots always fall on the bottom-right edge — never floating islands.
 const SLOTS_10 = [
-  { cls: 'b-p5',  logo: false }, // col2 top-center
-  { cls: 'b-p6',  logo: false }, // col2 bot-center
-  { cls: 'b-p3',  logo: false }, // col1 mid
-  { cls: 'b-p8',  logo: false }, // col3 mid
-  { cls: 'b-p2',  logo: false }, // col1 top
-  { cls: 'b-p7',  logo: false }, // col3 top
-  { cls: 'b-p4',  logo: false }, // col1 bot
-  { cls: 'b-p10', logo: false }, // col3 bot
-  { cls: 'b-p1',  logo: false }, // far-left
-  { cls: 'b-p9',  logo: false }, // far-right
+  { cls: 'b-p2',  logo: false }, // row0   col1
+  { cls: 'b-p7',  logo: false }, // row0   col3
+  { cls: 'b-p5',  logo: false }, // row0.5 col2
+  { cls: 'b-p9',  logo: false }, // row0.5 col4
+  { cls: 'b-p3',  logo: false }, // row1   col1
+  { cls: 'b-p8',  logo: false }, // row1   col3
+  { cls: 'b-p1',  logo: false }, // row1.5 col0
+  { cls: 'b-p6',  logo: false }, // row1.5 col2
+  { cls: 'b-p4',  logo: false }, // row2   col1
+  { cls: 'b-p10', logo: false }, // row2   col3
 ];
 
 // ── Layout B: 18 slots ──────────────────────────────────────────
-// Previous 10 + 8 more at the bottom; fill center-first continuing downward
+// Continues the 10-slot top-to-bottom order, then appends lower rows.
+// row2.5: p14(col2), p18(col4)
+// row3:   p12(col1), p16(col3)
+// row3.5: p11(col0), p15(col2)
+// row4:   p13(col1), p17(col3)
 const SLOTS_18 = [
-  { cls: 'b-p5',  logo: false },
-  { cls: 'b-p6',  logo: false },
-  { cls: 'b-p3',  logo: false },
-  { cls: 'b-p8',  logo: false },
-  { cls: 'b-p14', logo: false }, // col2 row2.5 (new center-bottom)
-  { cls: 'b-p2',  logo: false },
-  { cls: 'b-p7',  logo: false },
-  { cls: 'b-p15', logo: false }, // col2 row3.5
-  { cls: 'b-p4',  logo: false },
-  { cls: 'b-p10', logo: false },
-  { cls: 'b-p12', logo: false }, // col1 row3
-  { cls: 'b-p16', logo: false }, // col3 row3
-  { cls: 'b-p1',  logo: false },
-  { cls: 'b-p9',  logo: false },
-  { cls: 'b-p11', logo: false }, // far-left bottom
-  { cls: 'b-p18', logo: false }, // far-right bottom
-  { cls: 'b-p13', logo: false }, // col1 row4
-  { cls: 'b-p17', logo: false }, // col3 row4
+  { cls: 'b-p2',  logo: false }, // row0   col1
+  { cls: 'b-p7',  logo: false }, // row0   col3
+  { cls: 'b-p5',  logo: false }, // row0.5 col2
+  { cls: 'b-p9',  logo: false }, // row0.5 col4
+  { cls: 'b-p3',  logo: false }, // row1   col1
+  { cls: 'b-p8',  logo: false }, // row1   col3
+  { cls: 'b-p1',  logo: false }, // row1.5 col0
+  { cls: 'b-p6',  logo: false }, // row1.5 col2
+  { cls: 'b-p4',  logo: false }, // row2   col1
+  { cls: 'b-p10', logo: false }, // row2   col3
+  { cls: 'b-p14', logo: false }, // row2.5 col2
+  { cls: 'b-p18', logo: false }, // row2.5 col4
+  { cls: 'b-p12', logo: false }, // row3   col1
+  { cls: 'b-p16', logo: false }, // row3   col3
+  { cls: 'b-p11', logo: false }, // row3.5 col0
+  { cls: 'b-p15', logo: false }, // row3.5 col2
+  { cls: 'b-p13', logo: false }, // row4   col1
+  { cls: 'b-p17', logo: false }, // row4   col3
 ];
 
 // ── Layout C: 22 slots (symmetric 5-col with center LOGO slot) ──
