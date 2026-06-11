@@ -118,7 +118,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       { path: '/admin/pages', label: 'Page Content', icon: Newspaper },
       { path: '/admin/news', label: 'News', icon: Newspaper },
       { path: '/admin/gallery', label: 'Gallery', icon: ImageIcon },
-      { path: '/admin/board', label: 'Board', icon: User },
+      { path: '/admin/board', label: 'Our Team', icon: Users },
       { path: '/admin/contact', label: 'Contact Inbox', icon: Inbox, badge: unreadCount },
     ]},
     { title: 'System', items: [
@@ -247,7 +247,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
             <Menu size={24} />
           </button>
           <span className="font-heading font-bold text-gray-900">{isAdminMode ? 'Admin Panel' : 'Dashboard'}</span>
-          <div className="w-6"></div> {/* spacer */}
+          <div className="w-6"></div>
         </header>
 
         {/* Scrollable Main Area */}
