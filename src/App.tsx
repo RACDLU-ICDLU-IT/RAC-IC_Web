@@ -49,7 +49,7 @@ import AdminApplications from './pages/admin/AdminApplications';
 import AdminAttendance from './pages/admin/AdminAttendance';
 import AdminEvents from './pages/admin/AdminEvents';
 import AdminProjects from './pages/admin/AdminProjects';
-import AdminBoard from './pages/admin/AdminBoard';
+import AdminTeam from './pages/admin/AdminTeam';
 import AdminNews from './pages/admin/AdminNews';
 import AdminGallery from './pages/admin/AdminGallery';
 import AdminCommunications from './pages/admin/AdminCommunications';
@@ -121,7 +121,7 @@ export default function App() {
                     <Route path="dues" element={<AdminDues />} />
                     <Route path="events" element={<AdminEvents />} />
                     <Route path="projects" element={<AdminProjects />} />
-                    <Route path="board" element={<AdminBoard />} />
+                    <Route path="board" element={<AdminTeam />} />
                     <Route path="news" element={<AdminNews />} />
                     <Route path="gallery" element={<AdminGallery />} />
                     <Route path="communications" element={<AdminCommunications />} />
