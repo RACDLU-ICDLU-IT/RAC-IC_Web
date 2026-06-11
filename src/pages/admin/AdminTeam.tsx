@@ -110,20 +110,42 @@ export default function AdminTeam() {
     const isNew = !formData.id;
     const docId = isNew ? crypto.randomUUID() : formData.id;
 
-    // If not board member, clear position
-    const payload = {
-      ...formData,
+    const payload: Record<string, any> = {
+      id: docId,
+      tenant_id: tenant.id,
+      rotaryYear: formData.rotaryYear || globalSettings.rotaryYear || '',
+      name: formData.name || '',
       position: formData.is_board_member ? (formData.position || '') : 'Member',
+      bio: formData.bio || '',
+      photo: formData.photo || null,
       sort_order: formData.sort_order ?? team.length,
     };
 
+    // Attempt to include new columns; if DB doesn't have them yet, retry without
+    const tryUpsert = async (withNewCols: boolean) => {
+      const data = withNewCols
+        ? { ...payload, is_board_member: !!formData.is_board_member, card_image: formData.card_image || null }
+        : payload;
+      return supabase.from('board').upsert(data, { onConflict: 'id' });
+    };
+
     try {
-      await supabase.from('board').upsert({ id: docId, tenant_id: tenant.id, ...payload }, { onConflict: 'id' });
-      addToast('Team member saved', 'success');
+      let { error } = await tryUpsert(true);
+      if (error && (error.code === 'PGRST204' || error.message?.includes('column') || error.code === '42703')) {
+        // Columns don't exist yet — fallback without new cols
+        const fallback = await tryUpsert(false);
+        if (fallback.error) throw fallback.error;
+        addToast('Saved (run DB migration to enable board/card fields)', 'success');
+      } else if (error) {
+        throw error;
+      } else {
+        addToast('Team member saved', 'success');
+      }
       setIsFormOpen(false);
       loadSettingsAndTeam();
-    } catch (err) {
-      addToast('Failed to save', 'error');
+    } catch (err: any) {
+      console.error('Save error:', err);
+      addToast(err?.message || 'Failed to save', 'error');
     }
   };
 
