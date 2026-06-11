@@ -5,7 +5,10 @@ import SEOHead from '../components/SEOHead';
 import { Users, ChevronDown, MapPin, Mail, Star } from 'lucide-react';
 
 /* ─────────────────────────────────────────────
-   HEX GRID STYLES — UNTOUCHED FROM ORIGINAL
+   HEX GRID STYLES
+   10-slot layout:  .b-grid-container-10
+   18-slot layout:  .b-grid-container-18
+   Slot positions:  .b-p1 … .b-p18
 ───────────────────────────────────────────── */
 const HEX_STYLES = `
   :root {
@@ -15,6 +18,8 @@ const HEX_STYLES = `
     --col-width: calc(var(--hex-w) * 0.75 + var(--gap) * 0.866);
     --row-height: calc(var(--hex-h) + var(--gap));
   }
+
+  /* ── shared hex pieces ── */
   .b-hex-border {
     position: absolute;
     inset: 0;
@@ -30,17 +35,30 @@ const HEX_STYLES = `
     overflow: hidden;
     transition: inset 0.28s ease;
   }
+
+  /* ── pop-in animation ── */
   @keyframes hexPop {
     0%   { transform: scale(0.55); opacity: 0; }
     72%  { transform: scale(1.07); }
     100% { transform: scale(1);    opacity: 1; }
   }
   .b-hpop { animation: hexPop 0.46s cubic-bezier(0.34,1.56,0.64,1) both; }
-  .b-grid-container {
+
+  /* ── 10-slot container ── */
+  .b-grid-container-10 {
     position: relative;
     width: calc(var(--col-width) * 4 + var(--hex-w));
     height: calc(var(--row-height) * 2 + (var(--row-height) * 0.5) + var(--hex-h));
   }
+
+  /* ── 18-slot container (5 rows) ── */
+  .b-grid-container-18 {
+    position: relative;
+    width: calc(var(--col-width) * 4 + var(--hex-w));
+    height: calc(var(--row-height) * 5 + (var(--row-height) * 0.5) + var(--hex-h));
+  }
+
+  /* ══ SLOT POSITIONS — 10-slot layout ══ */
   .b-p1  { left: calc(var(--col-width) * 0); top: calc(var(--row-height) * 1 + var(--row-height) * 0.5); }
   .b-p2  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 0); }
   .b-p3  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 1); }
@@ -51,13 +69,25 @@ const HEX_STYLES = `
   .b-p8  { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 1); }
   .b-p9  { left: calc(var(--col-width) * 4); top: calc(var(--row-height) * 0 + var(--row-height) * 0.5); }
   .b-p10 { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 2); }
+
+  /* ══ SLOT POSITIONS — 18-slot layout (mirrors the HTML reference) ══ */
+  /* col 1 */
+  .b-p11 { left: calc(var(--col-width) * 0); top: calc(var(--row-height) * 3 + var(--row-height) * 0.5); }
+  /* col 2 */
+  .b-p12 { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 3); }
+  .b-p13 { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 4); }
+  /* col 3 */
+  .b-p14 { left: calc(var(--col-width) * 2); top: calc(var(--row-height) * 2 + var(--row-height) * 0.5); }
+  .b-p15 { left: calc(var(--col-width) * 2); top: calc(var(--row-height) * 3 + var(--row-height) * 0.5); }
+  /* col 4 */
+  .b-p16 { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 3); }
+  .b-p17 { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 4); }
+  /* col 5 */
+  .b-p18 { left: calc(var(--col-width) * 4); top: calc(var(--row-height) * 2 + var(--row-height) * 0.5); }
 `;
 
 /* ─────────────────────────────────────────────
-   PAGE STYLES — production-grade, contrast-safe
-   Uses --color-accent (pink) for brand moments.
-   All text uses explicit rgba/hex — never
-   color-mix(…var(--color-primary)…) on light bg.
+   PAGE STYLES
 ───────────────────────────────────────────── */
 const PAGE_STYLES = `
   .tm-page {
@@ -103,7 +133,6 @@ const PAGE_STYLES = `
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0;
     overflow: hidden;
   }
   .tm-grid-hint {
@@ -158,14 +187,12 @@ const PAGE_STYLES = `
     background: linear-gradient(90deg, var(--color-accent), rgba(212,19,103,0.4));
   }
   .tm-card-body {
-    padding: 24px 24px 28px;
+    padding: 24px 24px 20px;
     display: flex;
     gap: 20px;
     align-items: flex-start;
   }
-  .tm-card-avatar-wrap {
-    flex-shrink: 0;
-  }
+  .tm-card-avatar-wrap { flex-shrink: 0; }
   .tm-card-avatar-hex {
     width: 72px;
     height: 62px;
@@ -176,27 +203,16 @@ const PAGE_STYLES = `
     align-items: center;
     justify-content: center;
   }
-  .tm-card-avatar-hex img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .tm-card-avatar-initial {
-    font-size: 1.5rem;
-    font-weight: 800;
-    color: var(--color-accent);
-  }
-  .tm-card-info {
-    flex: 1;
-    min-width: 0;
-  }
+  .tm-card-avatar-hex img { width: 100%; height: 100%; object-fit: cover; }
+  .tm-card-avatar-initial { font-size: 1.5rem; font-weight: 800; color: var(--color-accent); }
+  .tm-card-info { flex: 1; min-width: 0; }
   .tm-card-name {
     font-size: 1.2rem;
     font-weight: 800;
     color: #111827;
     letter-spacing: -0.02em;
     line-height: 1.2;
-    margin: 0 0 4px;
+    margin: 0 0 6px;
   }
   .tm-card-role {
     display: inline-block;
@@ -208,7 +224,7 @@ const PAGE_STYLES = `
     background: rgba(212, 19, 103, 0.08);
     border-radius: 6px;
     padding: 3px 9px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
   }
   .tm-card-bio {
     font-size: 0.875rem;
@@ -220,9 +236,8 @@ const PAGE_STYLES = `
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-    padding: 0 24px 20px;
+    padding: 14px 24px 16px;
     border-top: 1px solid #f3f4f6;
-    padding-top: 16px;
   }
   .tm-card-meta-item {
     display: flex;
@@ -231,17 +246,15 @@ const PAGE_STYLES = `
     font-size: 12px;
     color: #9ca3af;
   }
-  .tm-card-meta-item svg {
-    flex-shrink: 0;
-  }
+  .tm-card-meta-item svg { flex-shrink: 0; }
   .tm-card-close {
     display: flex;
     align-items: center;
     gap: 5px;
-    padding: 14px 24px;
+    padding: 13px 24px;
     border-top: 1px solid #f3f4f6;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 700;
     color: #9ca3af;
     cursor: pointer;
     background: none;
@@ -251,12 +264,10 @@ const PAGE_STYLES = `
     width: 100%;
     text-align: left;
     transition: color 0.15s;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
   }
-  .tm-card-close:hover {
-    color: var(--color-accent);
-  }
+  .tm-card-close:hover { color: var(--color-accent); }
 
   /* ── Empty & Spinner ── */
   .tm-empty {
@@ -265,6 +276,7 @@ const PAGE_STYLES = `
     border: 1px solid rgba(212, 19, 103, 0.12);
     border-radius: 20px;
     background: rgba(212, 19, 103, 0.025);
+    width: 100%;
   }
   .tm-empty-icon {
     width: 64px;
@@ -277,34 +289,31 @@ const PAGE_STYLES = `
     justify-content: center;
     margin: 0 auto 16px;
   }
-  .tm-empty h2 {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #111827;
-    margin: 0 0 6px;
-  }
-  .tm-empty p {
-    font-size: 0.875rem;
-    color: #9ca3af;
-    margin: 0;
-  }
-
-  /* ── Footer note ── */
-  .tm-footer-note {
-    text-align: center;
-    padding: 0 20px 40px;
-    font-size: 12px;
-    color: #d1d5db;
-    letter-spacing: 0.04em;
-  }
-  .tm-footer-note strong {
-    color: rgba(212, 19, 103, 0.45);
-    font-weight: 600;
-  }
+  .tm-empty h2 { font-size: 1.1rem; font-weight: 700; color: #111827; margin: 0 0 6px; }
+  .tm-empty p  { font-size: 0.875rem; color: #9ca3af; margin: 0; }
 `;
 
-const SLOT_CLASSES = ['b-p1','b-p2','b-p3','b-p4','b-p5','b-p6','b-p7','b-p8','b-p9','b-p10'];
+/* ─────────────────────────────────────────────
+   SLOT DEFINITIONS
+   Each entry: { cls, layout }
+   layout: 10 = appears in both; 18 = 18-only
+───────────────────────────────────────────── */
+const SLOTS_10: string[] = [
+  'b-p1','b-p2','b-p3','b-p4','b-p5',
+  'b-p6','b-p7','b-p8','b-p9','b-p10',
+];
 
+// Full 18-slot ordered list (p1…p18 in visual top-left to bottom-right reading order)
+const SLOTS_18: string[] = [
+  'b-p1','b-p2','b-p3','b-p4','b-p5',
+  'b-p6','b-p7','b-p8','b-p9','b-p10',
+  'b-p11','b-p12','b-p13','b-p14','b-p15',
+  'b-p16','b-p17','b-p18',
+];
+
+/* ─────────────────────────────────────────────
+   PAGE
+───────────────────────────────────────────── */
 export default function Board() {
   const { tenant } = useTenant();
   const [members, setMembers] = useState<any[]>([]);
@@ -355,7 +364,11 @@ export default function Board() {
             <EmptyState />
           ) : (
             <>
-              <HexGrid members={members} activeIdx={activeIdx} setActiveIdx={setActiveIdx} />
+              <HexGrid
+                members={members}
+                activeIdx={activeIdx}
+                setActiveIdx={setActiveIdx}
+              />
               <p className="tm-grid-hint">
                 <span className="tm-hint-icon" />
                 Tap a photo to view member details
@@ -393,22 +406,13 @@ export default function Board() {
             {(activeMember.email || activeMember.location || activeMember.joined_year) && (
               <div className="tm-card-meta">
                 {activeMember.email && (
-                  <span className="tm-card-meta-item">
-                    <Mail size={12} />
-                    {activeMember.email}
-                  </span>
+                  <span className="tm-card-meta-item"><Mail size={12} />{activeMember.email}</span>
                 )}
                 {activeMember.location && (
-                  <span className="tm-card-meta-item">
-                    <MapPin size={12} />
-                    {activeMember.location}
-                  </span>
+                  <span className="tm-card-meta-item"><MapPin size={12} />{activeMember.location}</span>
                 )}
                 {activeMember.joined_year && (
-                  <span className="tm-card-meta-item">
-                    <Star size={12} />
-                    Member since {activeMember.joined_year}
-                  </span>
+                  <span className="tm-card-meta-item"><Star size={12} />Member since {activeMember.joined_year}</span>
                 )}
               </div>
             )}
@@ -425,59 +429,97 @@ export default function Board() {
 }
 
 /* ─────────────────────────────────────────────
-   HEX GRID — ZERO MODIFICATIONS TO ORIGINAL
+   HEX GRID
+   • members.length 1–10  → 10-slot layout
+   • members.length 11–18 → 18-slot layout
+   • slots with no member → accent placeholder
+   • interaction logic preserved exactly
 ───────────────────────────────────────────── */
-function HexGrid({ members, activeIdx, setActiveIdx }: {
+function HexGrid({
+  members,
+  activeIdx,
+  setActiveIdx,
+}: {
   members: any[];
   activeIdx: number | null;
   setActiveIdx: (i: number | null) => void;
 }) {
+  const use18 = members.length > 10;
+  const slots  = use18 ? SLOTS_18 : SLOTS_10;
+  const containerCls = use18 ? 'b-grid-container-18' : 'b-grid-container-10';
+
   return (
-    <div className="b-grid-container">
-      {SLOT_CLASSES.map((slotClass, i) => {
-        const member = members[i];
-        if (!member) return null;
+    <div className={containerCls}>
+      {slots.map((slotClass, i) => {
+        const member   = members[i];          // undefined for empty slots
         const isActive = activeIdx === i;
         const isDimmed = activeIdx !== null && !isActive;
         const insetPx  = isActive ? 3 : 2;
+        const isEmpty  = !member;
+
         return (
           <div
-            key={member.id}
+            key={slotClass}
             className={`b-hpop ${slotClass}`}
             style={{
               position: 'absolute',
               width: 'var(--hex-w)',
               height: 'var(--hex-h)',
-              animationDelay: `${i * 50}ms`,
+              animationDelay: `${i * 40}ms`,
               zIndex: isActive ? 10 : 1,
               opacity: isDimmed ? 0.28 : 1,
               transform: isActive ? 'scale(1.1)' : 'scale(1)',
               transition: 'opacity 0.28s ease, transform 0.25s ease',
-              cursor: 'pointer',
+              cursor: isEmpty ? 'default' : 'pointer',
             }}
-            onClick={() => setActiveIdx(isActive ? null : i)}
+            onClick={() => !isEmpty && setActiveIdx(isActive ? null : i)}
           >
+            {/* ── border ring ── */}
             <div
               className="b-hex-border"
               style={{
-                background: isActive ? 'var(--color-accent)' : 'var(--color-page-bg)',
+                background: isEmpty
+                  ? 'transparent'
+                  : isActive
+                    ? 'var(--color-accent)'
+                    : 'var(--color-page-bg)',
               }}
             />
+
+            {/* ── inner content ── */}
             <div
               className="b-hex-inner"
               style={{
                 top: insetPx, left: insetPx, right: insetPx, bottom: insetPx,
-                width: `calc(100% - ${insetPx * 2}px)`,
+                width:  `calc(100% - ${insetPx * 2}px)`,
                 height: `calc(100% - ${insetPx * 2}px)`,
               }}
             >
-              {member.photo ? (
+              {isEmpty ? (
+                /* ── accent placeholder for unfilled slots ── */
+                <div style={{
+                  width: '100%',
+                  height: '100%',
+                  background: 'rgba(212,19,103,0.07)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  {/* subtle plus-mark so it reads as "open" not broken */}
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <line x1="8" y1="3" x2="8" y2="13" stroke="rgba(212,19,103,0.25)" strokeWidth="1.5" strokeLinecap="round"/>
+                    <line x1="3" y1="8" x2="13" y2="8" stroke="rgba(212,19,103,0.25)" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </div>
+              ) : member.photo ? (
                 <img
                   src={member.photo}
                   alt={member.name}
                   style={{
                     width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-                    filter: isActive ? 'grayscale(0) brightness(1.05)' : 'grayscale(1) brightness(0.72)',
+                    filter: isActive
+                      ? 'grayscale(0) brightness(1.05)'
+                      : 'grayscale(1) brightness(0.72)',
                   }}
                 />
               ) : (
@@ -501,15 +543,13 @@ function HexGrid({ members, activeIdx, setActiveIdx }: {
 function Spinner() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0' }}>
-      <div
-        style={{
-          width: 36, height: 36,
-          border: '3px solid rgba(212,19,103,0.15)',
-          borderTopColor: 'var(--color-accent)',
-          borderRadius: '50%',
-          animation: 'spin 0.75s linear infinite',
-        }}
-      />
+      <div style={{
+        width: 36, height: 36,
+        border: '3px solid rgba(212,19,103,0.15)',
+        borderTopColor: 'var(--color-accent)',
+        borderRadius: '50%',
+        animation: 'spin 0.75s linear infinite',
+      }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
@@ -518,9 +558,7 @@ function Spinner() {
 function EmptyState() {
   return (
     <div className="tm-empty">
-      <div className="tm-empty-icon">
-        <Users size={32} />
-      </div>
+      <div className="tm-empty-icon"><Users size={32} /></div>
       <h2>Team info coming soon.</h2>
       <p>Check back later for updates.</p>
     </div>
