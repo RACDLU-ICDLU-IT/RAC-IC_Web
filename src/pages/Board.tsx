@@ -19,44 +19,52 @@ import { Users, ChevronDown, MapPin, Mail, Star } from 'lucide-react';
    Both are already defined in :root as --col-width / --row-height.
 ═══════════════════════════════════════════════════════════════ */
 
-// ── Layout A: 10 slots — center-outward BFS ────────────────────
-// Grid center: (2.00, 1.30). Sorted by Euclidean distance.
-// At any count 1-10, filled hexes form a tight contiguous cluster.
+// ── Layout A: 10 slots — top-to-bottom, left-to-right ──────────
+// Sorted by actual pixel top value, then left. Empty slots fall
+// on the bottom edge — grid always looks like a growing top cluster.
+// row0.0: p2(col1) p7(col3)
+// row0.5: p5(col2) p9(col4)
+// row1.0: p3(col1) p8(col3)
+// row1.5: p1(col0) p6(col2)
+// row2.0: p4(col1) p10(col3)
 const SLOTS_10 = [
-  { cls: 'b-p5',  logo: false }, // #1  dist=0.433 — center-top
-  { cls: 'b-p6',  logo: false }, // #2  dist=0.433 — center-bot
-  { cls: 'b-p3',  logo: false }, // #3  dist=0.750
-  { cls: 'b-p8',  logo: false }, // #4  dist=0.750
-  { cls: 'b-p2',  logo: false }, // #5  dist=1.146
-  { cls: 'b-p4',  logo: false }, // #6  dist=1.146
-  { cls: 'b-p7',  logo: false }, // #7  dist=1.146
-  { cls: 'b-p10', logo: false }, // #8  dist=1.146
-  { cls: 'b-p1',  logo: false }, // #9  dist=1.561 — far edge
-  { cls: 'b-p9',  logo: false }, // #10 dist=1.561 — far edge
+  { cls: 'b-p2',  logo: false }, // row0.0 col1
+  { cls: 'b-p7',  logo: false }, // row0.0 col3
+  { cls: 'b-p5',  logo: false }, // row0.5 col2
+  { cls: 'b-p9',  logo: false }, // row0.5 col4
+  { cls: 'b-p3',  logo: false }, // row1.0 col1
+  { cls: 'b-p8',  logo: false }, // row1.0 col3
+  { cls: 'b-p1',  logo: false }, // row1.5 col0
+  { cls: 'b-p6',  logo: false }, // row1.5 col2
+  { cls: 'b-p4',  logo: false }, // row2.0 col1
+  { cls: 'b-p10', logo: false }, // row2.0 col3
 ];
 
-// ── Layout B: 18 slots — center-outward BFS ────────────────────
-// Grid center shifts to (2.00, 2.165) when all 18 slots are considered.
-// Members always fill inward first; empty slots land on the outer corners.
+// ── Layout B: 18 slots — top-to-bottom, left-to-right ──────────
+// Continues the 10-slot order downward through all 5 rows.
+// row2.5: p14(col2) p18(col4)
+// row3.0: p12(col1) p16(col3)
+// row3.5: p11(col0) p15(col2)
+// row4.0: p13(col1) p17(col3)
 const SLOTS_18 = [
-  { cls: 'b-p14', logo: false }, // #1  dist=0.433
-  { cls: 'b-p6',  logo: false }, // #2  dist=0.433
-  { cls: 'b-p4',  logo: false }, // #3  dist=0.750
-  { cls: 'b-p10', logo: false }, // #4  dist=0.750
-  { cls: 'b-p12', logo: false }, // #5  dist=1.146
-  { cls: 'b-p16', logo: false }, // #6  dist=1.146
-  { cls: 'b-p3',  logo: false }, // #7  dist=1.146
-  { cls: 'b-p8',  logo: false }, // #8  dist=1.146
-  { cls: 'b-p15', logo: false }, // #9  dist=1.299
-  { cls: 'b-p5',  logo: false }, // #10 dist=1.299
-  { cls: 'b-p1',  logo: false }, // #11 dist=1.561
-  { cls: 'b-p18', logo: false }, // #12 dist=1.561
-  { cls: 'b-p13', logo: false }, // #13 dist=1.887
-  { cls: 'b-p17', logo: false }, // #14 dist=1.887
-  { cls: 'b-p2',  logo: false }, // #15 dist=1.887
-  { cls: 'b-p7',  logo: false }, // #16 dist=1.887
-  { cls: 'b-p11', logo: false }, // #17 dist=1.984 — far corner
-  { cls: 'b-p9',  logo: false }, // #18 dist=1.984 — far corner
+  { cls: 'b-p2',  logo: false }, // row0.0 col1
+  { cls: 'b-p7',  logo: false }, // row0.0 col3
+  { cls: 'b-p5',  logo: false }, // row0.5 col2
+  { cls: 'b-p9',  logo: false }, // row0.5 col4
+  { cls: 'b-p3',  logo: false }, // row1.0 col1
+  { cls: 'b-p8',  logo: false }, // row1.0 col3
+  { cls: 'b-p1',  logo: false }, // row1.5 col0
+  { cls: 'b-p6',  logo: false }, // row1.5 col2
+  { cls: 'b-p4',  logo: false }, // row2.0 col1
+  { cls: 'b-p10', logo: false }, // row2.0 col3
+  { cls: 'b-p14', logo: false }, // row2.5 col2
+  { cls: 'b-p18', logo: false }, // row2.5 col4
+  { cls: 'b-p12', logo: false }, // row3.0 col1
+  { cls: 'b-p16', logo: false }, // row3.0 col3
+  { cls: 'b-p11', logo: false }, // row3.5 col0
+  { cls: 'b-p15', logo: false }, // row3.5 col2
+  { cls: 'b-p13', logo: false }, // row4.0 col1
+  { cls: 'b-p17', logo: false }, // row4.0 col3
 ];
 
 // ── Layout C: 22 slots (logo in exact center x2y2) ─────────────
