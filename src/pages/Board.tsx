@@ -4,19 +4,142 @@ import { useTenant } from '../hooks/useTenant';
 import SEOHead from '../components/SEOHead';
 import { Users, ChevronDown, MapPin, Mail, Star } from 'lucide-react';
 
-/* ─────────────────────────────────────────────
-   HEX GRID STYLES
-   10-slot layout:  .b-grid-container-10
-   18-slot layout:  .b-grid-container-18
-   Slot positions:  .b-p1 … .b-p18
-───────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   LAYOUT DEFINITIONS
+   ───────────────────────────────────────────────────────────────
+   Each layout is a list of slot descriptors in FILL ORDER
+   (center-first, edges last). Members are assigned in this order.
+   Empty tail slots get the accent placeholder.
+
+   Slot descriptor: { cls: CSS class, logo: bool (22-layout center) }
+
+   CSS variable naming:
+     --col   = --col-width  (horizontal step between column starts)
+     --row   = --row-height (vertical step between row starts in same col)
+   Both are already defined in :root as --col-width / --row-height.
+═══════════════════════════════════════════════════════════════ */
+
+// ── Layout A: 10 slots ──────────────────────────────────────────
+// Fill order: center hexes first (p5,p6 = col2 center), then col1/col3, then edges
+const SLOTS_10 = [
+  { cls: 'b-p5',  logo: false }, // col2 top-center
+  { cls: 'b-p6',  logo: false }, // col2 bot-center
+  { cls: 'b-p3',  logo: false }, // col1 mid
+  { cls: 'b-p8',  logo: false }, // col3 mid
+  { cls: 'b-p2',  logo: false }, // col1 top
+  { cls: 'b-p7',  logo: false }, // col3 top
+  { cls: 'b-p4',  logo: false }, // col1 bot
+  { cls: 'b-p10', logo: false }, // col3 bot
+  { cls: 'b-p1',  logo: false }, // far-left
+  { cls: 'b-p9',  logo: false }, // far-right
+];
+
+// ── Layout B: 18 slots ──────────────────────────────────────────
+// Previous 10 + 8 more at the bottom; fill center-first continuing downward
+const SLOTS_18 = [
+  { cls: 'b-p5',  logo: false },
+  { cls: 'b-p6',  logo: false },
+  { cls: 'b-p3',  logo: false },
+  { cls: 'b-p8',  logo: false },
+  { cls: 'b-p14', logo: false }, // col2 row2.5 (new center-bottom)
+  { cls: 'b-p2',  logo: false },
+  { cls: 'b-p7',  logo: false },
+  { cls: 'b-p15', logo: false }, // col2 row3.5
+  { cls: 'b-p4',  logo: false },
+  { cls: 'b-p10', logo: false },
+  { cls: 'b-p12', logo: false }, // col1 row3
+  { cls: 'b-p16', logo: false }, // col3 row3
+  { cls: 'b-p1',  logo: false },
+  { cls: 'b-p9',  logo: false },
+  { cls: 'b-p11', logo: false }, // far-left bottom
+  { cls: 'b-p18', logo: false }, // far-right bottom
+  { cls: 'b-p13', logo: false }, // col1 row4
+  { cls: 'b-p17', logo: false }, // col3 row4
+];
+
+// ── Layout C: 22 slots (symmetric 5-col with center LOGO slot) ──
+// x2-y2 is the LOGO — skipped for member assignment
+// 22 member slots + 1 logo = 23 total hex positions
+const SLOTS_22 = [
+  { cls: 'b-q-x2y1', logo: false }, // center col, above logo
+  { cls: 'b-q-x2y3', logo: false }, // center col, below logo
+  { cls: 'b-q-x1y1', logo: false },
+  { cls: 'b-q-x3y1', logo: false },
+  { cls: 'b-q-x1y2', logo: false },
+  { cls: 'b-q-x3y2', logo: false },
+  { cls: 'b-q-x0y2', logo: false },
+  { cls: 'b-q-x4y2', logo: false },
+  { cls: 'b-q-x2y0', logo: false },
+  { cls: 'b-q-x2y4', logo: false },
+  { cls: 'b-q-x1y0', logo: false },
+  { cls: 'b-q-x3y0', logo: false },
+  { cls: 'b-q-x1y3', logo: false },
+  { cls: 'b-q-x3y3', logo: false },
+  { cls: 'b-q-x0y1', logo: false },
+  { cls: 'b-q-x4y1', logo: false },
+  { cls: 'b-q-x0y3', logo: false },
+  { cls: 'b-q-x4y3', logo: false },
+  { cls: 'b-q-x0y0', logo: false },
+  { cls: 'b-q-x4y0', logo: false },
+  { cls: 'b-q-x0y4', logo: false },
+  { cls: 'b-q-x4y4', logo: false },
+  // logo slot — always last in list, never gets a member
+  { cls: 'b-q-x2y2', logo: true  },
+];
+
+// ── Layout D: 23 slots (same grid, x2-y2 is a regular member slot) ──
+const SLOTS_23 = [
+  { cls: 'b-q-x2y2', logo: false }, // the center — fills first as most prominent
+  { cls: 'b-q-x2y1', logo: false },
+  { cls: 'b-q-x2y3', logo: false },
+  { cls: 'b-q-x1y1', logo: false },
+  { cls: 'b-q-x3y1', logo: false },
+  { cls: 'b-q-x1y2', logo: false },
+  { cls: 'b-q-x3y2', logo: false },
+  { cls: 'b-q-x0y2', logo: false },
+  { cls: 'b-q-x4y2', logo: false },
+  { cls: 'b-q-x2y0', logo: false },
+  { cls: 'b-q-x2y4', logo: false },
+  { cls: 'b-q-x1y0', logo: false },
+  { cls: 'b-q-x3y0', logo: false },
+  { cls: 'b-q-x1y3', logo: false },
+  { cls: 'b-q-x3y3', logo: false },
+  { cls: 'b-q-x0y1', logo: false },
+  { cls: 'b-q-x4y1', logo: false },
+  { cls: 'b-q-x0y3', logo: false },
+  { cls: 'b-q-x4y3', logo: false },
+  { cls: 'b-q-x0y0', logo: false },
+  { cls: 'b-q-x4y0', logo: false },
+  { cls: 'b-q-x0y4', logo: false },
+  { cls: 'b-q-x4y4', logo: false },
+];
+
+function getLayout(count: number) {
+  if (count <= 10) return { slots: SLOTS_10, key: '10' };
+  if (count <= 18) return { slots: SLOTS_18, key: '18' };
+  if (count <= 22) return { slots: SLOTS_22, key: '22' };
+  return { slots: SLOTS_23, key: '23' };
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   STYLES
+═══════════════════════════════════════════════════════════════ */
 const HEX_STYLES = `
-  :root {
-    --hex-w: clamp(80px, 22vw, 160px);
-    --hex-h: calc(var(--hex-w) * 0.866);
-    --gap: 1px;
-    --col-width: calc(var(--hex-w) * 0.75 + var(--gap) * 0.866);
+  /* ── CSS variables ── */
+  .b-grid-wrap {
+    /* hex-w auto-fits: 5 columns + 4 gaps must fit panel width (panel = 100vw - 32px padding - 40px panel-padding*2) */
+    --hex-w: min(
+      calc((100vw - 32px - 40px) / (4 * 0.75 + 1)),
+      160px
+    );
+    --hex-h: calc(var(--hex-w) * 0.866025);
+    --gap: 2px;
+    /* 10/18 layout uses --col-width / --row-height */
+    --col-width:  calc(var(--hex-w) * 0.75 + var(--gap) * 0.866);
     --row-height: calc(var(--hex-h) + var(--gap));
+    /* 22/23 layout uses --col-spacing / --row-spacing */
+    --col-spacing: calc(var(--hex-w) * 0.75 + var(--gap) * 0.866);
+    --row-spacing:  calc(var(--hex-h) + var(--gap));
   }
 
   /* ── shared hex pieces ── */
@@ -36,7 +159,6 @@ const HEX_STYLES = `
     transition: inset 0.28s ease;
   }
 
-  /* ── pop-in animation ── */
   @keyframes hexPop {
     0%   { transform: scale(0.55); opacity: 0; }
     72%  { transform: scale(1.07); }
@@ -48,68 +170,122 @@ const HEX_STYLES = `
   .b-grid-container-10 {
     position: relative;
     width: calc(var(--col-width) * 4 + var(--hex-w));
-    height: calc(var(--row-height) * 2 + (var(--row-height) * 0.5) + var(--hex-h));
+    height: calc(var(--row-height) * 2 + var(--row-height) * 0.5 + var(--hex-h));
   }
+  /* 10-slot positions */
+  .b-p1  { left: calc(var(--col-width)*0); top: calc(var(--row-height)*1.5); }
+  .b-p2  { left: calc(var(--col-width)*1); top: calc(var(--row-height)*0);   }
+  .b-p3  { left: calc(var(--col-width)*1); top: calc(var(--row-height)*1);   }
+  .b-p4  { left: calc(var(--col-width)*1); top: calc(var(--row-height)*2);   }
+  .b-p5  { left: calc(var(--col-width)*2); top: calc(var(--row-height)*0.5); }
+  .b-p6  { left: calc(var(--col-width)*2); top: calc(var(--row-height)*1.5); }
+  .b-p7  { left: calc(var(--col-width)*3); top: calc(var(--row-height)*0);   }
+  .b-p8  { left: calc(var(--col-width)*3); top: calc(var(--row-height)*1);   }
+  .b-p9  { left: calc(var(--col-width)*4); top: calc(var(--row-height)*0.5); }
+  .b-p10 { left: calc(var(--col-width)*3); top: calc(var(--row-height)*2);   }
 
-  /* ── 18-slot container (5 rows) ── */
+  /* ── 18-slot container ── */
   .b-grid-container-18 {
     position: relative;
     width: calc(var(--col-width) * 4 + var(--hex-w));
-    height: calc(var(--row-height) * 5 + (var(--row-height) * 0.5) + var(--hex-h));
+    height: calc(var(--row-height) * 4 + var(--row-height) * 0.5 + var(--hex-h));
   }
+  /* 18-slot additional positions (p11–p18) */
+  .b-p11 { left: calc(var(--col-width)*0); top: calc(var(--row-height)*3.5); }
+  .b-p12 { left: calc(var(--col-width)*1); top: calc(var(--row-height)*3);   }
+  .b-p13 { left: calc(var(--col-width)*1); top: calc(var(--row-height)*4);   }
+  .b-p14 { left: calc(var(--col-width)*2); top: calc(var(--row-height)*2.5); }
+  .b-p15 { left: calc(var(--col-width)*2); top: calc(var(--row-height)*3.5); }
+  .b-p16 { left: calc(var(--col-width)*3); top: calc(var(--row-height)*3);   }
+  .b-p17 { left: calc(var(--col-width)*3); top: calc(var(--row-height)*4);   }
+  .b-p18 { left: calc(var(--col-width)*4); top: calc(var(--row-height)*2.5); }
 
-  /* ══ SLOT POSITIONS — 10-slot layout ══ */
-  .b-p1  { left: calc(var(--col-width) * 0); top: calc(var(--row-height) * 1 + var(--row-height) * 0.5); }
-  .b-p2  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 0); }
-  .b-p3  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 1); }
-  .b-p4  { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 2); }
-  .b-p5  { left: calc(var(--col-width) * 2); top: calc(var(--row-height) * 0 + var(--row-height) * 0.5); }
-  .b-p6  { left: calc(var(--col-width) * 2); top: calc(var(--row-height) * 1 + var(--row-height) * 0.5); }
-  .b-p7  { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 0); }
-  .b-p8  { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 1); }
-  .b-p9  { left: calc(var(--col-width) * 4); top: calc(var(--row-height) * 0 + var(--row-height) * 0.5); }
-  .b-p10 { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 2); }
+  /* ── 22/23-slot container (5 full cols × 5 rows) ── */
+  .b-grid-container-22 {
+    position: relative;
+    width:  calc(var(--col-spacing) * 4 + var(--hex-w));
+    height: calc(var(--row-spacing) * 4 + var(--hex-h));
+  }
+  /* Column 0 — even, starts at row 0 */
+  .b-q-x0y0 { left: calc(var(--col-spacing)*0); top: calc(var(--row-spacing)*0); }
+  .b-q-x0y1 { left: calc(var(--col-spacing)*0); top: calc(var(--row-spacing)*1); }
+  .b-q-x0y2 { left: calc(var(--col-spacing)*0); top: calc(var(--row-spacing)*2); }
+  .b-q-x0y3 { left: calc(var(--col-spacing)*0); top: calc(var(--row-spacing)*3); }
+  .b-q-x0y4 { left: calc(var(--col-spacing)*0); top: calc(var(--row-spacing)*4); }
+  /* Column 1 — odd, offset 0.5 row */
+  .b-q-x1y0 { left: calc(var(--col-spacing)*1); top: calc(var(--row-spacing)*0.5); }
+  .b-q-x1y1 { left: calc(var(--col-spacing)*1); top: calc(var(--row-spacing)*1.5); }
+  .b-q-x1y2 { left: calc(var(--col-spacing)*1); top: calc(var(--row-spacing)*2.5); }
+  .b-q-x1y3 { left: calc(var(--col-spacing)*1); top: calc(var(--row-spacing)*3.5); }
+  /* Column 2 — even */
+  .b-q-x2y0 { left: calc(var(--col-spacing)*2); top: calc(var(--row-spacing)*0); }
+  .b-q-x2y1 { left: calc(var(--col-spacing)*2); top: calc(var(--row-spacing)*1); }
+  .b-q-x2y2 { left: calc(var(--col-spacing)*2); top: calc(var(--row-spacing)*2); }
+  .b-q-x2y3 { left: calc(var(--col-spacing)*2); top: calc(var(--row-spacing)*3); }
+  .b-q-x2y4 { left: calc(var(--col-spacing)*2); top: calc(var(--row-spacing)*4); }
+  /* Column 3 — odd */
+  .b-q-x3y0 { left: calc(var(--col-spacing)*3); top: calc(var(--row-spacing)*0.5); }
+  .b-q-x3y1 { left: calc(var(--col-spacing)*3); top: calc(var(--row-spacing)*1.5); }
+  .b-q-x3y2 { left: calc(var(--col-spacing)*3); top: calc(var(--row-spacing)*2.5); }
+  .b-q-x3y3 { left: calc(var(--col-spacing)*3); top: calc(var(--row-spacing)*3.5); }
+  /* Column 4 — even */
+  .b-q-x4y0 { left: calc(var(--col-spacing)*4); top: calc(var(--row-spacing)*0); }
+  .b-q-x4y1 { left: calc(var(--col-spacing)*4); top: calc(var(--row-spacing)*1); }
+  .b-q-x4y2 { left: calc(var(--col-spacing)*4); top: calc(var(--row-spacing)*2); }
+  .b-q-x4y3 { left: calc(var(--col-spacing)*4); top: calc(var(--row-spacing)*3); }
+  .b-q-x4y4 { left: calc(var(--col-spacing)*4); top: calc(var(--row-spacing)*4); }
 
-  /* ══ SLOT POSITIONS — 18-slot layout (mirrors the HTML reference) ══ */
-  /* col 1 */
-  .b-p11 { left: calc(var(--col-width) * 0); top: calc(var(--row-height) * 3 + var(--row-height) * 0.5); }
-  /* col 2 */
-  .b-p12 { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 3); }
-  .b-p13 { left: calc(var(--col-width) * 1); top: calc(var(--row-height) * 4); }
-  /* col 3 */
-  .b-p14 { left: calc(var(--col-width) * 2); top: calc(var(--row-height) * 2 + var(--row-height) * 0.5); }
-  .b-p15 { left: calc(var(--col-width) * 2); top: calc(var(--row-height) * 3 + var(--row-height) * 0.5); }
-  /* col 4 */
-  .b-p16 { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 3); }
-  .b-p17 { left: calc(var(--col-width) * 3); top: calc(var(--row-height) * 4); }
-  /* col 5 */
-  .b-p18 { left: calc(var(--col-width) * 4); top: calc(var(--row-height) * 2 + var(--row-height) * 0.5); }
+  /* ── Logo slot (22-layout center) ── */
+  .b-logo-slot {
+    position: absolute;
+    width: var(--hex-w);
+    height: var(--hex-h);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .b-logo-mask {
+    width: 60%;
+    height: 60%;
+    -webkit-mask-image: url('https://res.cloudinary.com/dpaeapdp6/image/upload/i7kkght9us3vc59fwmz5.svg');
+    mask-image: url('https://res.cloudinary.com/dpaeapdp6/image/upload/i7kkght9us3vc59fwmz5.svg');
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+    -webkit-mask-position: center;
+    mask-position: center;
+    background-color: var(--color-accent);
+    animation: b-logo-spin 20s linear infinite;
+    opacity: 0.85;
+  }
+  @keyframes b-logo-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
 `;
 
-/* ─────────────────────────────────────────────
-   PAGE STYLES
-───────────────────────────────────────────── */
 const PAGE_STYLES = `
   .tm-page {
     min-height: 100vh;
     background-color: var(--color-page-bg);
     padding-bottom: 60px;
   }
-
-  /* ── Hero ── */
   .tm-hero {
-    padding: 80px 20px 32px;
+    padding: 80px 20px 28px;
     max-width: 900px;
     margin: 0 auto;
   }
   .tm-heading {
-    font-size: clamp(2.4rem, 8vw, 4rem);
+    font-size: clamp(2.2rem, 8vw, 4rem);
     font-weight: 800;
     line-height: 1.05;
     letter-spacing: -0.03em;
     color: var(--color-accent);
     font-family: var(--font-heading, inherit);
-    margin: 0 0 16px;
+    margin: 0 0 14px;
   }
   .tm-subtext {
     font-size: 0.9375rem;
@@ -118,17 +294,15 @@ const PAGE_STYLES = `
     max-width: 460px;
     margin: 0;
   }
-
-  /* ── Grid section wrapper ── */
   .tm-grid-section {
-    padding: 0 16px 16px;
+    padding: 0 16px 0;
     max-width: 900px;
     margin: 0 auto;
   }
   .tm-grid-panel {
     border: 1px solid rgba(212, 19, 103, 0.1);
     border-radius: 24px;
-    padding: 36px 20px 32px;
+    padding: 28px 20px 20px;
     background: rgba(212, 19, 103, 0.015);
     display: flex;
     flex-direction: column;
@@ -139,34 +313,28 @@ const PAGE_STYLES = `
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-top: 28px;
+    margin-top: 20px;
     font-size: 11.5px;
     font-weight: 500;
     color: #9ca3af;
     letter-spacing: 0.01em;
   }
   .tm-hint-icon {
-    width: 14px;
-    height: 14px;
+    width: 14px; height: 14px;
     border-radius: 50%;
     border: 1.5px solid rgba(212, 19, 103, 0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
   }
   .tm-hint-icon::after {
     content: '';
-    width: 4px;
-    height: 4px;
+    width: 4px; height: 4px;
     border-radius: 50%;
     background: var(--color-accent);
     opacity: 0.7;
   }
-
-  /* ── Member detail card ── */
   .tm-detail-section {
-    padding: 0 16px 40px;
+    padding: 16px 16px 40px;
     max-width: 900px;
     margin: 0 auto;
   }
@@ -187,133 +355,73 @@ const PAGE_STYLES = `
     background: linear-gradient(90deg, var(--color-accent), rgba(212,19,103,0.4));
   }
   .tm-card-body {
-    padding: 24px 24px 20px;
-    display: flex;
-    gap: 20px;
-    align-items: flex-start;
+    padding: 20px 20px 16px;
+    display: flex; gap: 16px; align-items: flex-start;
   }
   .tm-card-avatar-wrap { flex-shrink: 0; }
   .tm-card-avatar-hex {
-    width: 72px;
-    height: 62px;
+    width: 64px; height: 55px;
     clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
     overflow: hidden;
     background: rgba(212, 19, 103, 0.08);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: flex; align-items: center; justify-content: center;
   }
   .tm-card-avatar-hex img { width: 100%; height: 100%; object-fit: cover; }
-  .tm-card-avatar-initial { font-size: 1.5rem; font-weight: 800; color: var(--color-accent); }
+  .tm-card-avatar-initial { font-size: 1.4rem; font-weight: 800; color: var(--color-accent); }
   .tm-card-info { flex: 1; min-width: 0; }
   .tm-card-name {
-    font-size: 1.2rem;
-    font-weight: 800;
-    color: #111827;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
-    margin: 0 0 6px;
+    font-size: 1.1rem; font-weight: 800; color: #111827;
+    letter-spacing: -0.02em; line-height: 1.2; margin: 0 0 5px;
   }
   .tm-card-role {
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--color-accent);
-    background: rgba(212, 19, 103, 0.08);
-    border-radius: 6px;
-    padding: 3px 9px;
-    margin-bottom: 10px;
+    display: inline-block; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--color-accent); background: rgba(212, 19, 103, 0.08);
+    border-radius: 5px; padding: 3px 8px; margin-bottom: 8px;
   }
-  .tm-card-bio {
-    font-size: 0.875rem;
-    line-height: 1.6;
-    color: #6b7280;
-    margin: 0;
-  }
+  .tm-card-bio { font-size: 0.85rem; line-height: 1.6; color: #6b7280; margin: 0; }
   .tm-card-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    padding: 14px 24px 16px;
+    display: flex; flex-wrap: wrap; gap: 10px;
+    padding: 12px 20px 14px;
     border-top: 1px solid #f3f4f6;
   }
   .tm-card-meta-item {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 12px;
-    color: #9ca3af;
+    display: flex; align-items: center; gap: 4px;
+    font-size: 11px; color: #9ca3af;
   }
   .tm-card-meta-item svg { flex-shrink: 0; }
   .tm-card-close {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 13px 24px;
+    display: flex; align-items: center; gap: 5px;
+    padding: 12px 20px;
     border-top: 1px solid #f3f4f6;
-    font-size: 11px;
-    font-weight: 700;
-    color: #9ca3af;
-    cursor: pointer;
-    background: none;
-    border-left: none;
-    border-right: none;
-    border-bottom: none;
-    width: 100%;
-    text-align: left;
+    font-size: 10px; font-weight: 700; color: #9ca3af;
+    cursor: pointer; background: none;
+    border-left: none; border-right: none; border-bottom: none;
+    width: 100%; text-align: left;
     transition: color 0.15s;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
+    letter-spacing: 0.1em; text-transform: uppercase;
   }
   .tm-card-close:hover { color: var(--color-accent); }
-
-  /* ── Empty & Spinner ── */
   .tm-empty {
-    text-align: center;
-    padding: 64px 24px;
+    text-align: center; padding: 56px 24px;
     border: 1px solid rgba(212, 19, 103, 0.12);
     border-radius: 20px;
     background: rgba(212, 19, 103, 0.025);
     width: 100%;
   }
   .tm-empty-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    background: rgba(212, 19, 103, 0.08);
-    color: var(--color-accent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 16px;
+    width: 60px; height: 60px; border-radius: 50%;
+    background: rgba(212, 19, 103, 0.08); color: var(--color-accent);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 14px;
   }
-  .tm-empty h2 { font-size: 1.1rem; font-weight: 700; color: #111827; margin: 0 0 6px; }
-  .tm-empty p  { font-size: 0.875rem; color: #9ca3af; margin: 0; }
+  .tm-empty h2 { font-size: 1rem; font-weight: 700; color: #111827; margin: 0 0 6px; }
+  .tm-empty p  { font-size: 0.85rem; color: #9ca3af; margin: 0; }
 `;
 
-/* ─────────────────────────────────────────────
-   SLOT DEFINITIONS
-   Each entry: { cls, layout }
-   layout: 10 = appears in both; 18 = 18-only
-───────────────────────────────────────────── */
-const SLOTS_10: string[] = [
-  'b-p1','b-p2','b-p3','b-p4','b-p5',
-  'b-p6','b-p7','b-p8','b-p9','b-p10',
-];
-
-// Full 18-slot ordered list (p1…p18 in visual top-left to bottom-right reading order)
-const SLOTS_18: string[] = [
-  'b-p1','b-p2','b-p3','b-p4','b-p5',
-  'b-p6','b-p7','b-p8','b-p9','b-p10',
-  'b-p11','b-p12','b-p13','b-p14','b-p15',
-  'b-p16','b-p17','b-p18',
-];
-
-/* ─────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════
    PAGE
-───────────────────────────────────────────── */
+═══════════════════════════════════════════════════════════════ */
 export default function Board() {
   const { tenant } = useTenant();
   const [members, setMembers] = useState<any[]>([]);
@@ -346,7 +454,6 @@ export default function Board() {
         canonicalPath="/board"
       />
 
-      {/* ── Hero ── */}
       <div className="tm-hero">
         <h1 className="tm-heading">The people<br />behind the work.</h1>
         <p className="tm-subtext">
@@ -355,7 +462,6 @@ export default function Board() {
         </p>
       </div>
 
-      {/* ── Hex Grid Panel ── */}
       <div className="tm-grid-section">
         <div className="tm-grid-panel">
           {loading ? (
@@ -368,6 +474,7 @@ export default function Board() {
                 members={members}
                 activeIdx={activeIdx}
                 setActiveIdx={setActiveIdx}
+                tenant={tenant}
               />
               <p className="tm-grid-hint">
                 <span className="tm-hint-icon" />
@@ -378,7 +485,6 @@ export default function Board() {
         </div>
       </div>
 
-      {/* ── Member Detail Card ── */}
       {activeMember && (
         <div className="tm-detail-section" ref={detailRef}>
           <div className="tm-detail-card" key={activeMember.id}>
@@ -394,32 +500,19 @@ export default function Board() {
               </div>
               <div className="tm-card-info">
                 <h2 className="tm-card-name">{activeMember.name}</h2>
-                {activeMember.role && (
-                  <span className="tm-card-role">{activeMember.role}</span>
-                )}
-                {activeMember.bio && (
-                  <p className="tm-card-bio">{activeMember.bio}</p>
-                )}
+                {activeMember.role && <span className="tm-card-role">{activeMember.role}</span>}
+                {activeMember.bio  && <p className="tm-card-bio">{activeMember.bio}</p>}
               </div>
             </div>
-
             {(activeMember.email || activeMember.location || activeMember.joined_year) && (
               <div className="tm-card-meta">
-                {activeMember.email && (
-                  <span className="tm-card-meta-item"><Mail size={12} />{activeMember.email}</span>
-                )}
-                {activeMember.location && (
-                  <span className="tm-card-meta-item"><MapPin size={12} />{activeMember.location}</span>
-                )}
-                {activeMember.joined_year && (
-                  <span className="tm-card-meta-item"><Star size={12} />Member since {activeMember.joined_year}</span>
-                )}
+                {activeMember.email       && <span className="tm-card-meta-item"><Mail   size={11} />{activeMember.email}</span>}
+                {activeMember.location    && <span className="tm-card-meta-item"><MapPin size={11} />{activeMember.location}</span>}
+                {activeMember.joined_year && <span className="tm-card-meta-item"><Star   size={11} />Member since {activeMember.joined_year}</span>}
               </div>
             )}
-
             <button className="tm-card-close" onClick={() => setActiveIdx(null)}>
-              <ChevronDown size={13} />
-              Close
+              <ChevronDown size={12} />Close
             </button>
           </div>
         </div>
@@ -428,123 +521,144 @@ export default function Board() {
   );
 }
 
-/* ─────────────────────────────────────────────
-   HEX GRID
-   • members.length 1–10  → 10-slot layout
-   • members.length 11–18 → 18-slot layout
-   • slots with no member → accent placeholder
-   • interaction logic preserved exactly
-───────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   HEX GRID COMPONENT
+   • Selects layout by member count
+   • Maps members to slots in fill-order (center-first)
+   • Renders logo in center slot for 22-layout
+   • Empty slots: accent fill, no icon, not clickable
+═══════════════════════════════════════════════════════════════ */
 function HexGrid({
   members,
   activeIdx,
   setActiveIdx,
+  tenant,
 }: {
   members: any[];
   activeIdx: number | null;
   setActiveIdx: (i: number | null) => void;
+  tenant: any;
 }) {
-  const use18 = members.length > 10;
-  const slots  = use18 ? SLOTS_18 : SLOTS_10;
-  const containerCls = use18 ? 'b-grid-container-18' : 'b-grid-container-10';
+  const { slots, key } = getLayout(members.length);
+
+  // Map fill-order slot index → member
+  // Logo slots never get a member; member index skips logo slots
+  let memberCursor = 0;
+  const assignments = slots.map(slot => {
+    if (slot.logo) return { member: null, isLogo: true };
+    const member = members[memberCursor] ?? null;
+    memberCursor++;
+    return { member, isLogo: false };
+  });
+
+  const containerCls =
+    key === '10' ? 'b-grid-container-10' :
+    key === '18' ? 'b-grid-container-18' :
+                   'b-grid-container-22';
 
   return (
-    <div className={containerCls}>
-      {slots.map((slotClass, i) => {
-        const member   = members[i];          // undefined for empty slots
-        const isActive = activeIdx === i;
-        const isDimmed = activeIdx !== null && !isActive;
-        const insetPx  = isActive ? 3 : 2;
-        const isEmpty  = !member;
+    <div className="b-grid-wrap" style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+      <div className={containerCls}>
+        {slots.map((slot, i) => {
+          const { member, isLogo } = assignments[i];
+          const isActive = !isLogo && activeIdx === i;
+          const isDimmed = activeIdx !== null && !isActive && !isLogo;
+          const isEmpty  = !member && !isLogo;
+          const insetPx  = isActive ? 3 : 2;
 
-        return (
-          <div
-            key={slotClass}
-            className={`b-hpop ${slotClass}`}
-            style={{
-              position: 'absolute',
-              width: 'var(--hex-w)',
-              height: 'var(--hex-h)',
-              animationDelay: `${i * 40}ms`,
-              zIndex: isActive ? 10 : 1,
-              opacity: isDimmed ? 0.28 : 1,
-              transform: isActive ? 'scale(1.1)' : 'scale(1)',
-              transition: 'opacity 0.28s ease, transform 0.25s ease',
-              cursor: isEmpty ? 'default' : 'pointer',
-            }}
-            onClick={() => !isEmpty && setActiveIdx(isActive ? null : i)}
-          >
-            {/* ── border ring ── */}
-            <div
-              className="b-hex-border"
-              style={{
-                background: isEmpty
-                  ? 'transparent'
-                  : isActive
-                    ? 'var(--color-accent)'
-                    : 'var(--color-page-bg)',
-              }}
-            />
+          if (isLogo) {
+            // Center logo slot — no hex shell, just the spinning logo
+            return (
+              <div
+                key={slot.cls}
+                className={`${slot.cls} b-logo-slot`}
+                style={{ animationDelay: `${i * 30}ms` }}
+              >
+                <div className="b-logo-mask" />
+              </div>
+            );
+          }
 
-            {/* ── inner content ── */}
+          return (
             <div
-              className="b-hex-inner"
+              key={slot.cls}
+              className={`b-hpop ${slot.cls}`}
               style={{
-                top: insetPx, left: insetPx, right: insetPx, bottom: insetPx,
-                width:  `calc(100% - ${insetPx * 2}px)`,
-                height: `calc(100% - ${insetPx * 2}px)`,
+                position: 'absolute',
+                width: 'var(--hex-w)',
+                height: 'var(--hex-h)',
+                animationDelay: `${i * 30}ms`,
+                zIndex: isActive ? 10 : 1,
+                opacity: isDimmed ? 0.28 : 1,
+                transform: isActive ? 'scale(1.1)' : 'scale(1)',
+                transition: 'opacity 0.28s ease, transform 0.25s ease',
+                cursor: isEmpty ? 'default' : 'pointer',
               }}
+              onClick={() => !isEmpty && setActiveIdx(isActive ? null : i)}
             >
-              {isEmpty ? (
-                /* ── accent placeholder for unfilled slots ── */
-                <div style={{
-                  width: '100%',
-                  height: '100%',
-                  background: 'rgba(212,19,103,0.07)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                  {/* subtle plus-mark so it reads as "open" not broken */}
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <line x1="8" y1="3" x2="8" y2="13" stroke="rgba(212,19,103,0.25)" strokeWidth="1.5" strokeLinecap="round"/>
-                    <line x1="3" y1="8" x2="13" y2="8" stroke="rgba(212,19,103,0.25)" strokeWidth="1.5" strokeLinecap="round"/>
-                  </svg>
-                </div>
-              ) : member.photo ? (
-                <img
-                  src={member.photo}
-                  alt={member.name}
+              {/* border ring — hidden for empty slots */}
+              {!isEmpty && (
+                <div
+                  className="b-hex-border"
                   style={{
-                    width: '100%', height: '100%', objectFit: 'cover', display: 'block',
-                    filter: isActive
-                      ? 'grayscale(0) brightness(1.05)'
-                      : 'grayscale(1) brightness(0.72)',
+                    background: isActive ? 'var(--color-accent)' : 'var(--color-page-bg)',
                   }}
                 />
-              ) : (
-                <div style={{
-                  width: '100%', height: '100%', display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                  backgroundColor: 'rgba(212,19,103,0.1)',
-                  color: 'var(--color-accent)', fontWeight: 700, fontSize: '1.25rem',
-                }}>
-                  {member.name?.[0]}
-                </div>
               )}
+
+              {/* inner content */}
+              <div
+                className="b-hex-inner"
+                style={{
+                  top: isEmpty ? 0 : insetPx,
+                  left: isEmpty ? 0 : insetPx,
+                  right: isEmpty ? 0 : insetPx,
+                  bottom: isEmpty ? 0 : insetPx,
+                  width:  isEmpty ? '100%' : `calc(100% - ${insetPx * 2}px)`,
+                  height: isEmpty ? '100%' : `calc(100% - ${insetPx * 2}px)`,
+                }}
+              >
+                {isEmpty ? (
+                  // Accent placeholder — no icon
+                  <div style={{
+                    width: '100%', height: '100%',
+                    background: 'rgba(212,19,103,0.07)',
+                  }} />
+                ) : member!.photo ? (
+                  <img
+                    src={member!.photo}
+                    alt={member!.name}
+                    style={{
+                      width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                      filter: isActive
+                        ? 'grayscale(0) brightness(1.05)'
+                        : 'grayscale(1) brightness(0.72)',
+                    }}
+                  />
+                ) : (
+                  <div style={{
+                    width: '100%', height: '100%', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: 'rgba(212,19,103,0.1)',
+                    color: 'var(--color-accent)', fontWeight: 700, fontSize: '1.2rem',
+                  }}>
+                    {member!.name?.[0]}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 function Spinner() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '56px 0' }}>
       <div style={{
-        width: 36, height: 36,
+        width: 34, height: 34,
         border: '3px solid rgba(212,19,103,0.15)',
         borderTopColor: 'var(--color-accent)',
         borderRadius: '50%',
@@ -558,7 +672,7 @@ function Spinner() {
 function EmptyState() {
   return (
     <div className="tm-empty">
-      <div className="tm-empty-icon"><Users size={32} /></div>
+      <div className="tm-empty-icon"><Users size={28} /></div>
       <h2>Team info coming soon.</h2>
       <p>Check back later for updates.</p>
     </div>
