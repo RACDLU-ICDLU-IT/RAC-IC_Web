@@ -7,11 +7,13 @@ import { Download, CalendarPlus, Search, List, CalendarDays } from 'lucide-react
 import { useSearchParams } from 'react-router-dom';
 import { Modal } from '../../components/ui/Modal';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
+import { usePoints } from '../../hooks/usePoints';
 
 export default function AdminAttendance() {
   const { adminTenant: tenant } = useAdminTenant();
   const { user } = useAuth();
   const [mode, setMode] = useState<'mark'|'history'|'member'>('mark');
+  const { awardAttendancePoints } = usePoints();
   const [events, setEvents] = useState<any[]>([]);
   const [activeMembers, setActiveMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -182,6 +184,11 @@ export default function AdminAttendance() {
         }, { onConflict: 'id, tenant_id' }));
       });
       await Promise.all(batch);
+      // Award attendance points for present/late members
+      const presentUserIds = Object.entries(attendanceSheet)
+        .filter(([_, status]) => status === 'P' || status === 'L')
+        .map(([userId]) => userId);
+      await Promise.all(presentUserIds.map(uid => awardAttendancePoints(uid, selectedEventId).catch(console.error)));
       addToast('Attendance saved', 'success');
       
       // Update local state instantly so everything is in sync across tabs!
