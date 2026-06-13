@@ -7,7 +7,8 @@ import { supabase } from '../../supabase';
 import {
   Home, User, CalendarDays, Calendar, Presentation, Bell, Settings,
   Users, UserCheck, CheckSquare, FolderOpen, Newspaper, Image as ImageIcon,
-  HeartHandshake, Megaphone, Inbox, Palette, LogOut, Menu, X, LucideIcon, FileText, CreditCard
+  HeartHandshake, Megaphone, Inbox, Palette, LogOut, Menu, X, LucideIcon, FileText, CreditCard,
+  Zap, HandCoins, Trophy
 } from 'lucide-react';
 
 export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?: boolean }) {
@@ -93,6 +94,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       { path: '/dashboard/announcements', label: 'Announcements', icon: Megaphone },
       { path: '/dashboard/resources', label: 'Resources', icon: FolderOpen },
       { path: '/dashboard/dues', label: 'Dues & Fees', icon: CreditCard },
+      { path: '/dashboard/points', label: 'My Points', icon: Zap },
     ]}
   ];
 
@@ -105,6 +107,8 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       { path: '/admin/applications', label: 'Applications', icon: UserCheck, badge: pendingCount },
       { path: '/admin/attendance', label: 'Attendance', icon: CheckSquare },
       { path: '/admin/dues', label: 'Dues & Fees', icon: CreditCard },
+      { path: '/admin/donations', label: 'Donations', icon: HandCoins },
+      { path: '/admin/levels', label: 'Level Config', icon: Trophy },
     ]},
     { title: 'Operations', items: [
       { path: '/admin/events', label: 'Events', icon: Calendar },
