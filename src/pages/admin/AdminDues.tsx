@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useDues, FeeTemplate, LedgerEntry, DuesStats } from '../../hooks/useDues';
+import { usePoints } from '../../hooks/usePoints';
 import { exportSelectedMembers, exportMemberDues, exportDuesSummaryFile } from '../../utils/duesExport';
 import { useToast } from '../../hooks/useToast';
 import { Modal } from '../../components/ui/Modal';
@@ -16,6 +17,7 @@ export default function AdminDues() {
   const { adminTenant: tenant } = useAdminTenant();
   const { user } = useAuth();
   const { addToast } = useToast();
+  const { awardDuePoints } = usePoints();
   const {
     loading,
     markOverdueFees,
@@ -339,6 +341,12 @@ export default function AdminDues() {
                              if (!unpaid.length) return addToast('No unpaid entries', 'info');
                              if (window.confirm(`Mark all ${unpaid.length} unpaid entries as paid for ${m.name}?`)) {
                                  await bulkMarkPaid(unpaid.map(u => u.id));
+                                 // Award points for each paid entry
+                                 await Promise.all(
+                                   unpaid
+                                     .filter(e => e.member_id && e.template_id)
+                                     .map(e => awardDuePoints(e.member_id, e.template_id, e.id).catch(console.error))
+                                 );
                                  loadAllData();
                              }
                          }}>Mark All Unpaid as Paid</Button>
@@ -408,6 +416,12 @@ export default function AdminDues() {
           onClose={() => setShowBulkMarkPaid(false)}
           onConfirm={async (amount, notes, date) => {
              await bulkMarkPaid(selectedIds, amount, date, notes);
+             // Award points for each paid entry based on its template
+             await Promise.all(
+               selectedEntries
+                 .filter(e => e.member_id && e.template_id)
+                 .map(e => awardDuePoints(e.member_id, e.template_id, e.id).catch(console.error))
+             );
              setShowBulkMarkPaid(false);
              setSelectedIds([]);
              loadAllData();
