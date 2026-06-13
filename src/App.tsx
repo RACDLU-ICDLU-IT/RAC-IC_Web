@@ -68,6 +68,9 @@ import PublicForm from './pages/public/PublicForm';
 
 import { AdminTenantProvider } from './contexts/AdminTenantContext';
 import AdminDues from './pages/admin/AdminDues';
+import AdminDonations from './pages/admin/AdminDonations';
+import AdminLevelConfig from './pages/admin/AdminLevelConfig';
+import MemberPoints from './pages/dashboard/MemberPoints';
 import MemberDues from './pages/dashboard/MemberDues';
 
 export default function App() {
@@ -108,6 +111,7 @@ export default function App() {
                     <Route path="announcements" element={<DashboardAnnouncements />} />
                     <Route path="resources" element={<DashboardResources />} />
                     <Route path="dues" element={<MemberDues />} />
+                    <Route path="points" element={<MemberPoints />} />
                   </Route>
                 </Route>
 
@@ -134,6 +138,8 @@ export default function App() {
                     <Route path="settings" element={<AdminSettings />} />
                     
                     {/* Forms management system */}
+                    <Route path="donations" element={<AdminDonations />} />
+                    <Route path="levels" element={<AdminLevelConfig />} />
                     <Route path="forms" element={<AdminForms />} />
                     <Route path="forms/:id/edit" element={<AdminFormBuilder />} />
                     <Route path="forms/:id/responses" element={<AdminFormResponses />} />
