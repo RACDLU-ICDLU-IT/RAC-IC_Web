@@ -3,6 +3,7 @@ import { CreateTemplateInput, FeeTemplate } from '../../hooks/useDues';
 import { supabase } from '../../supabase';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { Button } from '../ui/Button';
+import { Zap, Star, Briefcase, TrendingUp, Landmark } from 'lucide-react';
 
 interface FeeTemplateFormProps {
   isOpen: boolean;
@@ -10,6 +11,12 @@ interface FeeTemplateFormProps {
   onSubmit: (data: CreateTemplateInput) => Promise<FeeTemplate | null>;
   editingTemplate?: FeeTemplate | null;
 }
+
+const FUND_OPTIONS = [
+  { value: 'administrative', label: 'Administrative Fund', icon: Briefcase, color: 'text-blue-600' },
+  { value: 'project',        label: 'Project Fund',        icon: TrendingUp, color: 'text-green-600' },
+  { value: 'endowment',      label: 'Endowment Fund',      icon: Landmark,   color: 'text-purple-600' },
+];
 
 export function FeeTemplateForm({ isOpen, onClose, onSubmit, editingTemplate }: FeeTemplateFormProps) {
   const { adminTenant: tenant } = useAdminTenant();
@@ -23,8 +30,11 @@ export function FeeTemplateForm({ isOpen, onClose, onSubmit, editingTemplate }: 
   const [dueDate, setDueDate] = useState('');
   const [eventId, setEventId] = useState('');
   const [isActive, setIsActive] = useState(true);
+  // Points fields
+  const [xpReward, setXpReward] = useState<number>(0);
+  const [fpReward, setFpReward] = useState<number>(0);
+  const [fundAccount, setFundAccount] = useState<'administrative' | 'project' | 'endowment'>('administrative');
 
-  // For specific members
   const [specificMembers, setSpecificMembers] = useState<string[]>([]);
   const [availableMembers, setAvailableMembers] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
@@ -43,6 +53,9 @@ export function FeeTemplateForm({ isOpen, onClose, onSubmit, editingTemplate }: 
         setDueDate(editingTemplate.due_date || '');
         setEventId(editingTemplate.event_id || '');
         setIsActive(editingTemplate.is_active);
+        setXpReward(editingTemplate.xp_reward || 0);
+        setFpReward(editingTemplate.fp_reward || 0);
+        setFundAccount(editingTemplate.fund_account || 'administrative');
       } else {
         setName('');
         setDescription('');
@@ -54,6 +67,9 @@ export function FeeTemplateForm({ isOpen, onClose, onSubmit, editingTemplate }: 
         setEventId('');
         setIsActive(false);
         setSpecificMembers([]);
+        setXpReward(0);
+        setFpReward(0);
+        setFundAccount('administrative');
       }
     }
   }, [isOpen, editingTemplate]);
@@ -91,7 +107,10 @@ export function FeeTemplateForm({ isOpen, onClose, onSubmit, editingTemplate }: 
       due_date: type === 'custom' ? dueDate : undefined,
       event_id: type === 'event' ? eventId : undefined,
       is_active: isActive,
-      recur_day: 1
+      recur_day: 1,
+      xp_reward: xpReward,
+      fp_reward: fpReward,
+      fund_account: fundAccount,
     });
     setLoading(false);
   };
@@ -118,7 +137,7 @@ export function FeeTemplateForm({ isOpen, onClose, onSubmit, editingTemplate }: 
         </div>
 
         <div className="p-6 flex-1 overflow-y-auto">
-          <form id="feeTemplateForm" onSubmit={handleSubmit} className="space-y-4">
+          <form id="feeTemplateForm" onSubmit={handleSubmit} className="space-y-5">
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Name <span className="text-red-500">*</span></label>
@@ -221,6 +240,67 @@ export function FeeTemplateForm({ isOpen, onClose, onSubmit, editingTemplate }: 
                 />
               </div>
             )}
+
+            {/* ── Points Configuration ────────────────────────────────── */}
+            <div className="border border-gray-100 rounded-xl p-4 bg-gray-50 space-y-4">
+              <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                <Zap size={14} className="text-amber-500" /> Point Rewards (on payment)
+              </h4>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-amber-600 mb-1 flex items-center gap-1">
+                    <Zap size={11} /> XP Reward
+                  </label>
+                  <input
+                    type="number" min="0" step="1"
+                    value={xpReward}
+                    onChange={e => setXpReward(parseInt(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-purple-600 mb-1 flex items-center gap-1">
+                    <Star size={11} /> FP Reward
+                  </label>
+                  <input
+                    type="number" min="0" step="1"
+                    value={fpReward}
+                    onChange={e => setFpReward(parseInt(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-2">Fund Account (where money goes)</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {FUND_OPTIONS.map(opt => {
+                    const Icon = opt.icon;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setFundAccount(opt.value as any)}
+                        className={`p-2.5 rounded-xl text-center text-xs font-bold border transition-colors ${
+                          fundAccount === opt.value
+                            ? 'border-primary bg-primary/5 text-primary'
+                            : 'border-gray-200 text-gray-500 bg-white hover:border-gray-300'
+                        }`}
+                      >
+                        <Icon size={14} className={`mx-auto mb-1 ${fundAccount === opt.value ? 'text-primary' : opt.color}`} />
+                        {opt.value.charAt(0).toUpperCase() + opt.value.slice(1)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1.5">
+                  FP rewards always have backing in the Endowment Fund regardless of account.
+                </p>
+              </div>
+            </div>
 
             <div>
                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
