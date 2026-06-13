@@ -17,6 +17,10 @@ export interface FeeTemplate {
   due_date?: string;
   applies_to: string;
   created_at: string;
+  // Points system fields
+  xp_reward: number;
+  fp_reward: number;
+  fund_account: 'administrative' | 'project' | 'endowment';
 }
 
 export interface LedgerEntry {
