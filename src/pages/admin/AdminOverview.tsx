@@ -4,6 +4,8 @@ import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { Users, UserCheck, CalendarDays, Presentation, Plus, Megaphone, Inbox, Image as ImageIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
+import { usePoints, FundAccount } from '../../hooks/usePoints';
+import { Landmark, Briefcase, TrendingUp } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 
 export default function AdminOverview() {
@@ -17,6 +19,8 @@ export default function AdminOverview() {
   // Dashboard Image Management
   const [dashboardImage, setDashboardImage] = useState<string>('');
   const [isSavingImage, setIsSavingImage] = useState(false);
+  const [fundAccounts, setFundAccounts] = useState<FundAccount[]>([]);
+  const { fetchFundAccounts } = usePoints();
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -47,8 +51,12 @@ export default function AdminOverview() {
         const p3 = supabase.from('events').select('*').gte('date', startOfMonth).eq('tenant_id', tenant.id);
         const p4 = supabase.from('projects').select('*').eq('status', 'Ongoing').eq('tenant_id', tenant.id);
 
-        const [usersSnap, appsSnap, eventsSnap, projectsSnap] = await Promise.all([p1, p2, p3, p4]);
+        // Fetch fund accounts in parallel with other stats so they all resolve together
+        const [usersSnap, appsSnap, eventsSnap, projectsSnap, fundData] = await Promise.all([
+          p1, p2, p3, p4, fetchFundAccounts()
+        ]);
 
+        setFundAccounts(fundData);
         setStats({
           activeMembers: (usersSnap.data || []).length,
           pendingApps: (appsSnap.data || []).length,
@@ -145,6 +153,32 @@ export default function AdminOverview() {
             )}
           </Link>
         ))}
+      </div>
+
+      {/* Fund Balance Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[
+          { type: 'administrative', label: 'Administrative Fund', icon: Briefcase, color: 'text-blue-600 bg-blue-50' },
+          { type: 'project',        label: 'Project Fund',        icon: TrendingUp, color: 'text-green-600 bg-green-50' },
+          { type: 'endowment',      label: 'Endowment Fund',      icon: Landmark,   color: 'text-purple-600 bg-purple-50' },
+        ].map(({ type, label, icon: Icon, color }) => {
+          const fund = fundAccounts.find(f => f.account_type === type);
+          return (
+            <div key={type} className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <div className={"w-9 h-9 rounded-lg flex items-center justify-center " + color}>
+                  <Icon size={18} />
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{type}</span>
+              </div>
+              <p className="text-xs text-gray-500 font-bold mb-1">{label}</p>
+              <p className="text-2xl font-heading font-bold text-gray-900">
+                {loading ? '–' : (fund?.balance || 0).toLocaleString()}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">Total in: {(fund?.total_in || 0).toLocaleString()}</p>
+            </div>
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
