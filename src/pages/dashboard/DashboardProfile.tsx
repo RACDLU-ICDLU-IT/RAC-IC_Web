@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/useToast';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
-import { Save, Loader2, Info } from 'lucide-react';
+import { Save, Loader2, Info, Zap, Star, Trophy } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useTenant } from '../../hooks/useTenant';
 
 export default function DashboardProfile() {
@@ -37,8 +38,11 @@ export default function DashboardProfile() {
     if (!user) return;
     setSaving(true);
     try {
+      // Only send editable fields - never let a member overwrite
+      // admin-managed fields like xp, fp, level, role, status
+      const { xp, fp, level, role, status, id, email, tenant_id, created_at, updatedAt, ...editableFields } = formData;
       await supabase.from('users').update({
-        ...formData,
+        ...editableFields,
         updatedAt: new Date().toISOString()
       }).eq('id', user.id).eq('tenant_id', tenant.id);
       addToast('Profile updated successfully!', 'success');
@@ -108,6 +112,27 @@ export default function DashboardProfile() {
               <div>
                 <span className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Club Role</span>
                 <div className="font-bold text-gray-900 capitalize">{formData.role || 'Member'}</div>
+              </div>
+              {/* Points Summary */}
+              <div className="pt-4 border-t border-gray-50">
+                <span className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Points</span>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-amber-600 font-bold flex items-center gap-1"><Zap size={11} /> XP</span>
+                    <span className="font-bold text-gray-900">{(formData.xp || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-purple-600 font-bold flex items-center gap-1"><Star size={11} /> FP</span>
+                    <span className="font-bold text-gray-900">{(formData.fp || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-primary font-bold flex items-center gap-1"><Trophy size={11} /> Level</span>
+                    <span className="font-bold text-gray-900">{formData.level || 0}</span>
+                  </div>
+                </div>
+                <Link to="/dashboard/points" className="block text-center text-xs text-primary font-bold mt-3 hover:underline">
+                  View Point History →
+                </Link>
               </div>
             </div>
           </div>
