@@ -13,7 +13,7 @@ export default function DashboardProfile() {
   const { addToast } = useToast();
   const [formData, setFormData] = useState<any>({});
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState(falsce);
 
   useEffect(() => {
     const userId = user?.id;
