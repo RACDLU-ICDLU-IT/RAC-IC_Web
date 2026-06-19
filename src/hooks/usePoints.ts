@@ -1,4 +1,4 @@
-]import { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { supabase } from '../supabase';
 import { useToast } from './useToast';
 import { useAuth } from '../contexts/AuthContext';
@@ -104,7 +104,6 @@ export function usePoints() {
     requireAdmin();
     setLoading(true);
     try {
-      // Delete old configs for this tenant then re-insert
       await supabase.from('level_config').delete().eq('tenant_id', tenant.id);
       const rows = configs.map((c, i) => ({
         id: `${tenant.id}-lvl-${c.level}-${Date.now()}-${i}`,
@@ -201,7 +200,6 @@ export function usePoints() {
     requireAdmin();
     if (xpDelta === 0 && fpDelta === 0) return;
 
-    // Write point ledger entry
     const { error: ledgerError } = await supabase.from('point_ledger').insert({
       id: crypto.randomUUID(),
       member_id: memberId,
@@ -214,7 +212,6 @@ export function usePoints() {
     });
     if (ledgerError) err(ledgerError);
 
-    // Fetch current member points
     const { data: memberData } = await supabase
       .from('users')
       .select('xp, fp')
@@ -226,7 +223,6 @@ export function usePoints() {
     const newXP = Math.max(0, currentXP + xpDelta);
     const newFP = Math.max(0, currentFP + fpDelta);
 
-    // Compute new level
     const { data: levelData } = await supabase
       .from('level_config')
       .select('level, xp_required')
@@ -237,7 +233,6 @@ export function usePoints() {
 
     const newLevel = levelData?.[0]?.level || 0;
 
-    // Update user
     const { error: updateError } = await supabase
       .from('users')
       .update({ xp: newXP, fp: newFP, level: newLevel })
@@ -277,7 +272,6 @@ export function usePoints() {
     requireAdmin();
     setLoading(true);
     try {
-      // Fetch point config for this fund
       const { data: configData } = await supabase
         .from('donation_point_config')
         .select('*')
@@ -311,17 +305,12 @@ export function usePoints() {
       });
       if (donationError) err(donationError);
 
-      // Update fund balance
       await adjustFundBalance(input.fund_account, input.amount, 'in');
 
-      // FP points must always be backed by a corresponding amount in the endowment fund.
-      // Only transfer to endowment if the donation itself is NOT already going to endowment
-      // (to avoid double-counting the endowment balance).
       if (fpReward > 0 && input.fund_account !== 'endowment') {
         await adjustFundBalance('endowment', fpReward, 'in');
       }
 
-      // Award points to member
       if (input.member_id && (xpReward > 0 || fpReward > 0)) {
         await awardPoints(
           input.member_id, xpReward, fpReward, 'donation', donationId,
@@ -366,7 +355,6 @@ export function usePoints() {
     templateId: string,
     ledgerId: string
   ): Promise<void> => {
-    // Idempotency: skip if points were already awarded for this ledger entry
     const { data: existing } = await supabase
       .from('point_ledger')
       .select('id')
@@ -388,10 +376,8 @@ export function usePoints() {
     const fp = template.fp_reward || 0;
     const fundAccount = (template.fund_account || 'administrative') as 'administrative' | 'project' | 'endowment';
 
-    // Update fund balance
     await adjustFundBalance(fundAccount, template.amount || 0, 'in');
 
-    // FP backing in endowment — only if dues are NOT going directly to endowment
     if (fp > 0 && fundAccount !== 'endowment') {
       await adjustFundBalance('endowment', fp, 'in');
     }
@@ -418,7 +404,6 @@ export function usePoints() {
     const fp = event.fp_reward || 0;
     if (xp === 0 && fp === 0) return;
 
-    // Idempotency: skip if points were already awarded for this member+event
     const { data: existing } = await supabase
       .from('point_ledger')
       .select('id')
