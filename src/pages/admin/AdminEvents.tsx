@@ -177,6 +177,34 @@ export default function AdminEvents() {
              <input type="checkbox" checked={formData.isPublic || false} onChange={e => setFormData({...formData, isPublic: e.target.checked})} />
              <label className="text-sm font-medium">Show on public Events page</label>
           </div>
+
+          {/* ── Point Rewards on Attendance ── */}
+          <div className="border border-gray-100 rounded-xl p-4 bg-gray-50 space-y-3">
+            <h4 className="text-sm font-bold text-gray-700">Point Rewards (on attendance)</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-amber-600 mb-1">⚡ XP Reward</label>
+                <input
+                  type="number" min="0" step="1"
+                  value={formData.xp_reward || 0}
+                  onChange={e => setFormData({...formData, xp_reward: parseInt(e.target.value) || 0})}
+                  className={inputClass}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-purple-600 mb-1">★ FP Reward</label>
+                <input
+                  type="number" min="0" step="1"
+                  value={formData.fp_reward || 0}
+                  onChange={e => setFormData({...formData, fp_reward: parseInt(e.target.value) || 0})}
+                  className={inputClass}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+            <p className="text-[10px] text-gray-400">Points are awarded when admin marks attendance for this event.</p>
+          </div>
         </div>
         <div className="flex justify-end pt-6 mt-6 border-t border-gray-100">
           <Button onClick={handleSave}>Save Event</Button>
