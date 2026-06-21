@@ -5,7 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
-import { UserCheck, CheckCircle2, XCircle, Eye, Loader2, KeyRound, Copy, Check, Plus, Download } from 'lucide-react';
+import { UserCheck, CheckCircle2, XCircle, Eye, Loader2, KeyRound, Copy, Check, Plus, Download, Trash2 } from 'lucide-react';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 import * as XLSX from 'xlsx';
 
@@ -31,6 +31,7 @@ export default function AdminApplications() {
   
   const [confirmApprove, setConfirmApprove] = useState<any | null>(null);
   const [confirmReject, setConfirmReject] = useState<any | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<any | null>(null);
   const [rejectionNote, setRejectionNote] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const { addToast } = useToast();
@@ -162,7 +163,7 @@ export default function AdminApplications() {
     try {
       await supabase.from('applications').update({ 
         status: 'rejected',
-        rejectionNote
+        rejection_note: rejectionNote
       }).eq('id', confirmReject.id).eq('tenant_id', tenant.id);
       addToast('Application rejected.', 'success');
       setConfirmReject(null);
@@ -181,13 +182,30 @@ export default function AdminApplications() {
     try {
       await supabase.from('applications').update({ 
         status: 'pending',
-        rejectionNote: null
+        rejection_note: null
       }).eq('id', app.id).eq('tenant_id', tenant.id);
       addToast('Application set back to pending.', 'success');
       fetchApplications();
     } catch (err) {
       console.error(err);
       addToast('Failed to update application status', 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    setActionLoading(true);
+    try {
+      const { error } = await supabase.from('applications').delete().eq('id', confirmDelete.id).eq('tenant_id', tenant.id);
+      if (error) throw error;
+      addToast('Application deleted.', 'success');
+      setConfirmDelete(null);
+      fetchApplications();
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to delete application', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -400,6 +418,7 @@ export default function AdminApplications() {
                     </button>
                   )}
                   <button onClick={() => setSelectedApp(app)} className="text-gray-500 hover:text-gray-900 hover:bg-gray-100 p-1 rounded transition-colors"><Eye size={18} /></button>
+                  <button onClick={() => setConfirmDelete(app)} title="Delete" className="text-red-400 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors"><Trash2 size={18} /></button>
                 </div>
               </td>
             </tr>
@@ -435,6 +454,16 @@ export default function AdminApplications() {
           </Button>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={handleDelete}
+        title="Delete Application"
+        message={`Permanently delete ${confirmDelete?.name}'s application? This cannot be undone.`}
+        confirmLabel="Delete"
+        isLoading={actionLoading}
+      />
 
       <Modal isOpen={!!selectedApp} onClose={() => setSelectedApp(null)} title="Application Details" size="md">
         {selectedApp && (
@@ -490,10 +519,10 @@ export default function AdminApplications() {
                 <p className="font-medium">{selectedApp.referredBy || '-'}</p>
               </div>
             </div>
-            {selectedApp.rejectionNote && (
+            {selectedApp.rejection_note && (
               <div>
                 <span className="text-xs text-red-500 uppercase font-bold">Rejection Note</span>
-                <p className="mt-1 text-sm text-red-700 bg-red-50 p-3 rounded">{selectedApp.rejectionNote}</p>
+                <p className="mt-1 text-sm text-red-700 bg-red-50 p-3 rounded">{selectedApp.rejection_note}</p>
               </div>
             )}
           </div>
