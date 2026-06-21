@@ -143,22 +143,8 @@ export default function AdminApplications() {
     if (!confirmApprove) return;
     setActionLoading(true);
     try {
-      const { data: existingUsers } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', confirmApprove.email)
-        .eq('tenant_id', tenant.id);
-        
-      const existingUser = existingUsers && existingUsers.length > 0 ? existingUsers[0] : null;
-
-      if (existingUser) {
-        await supabase.from('users').update({ status: 'active', role: 'member' }).eq('id', existingUser.id).eq('tenant_id', tenant.id);
-        addToast('Application approved. Member profile updated.', 'success');
-      } else {
-        addToast('Application approved. Ask the member to sign up at /login — their account will be activated automatically.', 'success');
-      }
-
       await supabase.from('applications').update({ status: 'approved' }).eq('id', confirmApprove.id).eq('tenant_id', tenant.id);
+      addToast('Application approved.', 'success');
       
       setConfirmApprove(null);
       fetchApplications();
