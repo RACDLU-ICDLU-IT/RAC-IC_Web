@@ -186,4 +186,4 @@ export default function MemberPoints() {
       </div>
     </div>
   );
-}
+} 
