@@ -4,15 +4,41 @@ export default async function handler(req, res) {
   console.log(`\n--- [Webhook Event] New Request Received ---`);
   console.log(`Method: ${req.method}`);
 
-  // FIX: Force clean URL parameter parsing using the raw URL path string
-  const fullUrl = `https://${req.headers.host || 'localhost'}${req.url}`;
-  const parsedUrl = new URL(fullUrl);
-  
-  const mode = parsedUrl.searchParams.get('hub.mode');
-  const token = parsedUrl.searchParams.get('hub.verify_token');
-  const challenge = parsedUrl.searchParams.get('hub.challenge');
+  // === DEEP DIAGNOSTICS ===
+  console.log(`[DEBUG] req.url raw: "${req.url}"`);
+  console.log(`[DEBUG] req.query object: ${JSON.stringify(req.query)}`);
+  console.log(`[DEBUG] req.headers host: "${req.headers?.host}"`);
+
+  // SURE-SHOT: Manual URLSearchParams from req.url directly (no host needed)
+  let mode = null, token = null, challenge = null;
+  try {
+    const questionMarkIndex = req.url?.indexOf('?');
+    if (questionMarkIndex !== -1 && questionMarkIndex !== undefined) {
+      const rawQueryString = req.url.slice(questionMarkIndex + 1);
+      console.log(`[DEBUG] Raw query string sliced: "${rawQueryString}"`);
+      const sp = new URLSearchParams(rawQueryString);
+      mode      = sp.get('hub.mode');
+      token     = sp.get('hub.verify_token');
+      challenge = sp.get('hub.challenge');
+    } else {
+      console.warn(`[DEBUG] No '?' found in req.url — query string absent entirely.`);
+    }
+  } catch (parseErr) {
+    console.error(`[DEBUG] URLSearchParams parse error:`, parseErr);
+  }
+
+  // Fallback: try req.query if manual parse still null
+  if (!mode && req.query) {
+    mode      = req.query['hub.mode']         ?? req.query['hub%2Emode']         ?? null;
+    token     = req.query['hub.verify_token'] ?? req.query['hub%2Everify_token'] ?? null;
+    challenge = req.query['hub.challenge']    ?? req.query['hub%2Echallenge']    ?? null;
+    console.log(`[DEBUG] Fallback req.query used. mode="${mode}" token="${token}"`);
+  }
+
+  console.log(`[DEBUG] Final parsed → mode: "${mode}" | token: "${token}" | challenge: "${challenge}"`);
 
   const VERIFY_TOKEN = process.env.MESSENGER_VERIFY_TOKEN;
+  console.log(`[DEBUG] VERIFY_TOKEN from env: "${VERIFY_TOKEN}"`);
 
   // 1. GET Request: Meta Webhook Verification
   if (req.method === 'GET') {
@@ -22,11 +48,10 @@ export default async function handler(req, res) {
 
     if (mode && token) {
       if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-        console.log("[Verification Success] Tokens match perfectly! Responding with challenge string.");
-        // Send back the challenge token as plain text
+        console.log("[Verification Success] Tokens match! Responding with challenge.");
         return res.status(200).send(challenge);
       } else {
-        console.error("[Verification Failed] Tokens did not match.");
+        console.error(`[Verification Failed] Mode="${mode}" Token match=${token === VERIFY_TOKEN}`);
         return res.status(403).send('Forbidden');
       }
     }
@@ -46,16 +71,15 @@ export default async function handler(req, res) {
         if (!entry.messaging || entry.messaging.length === 0) continue;
 
         const webhook_event = entry.messaging[0];
-        const senderPsid = webhook_event.sender?.id;
-        const messageText = webhook_event.message?.text;
+        const senderPsid   = webhook_event.sender?.id;
+        const messageText  = webhook_event.message?.text;
 
         console.log(`[Message Parse] From PSID: ${senderPsid} | Text: "${messageText}"`);
 
         if (senderPsid && messageText) {
           const cleanText = messageText.trim().toLowerCase();
-
           if (cleanText.includes('ping') || cleanText.includes('@bot ping')) {
-            console.log(`[Trigger Matched] Sending outbound message back via Graph API...`);
+            console.log(`[Trigger Matched] Sending response via Graph API...`);
             await sendMessengerResponse(senderPsid, "Pong! The bot infrastructure is fully live. 🚀");
           }
         }
@@ -74,30 +98,27 @@ async function sendMessengerResponse(senderPsid, textResponse) {
   const PAGE_ACCESS_TOKEN = process.env.MESSENGER_PAGE_ACCESS_TOKEN;
 
   if (!PAGE_ACCESS_TOKEN) {
-    console.error("[CRITICAL] Missing MESSENGER_PAGE_ACCESS_TOKEN environment variable.");
+    console.error("[CRITICAL] Missing MESSENGER_PAGE_ACCESS_TOKEN env variable.");
     return;
   }
 
   const payload = {
     recipient: { id: senderPsid },
-    message: { text: textResponse }
+    message:   { text: textResponse }
   };
 
   try {
-    const response = await fetch(`https://graph.facebook.com/v23.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
+    const response = await fetch(
+      `https://graph.facebook.com/v23.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
+    );
     const responseData = await response.json();
-
     if (response.ok) {
-      console.log(`[Graph API Success] Message delivered to ${senderPsid}. ID:`, responseData.message_id);
+      console.log(`[Graph API Success] Delivered to ${senderPsid}. ID:`, responseData.message_id);
     } else {
-      console.error('[Graph API Failure Details]:', response.status, responseData);
+      console.error('[Graph API Failure]:', response.status, responseData);
     }
   } catch (err) {
-    console.error('[Network Error] Failed connecting to Meta Graph API endpoint:', err);
+    console.error('[Network Error] Meta Graph API unreachable:', err);
   }
 }
