@@ -4,29 +4,33 @@ export default async function handler(req, res) {
   console.log(`\n--- [Webhook Event] New Request Received ---`);
   console.log(`Method: ${req.method}`);
 
-  // Parse query parameters securely from vanilla Vercel request object
-  const urlParams = new URL(req.url, `https://${req.headers.host || 'localhost'}`).searchParams;
-  const mode = urlParams.get('hub.mode') || (req.query && req.query['hub.mode']);
-  const token = urlParams.get('hub.verify_token') || (req.query && req.query['hub.verify_token']);
-  const challenge = urlParams.get('hub.challenge') || (req.query && req.query['hub.challenge']);
+  // FIX: Force clean URL parameter parsing using the raw URL path string
+  const fullUrl = `https://${req.headers.host || 'localhost'}${req.url}`;
+  const parsedUrl = new URL(fullUrl);
+  
+  const mode = parsedUrl.searchParams.get('hub.mode');
+  const token = parsedUrl.searchParams.get('hub.verify_token');
+  const challenge = parsedUrl.searchParams.get('hub.challenge');
 
-  // MATCHED TO YOUR VERCEL DASHBOARD:
   const VERIFY_TOKEN = process.env.MESSENGER_VERIFY_TOKEN;
 
   // 1. GET Request: Meta Webhook Verification
   if (req.method === 'GET') {
     console.log("[GET Verification] Handshake process initiated by Meta...");
+    console.log(`Extracted mode: "${mode}"`);
     console.log(`Received Token: "${token}" | Expected Token: "${VERIFY_TOKEN}"`);
 
     if (mode && token) {
       if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-        console.log("[Verification Success] Tokens match perfectly! Responding with challenge.");
+        console.log("[Verification Success] Tokens match perfectly! Responding with challenge string.");
+        // Send back the challenge token as plain text
         return res.status(200).send(challenge);
       } else {
-        console.error("[Verification Failed] Token mismatch.");
+        console.error("[Verification Failed] Tokens did not match.");
         return res.status(403).send('Forbidden');
       }
     }
+    console.warn("[Verification Failed] Missing hub.mode or hub.verify_token queries.");
     return res.status(400).send('Bad Request');
   }
 
@@ -50,7 +54,6 @@ export default async function handler(req, res) {
         if (senderPsid && messageText) {
           const cleanText = messageText.trim().toLowerCase();
 
-          // Pattern parsing rules
           if (cleanText.includes('ping') || cleanText.includes('@bot ping')) {
             console.log(`[Trigger Matched] Sending outbound message back via Graph API...`);
             await sendMessengerResponse(senderPsid, "Pong! The bot infrastructure is fully live. 🚀");
