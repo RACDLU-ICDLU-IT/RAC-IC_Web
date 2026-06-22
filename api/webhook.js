@@ -1,21 +1,20 @@
 // api/webhook.js
 
-const SYSTEM_PROMPT = `You are the official AI assistant for Interact Club of Dhaka Luminous (ICDLU) and Rotaract Club of Dhaka Luminous (RACDLU).
+const SYSTEM_PROMPT = `You are an official AI assistant for a youth service club.
 
 Your personality:
 - Friendly, helpful, and professional
-- Proud representative of the Luminous clubs
 - Knowledgeable about Rotary, Rotaract, and Interact programs
 
 You can help with:
-- Information about ICDLU and RACDLU clubs
+- Information about the club and its programs
 - Rotary/Rotaract/Interact program details
 - Club events, meetings, and activities
 - Membership and joining information
 - General questions and assistance
 
 Rules:
-- Keep responses concise and under 300 characters when possible (Messenger limitation)
+- Keep responses concise but complete — never cut off mid-sentence
 - Always be warm and welcoming
 - If unsure about specific club details, say so honestly
 - Never make up event dates or member information
@@ -34,7 +33,7 @@ async function callGemini(userMessage) {
       body: JSON.stringify({
         system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{ role: "user", parts: [{ text: userMessage }] }],
-        generationConfig: { maxOutputTokens: 200, temperature: 0.7 }
+        generationConfig: { temperature: 0.7 }
       })
     }
   );
@@ -67,7 +66,7 @@ async function callGroq(userMessage) {
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user",   content: userMessage }
       ],
-      max_tokens: 200,
+      max_tokens: 4096,
       temperature: 0.7
     })
   });
@@ -89,19 +88,15 @@ async function getAIResponse(userMessage) {
     console.log("[AI] Gemini success.");
     return reply;
   } catch (err) {
-    if (err.message === "QUOTA_EXCEEDED" || err.message.includes("429")) {
-      console.warn("[AI] Gemini quota exceeded. Falling back to Groq...");
-      try {
-        const reply = await callGroq(userMessage);
-        console.log("[AI] Groq fallback success.");
-        return reply;
-      } catch (groqErr) {
-        console.error("[AI] Groq also failed:", groqErr.message);
-        return "Our assistant is temporarily unavailable. A team member from ICDLU/RACDLU will reach out to you soon. Thank you for your patience! 🙏";
-      }
+    console.warn(`[AI] Gemini failed (${err.message}). Falling back to Groq...`);
+    try {
+      const reply = await callGroq(userMessage);
+      console.log("[AI] Groq fallback success.");
+      return reply;
+    } catch (groqErr) {
+      console.error("[AI] Groq also failed:", groqErr.message);
+      return "Our assistant is temporarily unavailable. A team member will reach out to you soon. Thank you for your patience! 🙏";
     }
-    console.error("[AI] Gemini failed (non-quota):", err.message);
-    return "Our assistant is temporarily unavailable. A team member from ICDLU/RACDLU will reach out to you soon. Thank you for your patience! 🙏";
   }
 }
 
