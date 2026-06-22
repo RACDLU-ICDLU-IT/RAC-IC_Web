@@ -39,6 +39,7 @@
     "vite": "^6.2.0",
     "xlsx": "^0.18.5",
     "zod": "^4.3.6"
+    "axios": "^1.7.2"
   },
   "devDependencies": {
     "@types/dompurify": "^3.0.5",
