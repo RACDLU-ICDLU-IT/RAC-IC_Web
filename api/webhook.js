@@ -1,87 +1,205 @@
 // api/webhook.js
 
-export default async function handler(req, res) {
-  console.log(`\n--- [Webhook Event] New Request Received ---`);
-  console.log(`Method: ${req.method}`);
+const SYSTEM_PROMPT = `You are the official AI assistant for Interact Club of Dhaka Luminous (ICDLU) and Rotaract Club of Dhaka Luminous (RACDLU).
 
-  // === DEEP DIAGNOSTICS ===
-  console.log(`[DEBUG] req.url raw: "${req.url}"`);
-  console.log(`[DEBUG] req.query object: ${JSON.stringify(req.query)}`);
-  console.log(`[DEBUG] req.headers host: "${req.headers?.host}"`);
+Your personality:
+- Friendly, helpful, and professional
+- Proud representative of the Luminous clubs
+- Knowledgeable about Rotary, Rotaract, and Interact programs
 
-  // SURE-SHOT: Manual URLSearchParams from req.url directly (no host needed)
-  let mode = null, token = null, challenge = null;
-  try {
-    const questionMarkIndex = req.url?.indexOf('?');
-    if (questionMarkIndex !== -1 && questionMarkIndex !== undefined) {
-      const rawQueryString = req.url.slice(questionMarkIndex + 1);
-      console.log(`[DEBUG] Raw query string sliced: "${rawQueryString}"`);
-      const sp = new URLSearchParams(rawQueryString);
-      mode      = sp.get('hub.mode');
-      token     = sp.get('hub.verify_token');
-      challenge = sp.get('hub.challenge');
-    } else {
-      console.warn(`[DEBUG] No '?' found in req.url — query string absent entirely.`);
+You can help with:
+- Information about ICDLU and RACDLU clubs
+- Rotary/Rotaract/Interact program details
+- Club events, meetings, and activities
+- Membership and joining information
+- General questions and assistance
+
+Rules:
+- Keep responses concise and under 300 characters when possible (Messenger limitation)
+- Always be warm and welcoming
+- If unsure about specific club details, say so honestly
+- Never make up event dates or member information
+- Respond in the same language the user writes in (Bengali or English)`;
+
+// ── AI Provider: Gemini ──────────────────────────────────────────────
+async function callGemini(userMessage) {
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_API_KEY) throw new Error("Missing GEMINI_API_KEY");
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ role: "user", parts: [{ text: userMessage }] }],
+        generationConfig: { maxOutputTokens: 200, temperature: 0.7 }
+      })
     }
-  } catch (parseErr) {
-    console.error(`[DEBUG] URLSearchParams parse error:`, parseErr);
+  );
+
+  if (!response.ok) {
+    const err = await response.json();
+    // 429 = quota exceeded → trigger fallback
+    if (response.status === 429) throw new Error("QUOTA_EXCEEDED");
+    throw new Error(`Gemini error ${response.status}: ${JSON.stringify(err)}`);
   }
 
-  // Fallback: try req.query if manual parse still null
-  if (!mode && req.query) {
-    mode      = req.query['hub.mode']         ?? req.query['hub%2Emode']         ?? null;
-    token     = req.query['hub.verify_token'] ?? req.query['hub%2Everify_token'] ?? null;
-    challenge = req.query['hub.challenge']    ?? req.query['hub%2Echallenge']    ?? null;
-    console.log(`[DEBUG] Fallback req.query used. mode="${mode}" token="${token}"`);
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+}
+
+// ── AI Provider: Groq (fallback) ─────────────────────────────────────
+async function callGroq(userMessage) {
+  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  if (!GROQ_API_KEY) throw new Error("Missing GROQ_API_KEY");
+
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${GROQ_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: "llama3-8b-8192",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user",   content: userMessage }
+      ],
+      max_tokens: 200,
+      temperature: 0.7
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(`Groq error ${response.status}: ${JSON.stringify(err)}`);
   }
 
-  console.log(`[DEBUG] Final parsed → mode: "${mode}" | token: "${token}" | challenge: "${challenge}"`);
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content ?? null;
+}
 
-  const VERIFY_TOKEN = process.env.MESSENGER_VERIFY_TOKEN;
-  console.log(`[DEBUG] VERIFY_TOKEN from env: "${VERIFY_TOKEN}"`);
-
-  // 1. GET Request: Meta Webhook Verification
-  if (req.method === 'GET') {
-    console.log("[GET Verification] Handshake process initiated by Meta...");
-    console.log(`Extracted mode: "${mode}"`);
-    console.log(`Received Token: "${token}" | Expected Token: "${VERIFY_TOKEN}"`);
-
-    if (mode && token) {
-      if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-        console.log("[Verification Success] Tokens match! Responding with challenge.");
-        return res.status(200).send(challenge);
-      } else {
-        console.error(`[Verification Failed] Mode="${mode}" Token match=${token === VERIFY_TOKEN}`);
-        return res.status(403).send('Forbidden');
+// ── AI Router: Gemini first, Groq on quota error ─────────────────────
+async function getAIResponse(userMessage) {
+  try {
+    console.log("[AI] Trying Gemini...");
+    const reply = await callGemini(userMessage);
+    console.log("[AI] Gemini success.");
+    return reply;
+  } catch (err) {
+    if (err.message === "QUOTA_EXCEEDED" || err.message.includes("429")) {
+      console.warn("[AI] Gemini quota exceeded. Falling back to Groq...");
+      try {
+        const reply = await callGroq(userMessage);
+        console.log("[AI] Groq fallback success.");
+        return reply;
+      } catch (groqErr) {
+        console.error("[AI] Groq also failed:", groqErr.message);
+        return "Our assistant is temporarily unavailable. A team member from ICDLU/RACDLU will reach out to you soon. Thank you for your patience! 🙏";
       }
     }
-    console.warn("[Verification Failed] Missing hub.mode or hub.verify_token queries.");
-    return res.status(400).send('Bad Request');
+    console.error("[AI] Gemini failed (non-quota):", err.message);
+    return "Our assistant is temporarily unavailable. A team member from ICDLU/RACDLU will reach out to you soon. Thank you for your patience! 🙏";
+  }
+}
+
+// ── Messenger Send ────────────────────────────────────────────────────
+async function sendMessengerResponse(senderPsid, textResponse) {
+  const PAGE_ACCESS_TOKEN = process.env.MESSENGER_PAGE_ACCESS_TOKEN;
+  if (!PAGE_ACCESS_TOKEN) {
+    console.error("[CRITICAL] Missing MESSENGER_PAGE_ACCESS_TOKEN.");
+    return;
   }
 
-  // 2. POST Request: Handles live incoming chat text
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/v23.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipient: { id: senderPsid },
+          message:   { text: textResponse }
+        })
+      }
+    );
+    const data = await response.json();
+    if (response.ok) {
+      console.log(`[Graph API] Delivered to ${senderPsid}. ID:`, data.message_id);
+    } else {
+      console.error("[Graph API] Failed:", response.status, data);
+    }
+  } catch (err) {
+    console.error("[Network Error] Meta Graph API:", err);
+  }
+}
+
+// ── Main Handler ──────────────────────────────────────────────────────
+export default async function handler(req, res) {
+  console.log(`\n--- [Webhook] ${req.method} ---`);
+
+  // Parse query params
+  const questionMarkIndex = req.url?.indexOf('?');
+  let mode = null, token = null, challenge = null;
+  if (questionMarkIndex !== -1 && questionMarkIndex !== undefined) {
+    const sp = new URLSearchParams(req.url.slice(questionMarkIndex + 1));
+    mode      = sp.get('hub.mode');
+    token     = sp.get('hub.verify_token');
+    challenge = sp.get('hub.challenge');
+  }
+  if (!mode && req.query) {
+    mode      = req.query['hub.mode']         ?? null;
+    token     = req.query['hub.verify_token'] ?? null;
+    challenge = req.query['hub.challenge']    ?? null;
+  }
+
+  const VERIFY_TOKEN = process.env.MESSENGER_VERIFY_TOKEN;
+
+  // 1. GET: Meta verification
+  if (req.method === 'GET') {
+    console.log(`[GET] mode="${mode}" token="${token}"`);
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+      console.log("[Verification] Success.");
+      return res.status(200).send(challenge);
+    }
+    console.warn("[Verification] Failed.");
+    return res.status(mode && token ? 403 : 400).send(mode && token ? 'Forbidden' : 'Bad Request');
+  }
+
+  // 2. POST: Incoming messages
   if (req.method === 'POST') {
     const body = req.body;
-    console.log("[POST Message] Full payload body incoming:", JSON.stringify(body, null, 2));
 
-    if (body && body.object === 'page') {
+    if (body?.object === 'page') {
       if (!body.entry || !Array.isArray(body.entry)) return res.status(200).send('EVENT_RECEIVED');
 
       for (const entry of body.entry) {
-        if (!entry.messaging || entry.messaging.length === 0) continue;
+        if (!entry.messaging?.length) continue;
 
-        const webhook_event = entry.messaging[0];
-        const senderPsid   = webhook_event.sender?.id;
-        const messageText  = webhook_event.message?.text;
+        const event       = entry.messaging[0];
+        const senderPsid  = event.sender?.id;
+        const messageText = event.message?.text;
 
-        console.log(`[Message Parse] From PSID: ${senderPsid} | Text: "${messageText}"`);
+        // Ignore echo messages from the page itself
+        if (event.message?.is_echo) continue;
+
+        console.log(`[Message] PSID: ${senderPsid} | Text: "${messageText}"`);
 
         if (senderPsid && messageText) {
-          const cleanText = messageText.trim().toLowerCase();
-          if (cleanText.includes('ping') || cleanText.includes('@bot ping')) {
-            console.log(`[Trigger Matched] Sending response via Graph API...`);
-            await sendMessengerResponse(senderPsid, "Pong! The bot infrastructure is fully live. 🚀");
-          }
+          // Send typing indicator
+          await fetch(
+            `https://graph.facebook.com/v23.0/me/messages?access_token=${process.env.MESSENGER_PAGE_ACCESS_TOKEN}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ recipient: { id: senderPsid }, sender_action: "typing_on" })
+            }
+          ).catch(() => {});
+
+          const aiReply = await getAIResponse(messageText);
+          await sendMessengerResponse(senderPsid, aiReply);
         }
       }
 
@@ -91,34 +209,4 @@ export default async function handler(req, res) {
   }
 
   return res.status(405).send('Method Not Allowed');
-}
-
-// 3. Outbound Graph API Sender Engine
-async function sendMessengerResponse(senderPsid, textResponse) {
-  const PAGE_ACCESS_TOKEN = process.env.MESSENGER_PAGE_ACCESS_TOKEN;
-
-  if (!PAGE_ACCESS_TOKEN) {
-    console.error("[CRITICAL] Missing MESSENGER_PAGE_ACCESS_TOKEN env variable.");
-    return;
-  }
-
-  const payload = {
-    recipient: { id: senderPsid },
-    message:   { text: textResponse }
-  };
-
-  try {
-    const response = await fetch(
-      `https://graph.facebook.com/v23.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }
-    );
-    const responseData = await response.json();
-    if (response.ok) {
-      console.log(`[Graph API Success] Delivered to ${senderPsid}. ID:`, responseData.message_id);
-    } else {
-      console.error('[Graph API Failure]:', response.status, responseData);
-    }
-  } catch (err) {
-    console.error('[Network Error] Meta Graph API unreachable:', err);
-  }
 }
