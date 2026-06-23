@@ -11,11 +11,9 @@ import { ToastProvider } from './hooks/useToast';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-// Layouts
 import MainLayout from './components/layout/MainLayout';
 import DashboardLayout from './components/layout/DashboardLayout';
 
-// Dashboard Pages
 import DashboardHome from './pages/dashboard/DashboardHome';
 import DashboardProfile from './pages/dashboard/DashboardProfile';
 import DashboardAttendance from './pages/dashboard/DashboardAttendance';
@@ -25,7 +23,6 @@ import DashboardReminders from './pages/dashboard/DashboardReminders';
 import DashboardAnnouncements from './pages/dashboard/DashboardAnnouncements';
 import DashboardResources from './pages/dashboard/DashboardResources';
 
-// Public Pages
 import Home from './pages/Home';
 import About from './pages/About';
 import Projects from './pages/Projects';
@@ -43,7 +40,6 @@ import Donate from './pages/Donate';
 import TermsOfService from './pages/TermsOfService';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 
-// Admin Pages
 import AdminOverview from './pages/admin/AdminOverview';
 import AdminSettings from './pages/admin/AdminSettings';
 import AdminMembers from './pages/admin/AdminMembers';
@@ -64,8 +60,8 @@ import AdminSponsors from './pages/admin/AdminSponsors';
 import AdminForms from './pages/admin/AdminForms';
 import AdminFormBuilder from './pages/admin/AdminFormBuilder';
 import AdminFormResponses from './pages/admin/AdminFormResponses';
+import AdminBotManager from './pages/admin/AdminBotManager';
 
-// Public Form Submitter Page
 import PublicForm from './pages/public/PublicForm';
 
 import { AdminTenantProvider } from './contexts/AdminTenantContext';
@@ -81,9 +77,8 @@ export default function App() {
       <TenantProvider>
         <ToastProvider>
           <BrowserRouter>
-              <ErrorBoundary>
+            <ErrorBoundary>
               <Routes>
-                {/* Public Routes with MainLayout */}
                 <Route element={<MainLayout />}>
                   <Route path="/" element={<Home />} />
                   <Route path="/about" element={<About />} />
@@ -103,7 +98,6 @@ export default function App() {
                   <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                 </Route>
 
-                {/* Secure Dashboard Routes */}
                 <Route element={<ProtectedRoute />}>
                   <Route path="/dashboard" element={<DashboardLayout />}>
                     <Route index element={<DashboardHome />} />
@@ -119,7 +113,6 @@ export default function App() {
                   </Route>
                 </Route>
 
-                {/* Secure Admin Routes */}
                 <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin /></AdminTenantProvider>}>
                   <Route path="/admin" element={<DashboardLayout isAdminMode />}>
                     <Route index element={<AdminOverview />} />
@@ -140,20 +133,18 @@ export default function App() {
                     <Route path="sponsors" element={<AdminSponsors />} />
                     <Route path="theme" element={<AdminTheme />} />
                     <Route path="settings" element={<AdminSettings />} />
-                    
-                    {/* Forms management system */}
                     <Route path="donations" element={<AdminDonations />} />
                     <Route path="levels" element={<AdminLevelConfig />} />
                     <Route path="forms" element={<AdminForms />} />
                     <Route path="forms/:id/edit" element={<AdminFormBuilder />} />
                     <Route path="forms/:id/responses" element={<AdminFormResponses />} />
+                    <Route path="bot" element={<AdminBotManager />} />
                   </Route>
                 </Route>
 
-                {/* Public Form Submission Screen */}
                 <Route path="/forms/:slug" element={<PublicForm />} />
               </Routes>
-              </ErrorBoundary>
+            </ErrorBoundary>
           </BrowserRouter>
         </ToastProvider>
       </TenantProvider>
