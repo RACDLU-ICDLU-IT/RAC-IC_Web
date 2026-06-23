@@ -130,7 +130,7 @@ async function callGroq(systemPrompt, history, userMessage) {
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_API_KEY}` },
-    body: JSON.stringify({ model: 'llama3-8b-8192', messages, temperature: 0.7 })
+    body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, temperature: 0.7 })
   });
 
   if (!response.ok) {
