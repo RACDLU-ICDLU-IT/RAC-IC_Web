@@ -8,7 +8,7 @@ import {
   Home, User, CalendarDays, Calendar, Presentation, Bell, Settings,
   Users, UserCheck, CheckSquare, FolderOpen, Newspaper, Image as ImageIcon,
   HeartHandshake, Megaphone, Inbox, Palette, LogOut, Menu, X, LucideIcon, FileText, CreditCard,
-  Zap, HandCoins, Trophy
+  Zap, HandCoins, Trophy, Bot
 } from 'lucide-react';
 
 export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?: boolean }) {
@@ -22,16 +22,16 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
 
   const isLight = theme.primary === '#FFFFFF' || theme.primary.toLowerCase() === '#ffffff';
 
-  const sidebarText    = isLight ? 'text-gray-900'              : 'text-white';
-  const sidebarMuted   = isLight ? 'text-gray-500'              : 'text-white/60';
-  const sidebarSection = isLight ? 'text-gray-400'              : 'text-white/30';
-  const sidebarBorder  = isLight ? 'border-gray-200'            : 'border-white/10';
-  const sidebarHoverBg = isLight ? 'hover:bg-gray-100'          : 'hover:bg-white/5';
-  
+  const sidebarText    = isLight ? 'text-gray-900'     : 'text-white';
+  const sidebarMuted   = isLight ? 'text-gray-500'     : 'text-white/60';
+  const sidebarSection = isLight ? 'text-gray-400'     : 'text-white/30';
+  const sidebarBorder  = isLight ? 'border-gray-200'   : 'border-white/10';
+  const sidebarHoverBg = isLight ? 'hover:bg-gray-100' : 'hover:bg-white/5';
+
   const sidebarActiveClass = isLight
     ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)] font-bold'
     : 'bg-white/10 text-white font-bold';
-    
+
   const sidebarInactiveClass = isLight
     ? `text-gray-600 ${sidebarHoverBg} hover:text-[var(--color-accent)]`
     : `text-white/60 hover:bg-white/5 hover:text-white`;
@@ -40,26 +40,22 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
     if (!isAdminMode) return;
 
     supabase.from('applications').select('*', { count: 'exact', head: true })
-      .eq('status', 'pending')
-      .eq('tenant_id', adminTenant.id)
+      .eq('status', 'pending').eq('tenant_id', adminTenant.id)
       .then(({ count }) => setPendingCount(count ?? 0));
 
     supabase.from('contact_messages').select('*', { count: 'exact', head: true })
-      .eq('read', false)
-      .eq('tenant_id', adminTenant.id)
+      .eq('read', false).eq('tenant_id', adminTenant.id)
       .then(({ count }) => setUnreadCount(count ?? 0));
 
     const channel = supabase.channel('admin-badges')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'applications' }, () => {
         supabase.from('applications').select('*', { count: 'exact', head: true })
-          .eq('status', 'pending')
-          .eq('tenant_id', adminTenant.id)
+          .eq('status', 'pending').eq('tenant_id', adminTenant.id)
           .then(({ count }) => setPendingCount(count ?? 0));
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'contact_messages' }, () => {
         supabase.from('contact_messages').select('*', { count: 'exact', head: true })
-          .eq('read', false)
-          .eq('tenant_id', adminTenant.id)
+          .eq('read', false).eq('tenant_id', adminTenant.id)
           .then(({ count }) => setUnreadCount(count ?? 0));
       })
       .subscribe();
@@ -67,11 +63,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
     return () => { supabase.removeChannel(channel); };
   }, [isAdminMode, adminTenant.id]);
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate('/');
-  };
-
+  const handleSignOut = async () => { await signOut(); navigate('/'); };
   const closeMobile = () => setMobileOpen(false);
 
   const roleColors: Record<string, string> = {
@@ -125,7 +117,11 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       { path: '/admin/board', label: 'Our Team', icon: Users },
       { path: '/admin/contact', label: 'Contact Inbox', icon: Inbox, badge: unreadCount },
     ]},
+    { title: 'Bot', items: [
+      { path: '/admin/bot', label: 'Bot Manager', icon: Bot },
+    ]},
     { title: 'System', items: [
+      { path: '/admin/sponsors', label: 'Sponsors', icon: HeartHandshake },
       { path: '/admin/theme', label: 'Theme', icon: Palette },
       { path: '/admin/settings', label: 'Settings', icon: Settings },
     ]}
@@ -135,23 +131,17 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
 
   return (
     <div className="flex min-h-screen bg-gray-50 h-[100dvh]">
-      {/* Mobile Sidebar Overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={closeMobile} />
       )}
 
-      {/* Sidebar */}
       <aside className={`fixed md:relative flex flex-col w-[260px] h-full bg-[var(--color-primary)] ${sidebarText} z-50 transform transition-transform duration-300 ease-in-out ${mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-        
-        {/* Top Header */}
         <div className={`p-6 shrink-0 border-b ${sidebarBorder} flex flex-col gap-4`}>
           <NavLink to="/" className="flex items-center gap-3">
             {settings.logoUrl ? (
-              <img 
-                src={settings.logoUrl} 
-                alt="Logo" 
-                onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} 
-                className={`h-10 w-auto object-contain ${isLight ? 'bg-gray-100' : 'bg-white/10'} rounded p-1`} 
+              <img src={settings.logoUrl} alt="Logo"
+                onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }}
+                className={`h-10 w-auto object-contain ${isLight ? 'bg-gray-100' : 'bg-white/10'} rounded p-1`}
               />
             ) : (
               <span className="font-heading font-bold text-lg">{settings.clubName}</span>
@@ -167,33 +157,19 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           </div>
         </div>
 
-        {/* Tenant Switcher (Master Admin Only) */}
         {isAdminMode && profile?.role === 'master_admin' && (
           <div className="mx-3 mt-4 p-1 bg-black/10 rounded-lg flex gap-1 shrink-0">
-            <button
-              onClick={() => setAdminTenant('icdlu')}
+            <button onClick={() => setAdminTenant('icdlu')}
               className={`flex-1 py-2 px-3 rounded-md text-xs font-semibold transition-all ${
-                adminTenant.id === 'icdlu' 
-                  ? 'bg-white text-gray-900 shadow-sm' 
-                  : `${isLight ? 'text-gray-500 hover:text-gray-900' : 'text-white/70 hover:text-white'}`
-              }`}
-            >
-              ICDLU
-            </button>
-            <button
-              onClick={() => setAdminTenant('racdlu')}
+                adminTenant.id === 'icdlu' ? 'bg-white text-gray-900 shadow-sm' : `${isLight ? 'text-gray-500 hover:text-gray-900' : 'text-white/70 hover:text-white'}`
+              }`}>ICDLU</button>
+            <button onClick={() => setAdminTenant('racdlu')}
               className={`flex-1 py-2 px-3 rounded-md text-xs font-semibold transition-all ${
-                adminTenant.id === 'racdlu' 
-                  ? 'bg-white text-gray-900 shadow-sm' 
-                  : `${isLight ? 'text-gray-500 hover:text-gray-900' : 'text-white/70 hover:text-white'}`
-              }`}
-            >
-              RACDLU
-            </button>
+                adminTenant.id === 'racdlu' ? 'bg-white text-gray-900 shadow-sm' : `${isLight ? 'text-gray-500 hover:text-gray-900' : 'text-white/70 hover:text-white'}`
+              }`}>RACDLU</button>
           </div>
         )}
 
-        {/* Navigation */}
         <div className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1 hide-scrollbar">
           {navToUse.map((section, idx) => (
             <div key={idx} className="mb-4">
@@ -204,17 +180,9 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
               )}
               <div className="flex flex-col gap-1">
                 {section.items.map((item) => (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    end={item.exact}
-                    onClick={closeMobile}
+                  <NavLink key={item.path} to={item.path} end={item.exact} onClick={closeMobile}
                     className={({ isActive }) =>
-                      `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm ${
-                        isActive
-                          ? sidebarActiveClass
-                          : sidebarInactiveClass
-                      }`
+                      `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm ${isActive ? sidebarActiveClass : sidebarInactiveClass}`
                     }
                   >
                     <item.icon size={18} className="shrink-0" />
@@ -231,10 +199,8 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           ))}
         </div>
 
-        {/* Footer */}
         <div className={`p-4 border-t ${sidebarBorder} shrink-0`}>
-          <button
-            onClick={handleSignOut}
+          <button onClick={handleSignOut}
             className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-colors text-sm ${sidebarMuted} ${sidebarHoverBg} hover:${isLight ? 'text-[var(--color-accent)]' : 'text-white'}`}
           >
             <LogOut size={18} className="shrink-0" />
@@ -243,9 +209,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
         </div>
       </aside>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
-        {/* Mobile Navbar */}
         <header className="md:hidden flex items-center justify-between bg-white px-4 py-3 border-b border-gray-100 shrink-0">
           <button onClick={() => setMobileOpen(true)} className="p-1 text-gray-500 hover:text-gray-900 rounded">
             <Menu size={24} />
@@ -253,8 +217,6 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           <span className="font-heading font-bold text-gray-900">{isAdminMode ? 'Admin Panel' : 'Dashboard'}</span>
           <div className="w-6"></div>
         </header>
-
-        {/* Scrollable Main Area */}
         <main className="flex-1 overflow-y-auto p-4 md:p-10 w-full relative">
           <div className="mx-auto max-w-7xl">
             <Outlet />
