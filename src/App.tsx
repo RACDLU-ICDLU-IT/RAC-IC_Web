@@ -40,6 +40,8 @@ import Join from './pages/Join';
 import Login from './pages/auth/Login';
 import Sponsorship from './pages/Sponsorship';
 import Donate from './pages/Donate';
+import TermsOfService from './pages/TermsOfService';
+import PrivacyPolicy from './pages/PrivacyPolicy';
 
 // Admin Pages
 import AdminOverview from './pages/admin/AdminOverview';
@@ -97,6 +99,8 @@ export default function App() {
                   <Route path="/sponsorship" element={<Sponsorship />} />
                   <Route path="/donate" element={<Donate />} />
                   <Route path="/login" element={<Login />} />
+                  <Route path="/terms-of-service" element={<TermsOfService />} />
+                  <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                 </Route>
 
                 {/* Secure Dashboard Routes */}
