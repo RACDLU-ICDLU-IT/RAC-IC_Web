@@ -1,34 +1,9 @@
 // api/webhook.js
 import { createClient } from '@supabase/supabase-js';
 
-// ── Supabase ──────────────────────────────────────────────────────────
-function getSupabase() {
-  return createClient(
-    process.env.VITE_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
-}
-
-// ── Page Token Router ─────────────────────────────────────────────────
-const PAGE_TOKEN_MAP = {
-  [process.env.PAGE_ID_1]: process.env.MESSENGER_PAGE_ACCESS_TOKEN,
-  [process.env.PAGE_ID_2]: process.env.MESSENGER_PAGE_ACCESS_TOKEN_2,
-};
-
-function getPageToken(pageId) {
-  const token = PAGE_TOKEN_MAP[pageId];
-  if (!token) {
-    console.warn(`[Token] Unknown page ${pageId}, using default.`);
-    return process.env.MESSENGER_PAGE_ACCESS_TOKEN;
-  }
-  return token;
-}
-
-// ── Supabase: Fetch system prompt for page ────────────────────────────
-async function getSystemPrompt(pageId) {
-  const DEFAULT_PROMPT = `You are an official AI assistant for a youth service club.
+const DEFAULT_PROMPT = `You are an official AI assistant for a youth service club.
 Personality: Friendly, helpful, professional.
-You help with: club info, Rotary/Rotaract/Interact programs, events, membership.
+Help with: club info, Rotary/Rotaract/Interact programs, events, membership.
 Rules:
 - Never cut off mid-sentence
 - Be warm and welcoming
@@ -36,66 +11,111 @@ Rules:
 - Respond in user's language (Bengali or English)
 - Do not mention specific club names unless told in this prompt`;
 
-  try {
-    const sb = getSupabase();
-    const { data, error } = await sb
-      .from('bot_config')
-      .select('value')
-      .eq('page_id', pageId)
-      .eq('key', 'system_prompt')
-      .single();
-
-    if (error || !data?.value) return DEFAULT_PROMPT;
-    return data.value;
-  } catch {
-    return DEFAULT_PROMPT;
-  }
+function getSupabase() {
+  return createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
-// ── Supabase: Fetch conversation history ──────────────────────────────
+const PAGE_TOKEN_MAP = {
+  [process.env.PAGE_ID_1]: process.env.MESSENGER_PAGE_ACCESS_TOKEN,
+  [process.env.PAGE_ID_2]: process.env.MESSENGER_PAGE_ACCESS_TOKEN_2,
+};
+
+function getPageToken(pageId) {
+  return PAGE_TOKEN_MAP[pageId] || process.env.MESSENGER_PAGE_ACCESS_TOKEN;
+}
+
+// ── Check if psid is paused + auto-expire ────────────────────────────
+async function isPaused(psid, pageId) {
+  const sb = getSupabase();
+  const { data } = await sb.from('bot_paused').select('auto_resume_at').eq('psid', psid).eq('page_id', pageId).single();
+  if (!data) return false;
+  if (data.auto_resume_at && new Date(data.auto_resume_at) < new Date()) {
+    await sb.from('bot_paused').delete().eq('psid', psid).eq('page_id', pageId);
+    return false;
+  }
+  return true;
+}
+
+// ── Auto-pause on echo (admin replied) ──────────────────────────────
+async function autoPauseFromEcho(psid, pageId) {
+  const sb = getSupabase();
+  const resumeAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
+  await sb.from('bot_paused').upsert(
+    { psid, page_id: pageId, paused_at: new Date().toISOString(), auto_resume_at: resumeAt },
+    { onConflict: 'psid,page_id' }
+  );
+}
+
+// ── Fetch system prompt ──────────────────────────────────────────────
+async function getSystemPrompt(pageId) {
+  try {
+    const { data } = await getSupabase().from('bot_config').select('value').eq('page_id', pageId).eq('key', 'system_prompt').single();
+    return data?.value || DEFAULT_PROMPT;
+  } catch { return DEFAULT_PROMPT; }
+}
+
+// ── Fetch conversation history ───────────────────────────────────────
 async function getHistory(psid, pageId, limit = 10) {
   try {
-    const sb = getSupabase();
-    const { data, error } = await sb
-      .from('conversations')
+    const { data } = await getSupabase()
+      .from('bot_conversations')
       .select('role, content')
-      .eq('psid', psid)
-      .eq('page_id', pageId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (error || !data) return [];
-    return data.reverse();
-  } catch {
-    return [];
-  }
+      .eq('psid', psid).eq('page_id', pageId)
+      .order('created_at', { ascending: false }).limit(limit);
+    return (data || []).reverse();
+  } catch { return []; }
 }
 
-// ── Supabase: Save message ────────────────────────────────────────────
+// ── Save message ─────────────────────────────────────────────────────
 async function saveMessage(psid, pageId, role, content) {
   try {
-    const sb = getSupabase();
-    await sb.from('conversations').insert({ psid, page_id: pageId, role, content });
+    await getSupabase().from('bot_conversations').insert({ psid, page_id: pageId, role, content });
+  } catch (err) { console.error('[DB]', err.message); }
+}
+
+// ── RAG: embed query + search knowledge base ─────────────────────────
+async function ragSearch(pageId, userMessage) {
+  try {
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    const embRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'models/text-embedding-004', content: { parts: [{ text: userMessage }] } })
+      }
+    );
+    const embData = await embRes.json();
+    const embedding = embData.embedding?.values;
+    if (!embedding) return '';
+
+    const { data } = await getSupabase().rpc('match_bot_knowledge', {
+      query_embedding: embedding,
+      match_page_id: pageId,
+      match_threshold: 0.7,
+      match_count: 3
+    });
+
+    if (!data || data.length === 0) return '';
+    return '\n\n[Relevant Club Info]\n' + data.map((d) => `${d.topic}: ${d.content}`).join('\n\n');
   } catch (err) {
-    console.error('[DB] Save failed:', err.message);
+    console.error('[RAG]', err.message);
+    return '';
   }
 }
 
-// ── AI: Gemini ────────────────────────────────────────────────────────
+// ── Gemini ───────────────────────────────────────────────────────────
 async function callGemini(systemPrompt, history, userMessage) {
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
   if (!GEMINI_API_KEY) throw new Error('Missing GEMINI_API_KEY');
 
   const contents = [
-    ...history.map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    })),
+    ...history.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
     { role: 'user', parts: [{ text: userMessage }] }
   ];
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -107,16 +127,12 @@ async function callGemini(systemPrompt, history, userMessage) {
     }
   );
 
-  if (!response.ok) {
-    const err = await response.json();
-    throw new Error(`Gemini ${response.status}: ${JSON.stringify(err)}`);
-  }
-
+  if (!response.ok) { const e = await response.json(); throw new Error(`Gemini ${response.status}: ${JSON.stringify(e)}`); }
   const data = await response.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
 }
 
-// ── AI: Groq fallback ─────────────────────────────────────────────────
+// ── Groq fallback ────────────────────────────────────────────────────
 async function callGroq(systemPrompt, history, userMessage) {
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
   if (!GROQ_API_KEY) throw new Error('Missing GROQ_API_KEY');
@@ -133,19 +149,14 @@ async function callGroq(systemPrompt, history, userMessage) {
     body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages, temperature: 0.7 })
   });
 
-  if (!response.ok) {
-    const err = await response.json();
-    throw new Error(`Groq ${response.status}: ${JSON.stringify(err)}`);
-  }
-
+  if (!response.ok) { const e = await response.json(); throw new Error(`Groq ${response.status}: ${JSON.stringify(e)}`); }
   const data = await response.json();
   return data.choices?.[0]?.message?.content ?? null;
 }
 
-// ── AI Router ─────────────────────────────────────────────────────────
+// ── AI Router ────────────────────────────────────────────────────────
 async function getAIResponse(systemPrompt, history, userMessage) {
   try {
-    console.log('[AI] Trying Gemini...');
     const reply = await callGemini(systemPrompt, history, userMessage);
     console.log('[AI] Gemini success.');
     return reply;
@@ -162,46 +173,32 @@ async function getAIResponse(systemPrompt, history, userMessage) {
   }
 }
 
-// ── Messenger: Typing indicator ───────────────────────────────────────
+// ── Messenger helpers ────────────────────────────────────────────────
 async function sendTyping(psid, pageId) {
   const token = getPageToken(pageId);
-  await fetch(
-    `https://graph.facebook.com/v23.0/me/messages?access_token=${token}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipient: { id: psid }, sender_action: 'typing_on' })
-    }
-  ).catch(() => {});
+  await fetch(`https://graph.facebook.com/v23.0/me/messages?access_token=${token}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipient: { id: psid }, sender_action: 'typing_on' })
+  }).catch(() => {});
 }
 
-// ── Messenger: Send message ───────────────────────────────────────────
 async function sendMessage(psid, text, pageId) {
   const token = getPageToken(pageId);
-  if (!token) { console.error('[Send] No token for page:', pageId); return; }
-
   try {
-    const res = await fetch(
-      `https://graph.facebook.com/v23.0/me/messages?access_token=${token}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipient: { id: psid }, message: { text } })
-      }
-    );
+    const res = await fetch(`https://graph.facebook.com/v23.0/me/messages?access_token=${token}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient: { id: psid }, message: { text } })
+    });
     const data = await res.json();
     if (res.ok) console.log(`[Send] Delivered. ID: ${data.message_id}`);
     else console.error('[Send] Failed:', res.status, data);
-  } catch (err) {
-    console.error('[Send] Network error:', err);
-  }
+  } catch (err) { console.error('[Send] Network error:', err); }
 }
 
-// ── Main Handler ──────────────────────────────────────────────────────
+// ── Main Handler ─────────────────────────────────────────────────────
 export default async function handler(req, res) {
   console.log(`\n--- [Webhook] ${req.method} ---`);
 
-  // Parse query params
   let mode = null, token = null, challenge = null;
   const qi = req.url?.indexOf('?');
   if (qi !== -1 && qi !== undefined) {
@@ -216,17 +213,11 @@ export default async function handler(req, res) {
 
   const VERIFY_TOKEN = process.env.MESSENGER_VERIFY_TOKEN;
 
-  // GET: Meta verification
   if (req.method === 'GET') {
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      console.log('[Verify] Success.');
-      return res.status(200).send(challenge);
-    }
-    console.warn('[Verify] Failed.');
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) { console.log('[Verify] Success.'); return res.status(200).send(challenge); }
     return res.status(mode && token ? 403 : 400).send(mode && token ? 'Forbidden' : 'Bad Request');
   }
 
-  // POST: Incoming messages
   if (req.method === 'POST') {
     const body = req.body;
     if (body?.object === 'page') {
@@ -236,22 +227,37 @@ export default async function handler(req, res) {
         const pageId = entry.id;
         if (!entry.messaging?.length) continue;
 
-        const event   = entry.messaging[0];
-        const psid    = event.sender?.id;
+        const event = entry.messaging[0];
+        const psid = event.sender?.id;
         const msgText = event.message?.text;
 
-        if (event.message?.is_echo) continue;
+        // ── Echo: admin replied → auto-pause 30 min ──
+        if (event.message?.is_echo) {
+          const recipientPsid = event.recipient?.id;
+          if (recipientPsid) {
+            await autoPauseFromEcho(recipientPsid, pageId);
+            console.log(`[Echo] Admin replied to ${recipientPsid}. Bot paused 30 min.`);
+          }
+          continue;
+        }
+
         if (!psid || !msgText) continue;
 
         console.log(`[Msg] Page:${pageId} PSID:${psid} Text:"${msgText}"`);
 
+        // ── Check pause ──
+        const paused = await isPaused(psid, pageId);
+        if (paused) { console.log(`[Paused] Skipping AI for ${psid}.`); continue; }
+
         await sendTyping(psid, pageId);
 
-        const [systemPrompt, history] = await Promise.all([
+        const [systemPromptBase, history, ragContext] = await Promise.all([
           getSystemPrompt(pageId),
-          getHistory(psid, pageId)
+          getHistory(psid, pageId),
+          ragSearch(pageId, msgText)
         ]);
 
+        const systemPrompt = systemPromptBase + ragContext;
         const aiReply = await getAIResponse(systemPrompt, history, msgText);
 
         await Promise.all([
