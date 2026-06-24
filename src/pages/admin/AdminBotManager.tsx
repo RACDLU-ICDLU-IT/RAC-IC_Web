@@ -376,8 +376,11 @@ export default function AdminBotManager() {
                       }`}
                     >
                       <div className="flex items-center gap-2 mb-0.5">
-                        <div className="w-7 h-7 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center shrink-0 overflow-hidden">
-                          {displayPic(c) ? <img src={displayPic(c)} className="w-full h-full object-cover" /> : <User size={12} className="text-[var(--color-accent)]" />}
+                        <div className="w-7 h-7 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center shrink-0 overflow-hidden text-[10px] font-bold text-[var(--color-accent)]">
+                          {displayPic(c)
+                            ? <img src={displayPic(c)} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display='none'; }} />
+                            : (c.name ? c.name.charAt(0).toUpperCase() : <User size={12} className="text-[var(--color-accent)]" />)
+                          }
                         </div>
                         <span className="text-xs font-bold text-gray-800 truncate flex-1">{displayName(c)}</span>
                         {c.needs_human && <span className="text-[9px] bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full font-bold shrink-0 flex items-center gap-0.5"><AlertTriangle size={8} />HUMAN</span>}
@@ -404,8 +407,11 @@ export default function AdminBotManager() {
                       <button onClick={() => setShowChat(false)} className="md:hidden p-1.5 rounded-lg hover:bg-gray-200 text-gray-600 shrink-0">
                         <ArrowLeft size={16} />
                       </button>
-                      <div className="w-7 h-7 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center shrink-0 overflow-hidden">
-                        {selectedConvo && displayPic(selectedConvo) ? <img src={displayPic(selectedConvo)} className="w-full h-full object-cover" /> : <User size={12} className="text-[var(--color-accent)]" />}
+                      <div className="w-7 h-7 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center shrink-0 overflow-hidden text-[10px] font-bold text-[var(--color-accent)]">
+                        {selectedConvo && displayPic(selectedConvo)
+                          ? <img src={displayPic(selectedConvo)} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display='none'; }} />
+                          : (selectedConvo?.name ? selectedConvo.name.charAt(0).toUpperCase() : <User size={12} className="text-[var(--color-accent)]" />)
+                        }
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
