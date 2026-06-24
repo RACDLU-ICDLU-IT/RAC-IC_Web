@@ -150,27 +150,39 @@ export default function AdminBotManager() {
     }
   }, []);
 
+  // Refs to avoid stale closures in realtime
+  const selectedPsidRef = useRef<string | null>(null);
+  const tenantIdRef = useRef<string>(tenant.id);
+  useEffect(() => { selectedPsidRef.current = selectedPsid; }, [selectedPsid]);
+  useEffect(() => { tenantIdRef.current = tenant.id; }, [tenant.id]);
+
   useEffect(() => { fetchConvos(); fetchSystemPrompt(); fetchKnowledge(); }, [pageId]);
   useEffect(() => { if (selectedPsid) fetchMessages(selectedPsid); }, [selectedPsid]);
   useEffect(() => { msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   // Realtime: auto-update messages + convo list
   useEffect(() => {
-    const channel = supabase.channel(`bot-rt-${pageId}`)
+    const channel = supabase.channel(`bot-rt-${pageId}-${Date.now()}`)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'bot_conversations',
         filter: `page_id=eq.${pageId}`
       }, (payload) => {
-        const msg = payload.new as Message;
-        // Update messages if viewing this convo
-        if (msg.psid === selectedPsid) {
-          setMessages(prev => [...prev, msg]);
-        }
-        // Update convo list preview
+        const msg = payload.new as Message & { needs_human_flag?: boolean };
+
+        // Always update convo list
         setConvos(prev => {
           const exists = prev.find(c => c.psid === msg.psid);
           if (exists) {
-            return prev.map(c => c.psid === msg.psid ? { ...c, last_msg: msg.content, last_at: msg.created_at, msg_count: c.msg_count + 1 } : c);
+            const updated = prev.map(c => c.psid === msg.psid
+              ? { ...c, last_msg: msg.content, last_at: msg.created_at, msg_count: c.msg_count + 1 }
+              : c
+            );
+            // Re-sort: needs_human first
+            return updated.sort((a, b) => {
+              if (a.needs_human && !b.needs_human) return -1;
+              if (!a.needs_human && b.needs_human) return 1;
+              return new Date(b.last_at).getTime() - new Date(a.last_at).getTime();
+            });
           }
           const newConvo: Conversation = { psid: msg.psid, page_id: msg.page_id, last_msg: msg.content, last_at: msg.created_at, paused: false, msg_count: 1 };
           fetchUserInfo(msg.psid).then(({ name, pic }) => {
@@ -178,21 +190,35 @@ export default function AdminBotManager() {
           });
           return [newConvo, ...prev];
         });
-        // Push notification for human support requests
-        if ((msg as any).needs_human_flag) {
-          fetchConvos(); // Refresh to get updated needs_human state
+
+        // Update open chat if this psid is selected
+        if (msg.psid === selectedPsidRef.current) {
+          setMessages(prev => {
+            // Avoid duplicate if admin sent and already inserted locally
+            if (prev.find(m => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+        }
+
+        // Human support notification
+        if (msg.needs_human_flag) {
+          // Refresh convo list to get needs_human flag
+          setTimeout(() => fetchConvos(), 500);
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification('🚨 Human Support Requested', {
-              body: `A user needs human support on ${tenant.id.toUpperCase()}. Tap to view.`,
+              body: `A user needs human support on ${tenantIdRef.current.toUpperCase()}. Tap to view.`,
               icon: '/favicon.ico',
               tag: `human-support-${msg.psid}`,
             });
           }
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[Realtime] Status:', status);
+      });
+
     return () => { supabase.removeChannel(channel); };
-  }, [pageId, selectedPsid]);
+  }, [pageId]);
 
   const pauseUser = async (psid: string) => {
     await supabase.from('bot_paused').upsert(
