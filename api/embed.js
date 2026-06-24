@@ -16,9 +16,7 @@ export default async function handler(req, res) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`;
 
   const payload = {
-    model: 'models/text-embedding-004',
     content: {
-      role: 'user',
       parts: [{ text: text.slice(0, 2000) }]
     }
   };
