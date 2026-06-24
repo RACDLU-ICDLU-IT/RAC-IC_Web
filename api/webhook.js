@@ -178,6 +178,70 @@ async function getAIResponse(systemPrompt, history, userMessage) {
   }
 }
 
+// ── Human support detection ──────────────────────────────────────────
+const HUMAN_KEYWORDS = [
+  'human', 'agent', 'support', 'person', 'real person', 'human help',
+  'club member', 'staff', 'representative', 'talk to someone', 'speak to',
+  'real human', 'actual person', 'member', 'admin', 'operator',
+  'মানুষ', 'সাহায্য', 'সদস্য', 'কর্মকর্তা' // Bengali keywords
+];
+
+function hasHumanKeyword(text) {
+  const lower = text.toLowerCase();
+  return HUMAN_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+async function isRequestingHuman(userMessage, systemPrompt, history) {
+  try {
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    const messages = [
+      ...history.slice(-4).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+      { role: 'user', parts: [{ text: userMessage }] }
+    ];
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: 'You are a classifier. Determine if the user is requesting to speak with a human agent/support person/club member instead of an AI. Reply with only JSON: {"needs_human": true} or {"needs_human": false}. Consider context carefully — mentioning a human in passing is not the same as requesting one.' }] },
+          contents: messages,
+          generationConfig: { temperature: 0, maxOutputTokens: 20 }
+        })
+      }
+    );
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{"needs_human":false}';
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    return parsed.needs_human === true;
+  } catch (err) {
+    console.error('[HumanCheck]', err.message);
+    return false;
+  }
+}
+
+async function handleHumanSupport(psid, pageId, userMessage) {
+  const sb = getSupabase();
+  // Pause with needs_human=true (no auto-resume)
+  await sb.from('bot_paused').upsert(
+    { psid, page_id: pageId, paused_at: new Date().toISOString(), auto_resume_at: null, needs_human: true, reason: userMessage.slice(0, 200) },
+    { onConflict: 'psid,page_id' }
+  );
+  // Mark latest user message
+  await sb.from('bot_conversations').update({ needs_human_flag: true })
+    .eq('psid', psid).eq('page_id', pageId).eq('role', 'user')
+    .order('created_at', { ascending: false }).limit(1);
+  // Send response to user
+  const reply = `We've received your request for human support! 🙏
+
+A team member will reach out to you shortly. Please share what you need help with so we can assist you better.
+
+Our AI assistant won't respond until a team member takes over. Thank you for your patience!`;
+  await sendMessage(psid, reply, pageId);
+  await saveMessage(psid, pageId, 'assistant', reply);
+}
+
 // ── Messenger helpers ────────────────────────────────────────────────
 async function sendTyping(psid, pageId) {
   const token = getPageToken(pageId);
@@ -238,16 +302,23 @@ export default async function handler(req, res) {
 
         // ── Echo: only pause if human admin replied (not bot itself) ──
         if (event.message?.is_echo) {
-          // Bot's own AI replies also fire echoes — ignore those
-          // Human admin replies from Business Suite have no app_id or a different one
           const botAppId = process.env.META_APP_ID;
           const echoAppId = String(event.message?.app_id || '');
           const isHumanReply = !echoAppId || echoAppId === '0' || (botAppId && echoAppId !== botAppId);
           if (isHumanReply) {
             const recipientPsid = event.recipient?.id;
             if (recipientPsid) {
-              await autoPauseFromEcho(recipientPsid, pageId);
-              console.log(`[Echo] Human admin replied to ${recipientPsid}. Bot paused 10 min.`);
+              // If was needs_human, downgrade to regular 10min pause
+              const sb = getSupabase();
+              const { data: pausedRow } = await sb.from('bot_paused').select('needs_human').eq('psid', recipientPsid).eq('page_id', pageId).single();
+              if (pausedRow?.needs_human) {
+                await autoPauseFromEcho(recipientPsid, pageId);
+                await sb.from('bot_paused').update({ needs_human: false, reason: null }).eq('psid', recipientPsid).eq('page_id', pageId);
+                console.log(`[Echo] Human took over needs_human convo ${recipientPsid}. Downgraded to 10min pause.`);
+              } else {
+                await autoPauseFromEcho(recipientPsid, pageId);
+                console.log(`[Echo] Human admin replied to ${recipientPsid}. Bot paused 10 min.`);
+              }
             }
           } else {
             console.log(`[Echo] Bot own reply echo ignored (app_id: ${echoAppId}).`);
@@ -269,6 +340,23 @@ export default async function handler(req, res) {
 
         await sendTyping(psid, pageId);
 
+        // Save user message first
+        await saveMessage(psid, pageId, 'user', msgText);
+
+        // ── Two-stage human support detection ──
+        if (hasHumanKeyword(msgText)) {
+          const [systemPromptBase, history] = await Promise.all([
+            getSystemPrompt(pageId),
+            getHistory(psid, pageId)
+          ]);
+          const requestingHuman = await isRequestingHuman(msgText, systemPromptBase, history);
+          if (requestingHuman) {
+            console.log(`[HumanSupport] Triggered for ${psid}`);
+            await handleHumanSupport(psid, pageId, msgText);
+            continue;
+          }
+        }
+
         const [systemPromptBase, history, ragContext] = await Promise.all([
           getSystemPrompt(pageId),
           getHistory(psid, pageId),
@@ -279,7 +367,6 @@ export default async function handler(req, res) {
         const aiReply = await getAIResponse(systemPrompt, history, msgText);
 
         await Promise.all([
-          saveMessage(psid, pageId, 'user', msgText),
           saveMessage(psid, pageId, 'assistant', aiReply),
           sendMessage(psid, aiReply, pageId)
         ]);
