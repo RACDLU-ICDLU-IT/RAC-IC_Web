@@ -11,9 +11,30 @@ import {
 } from 'lucide-react';
 
 const PAGE_ID_MAP: Record<string, string> = {
-  icdlu: process.env.PAGE_ID_1 || '102656195442065',
-  racdlu: process.env.PAGE_ID_2 || '1051034934769596',
+  icdlu: import.meta.env.VITE_PAGE_ID_1 || '102656195442065',
+  racdlu: import.meta.env.VITE_PAGE_ID_2 || '1051034934769596',
 };
+
+async function generateEmbedding(text: string): Promise<number[] | null> {
+  try {
+    const key = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!key) { console.warn('[Embed] No VITE_GEMINI_API_KEY'); return null; }
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${key}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'models/text-embedding-004',
+          content: { role: 'user', parts: [{ text }] }
+        })
+      }
+    );
+    if (!res.ok) { console.warn('[Embed] API error', res.status); return null; }
+    const data = await res.json();
+    return data.embedding?.values || null;
+  } catch (e) { console.error('[Embed]', e); return null; }
+}
 
 const inputClass = "w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors bg-white";
 const labelClass = "block text-sm font-medium text-gray-700 mb-1.5";
@@ -210,17 +231,9 @@ export default function AdminBotManager() {
     try {
       const keywords = kbForm.keywords.split(',').map(k => k.trim()).filter(Boolean);
 
-      // Generate embedding via Gemini
-      const embRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: 'models/text-embedding-004', content: { parts: [{ text: `${kbForm.topic} ${kbForm.keywords} ${kbForm.content}` }] } })
-        }
-      );
-      const embData = await embRes.json();
-      const embedding = embData.embedding?.values || null;
+      const embText = `${kbForm.topic} ${kbForm.keywords} ${kbForm.content}`;
+      const embedding = await generateEmbedding(embText);
+      if (!embedding) addToast('Saved without embedding (check VITE_GEMINI_API_KEY)', 'warning');
 
       if (editingKb) {
         await supabase.from('bot_knowledge').update({
