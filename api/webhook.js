@@ -192,6 +192,7 @@ function hasHumanKeyword(text) {
 }
 
 async function isRequestingHuman(userMessage, systemPrompt, history) {
+  console.log(`[HumanCheck] Classifying: "${userMessage}"`);
   try {
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
     const messages = [
@@ -214,29 +215,38 @@ async function isRequestingHuman(userMessage, systemPrompt, history) {
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{"needs_human":false}';
     const clean = text.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
+    console.log(`[HumanCheck] Result: needs_human=${parsed.needs_human}, raw="${text}"`);
     return parsed.needs_human === true;
   } catch (err) {
-    console.error('[HumanCheck]', err.message);
+    console.error('[HumanCheck] Error:', err.message);
     return false;
   }
 }
 
 async function handleHumanSupport(psid, pageId, userMessage) {
   const sb = getSupabase();
-  console.log(`[HumanSupport] Pausing ${psid} with needs_human=true`);
+  console.log(`[HumanSupport] Triggered for ${psid}`);
 
-  // Save human support message FIRST so it gets flagged
-  const { data: savedMsg } = await sb.from('bot_conversations').insert(
+  // Save user message with flag
+  await sb.from('bot_conversations').insert(
     { psid, page_id: pageId, role: 'user', content: userMessage, needs_human_flag: true }
-  ).select().single();
-  console.log(`[HumanSupport] Saved flagged message:`, savedMsg?.id);
-
-  // Pause with needs_human=true (no auto-resume)
-  const { error: pauseErr } = await sb.from('bot_paused').upsert(
-    { psid, page_id: pageId, paused_at: new Date().toISOString(), auto_resume_at: null, needs_human: true, reason: userMessage.slice(0, 200) },
-    { onConflict: 'psid,page_id' }
   );
-  if (pauseErr) console.error('[HumanSupport] Pause error:', pauseErr);
+
+  // Delete existing pause row first, then insert fresh with needs_human=true
+  await sb.from('bot_paused').delete().eq('psid', psid).eq('page_id', pageId);
+  const { error: insertErr } = await sb.from('bot_paused').insert({
+    psid,
+    page_id: pageId,
+    paused_at: new Date().toISOString(),
+    auto_resume_at: null,
+    needs_human: true,
+    reason: userMessage.slice(0, 200)
+  });
+  if (insertErr) {
+    console.error('[HumanSupport] Insert error:', JSON.stringify(insertErr));
+  } else {
+    console.log(`[HumanSupport] bot_paused row inserted with needs_human=true`);
+  }
 
   // Send response to user
   const reply = `We've received your request for human support! 🙏
@@ -246,7 +256,7 @@ A team member will reach out to you shortly. Please share what you need help wit
 Our AI assistant won't respond until a team member takes over. Thank you for your patience!`;
   await sendMessage(psid, reply, pageId);
   await saveMessage(psid, pageId, 'assistant', reply);
-  console.log(`[HumanSupport] Done. ${psid} flagged and paused.`);
+  console.log(`[HumanSupport] Done for ${psid}.`);
 }
 
 // ── Messenger helpers ────────────────────────────────────────────────
@@ -347,6 +357,7 @@ export default async function handler(req, res) {
         const allPaused = allPausedRow?.data?.value === 'true';
 
         // ── Two-stage human support detection ──
+        console.log(`[Keyword] Checking: "${msgText}" | match=${hasHumanKeyword(msgText)}`);
         if (hasHumanKeyword(msgText)) {
           const [systemPromptBase, history] = await Promise.all([
             getSystemPrompt(pageId),
