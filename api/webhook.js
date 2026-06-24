@@ -82,7 +82,7 @@ async function ragSearch(pageId, userMessage) {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'models/text-embedding-004', content: { parts: [{ text: userMessage }] } })
+        body: JSON.stringify({ content: { parts: [{ text: userMessage }] } })
       }
     );
     const embData = await embRes.json();
@@ -92,7 +92,7 @@ async function ragSearch(pageId, userMessage) {
     const { data } = await getSupabase().rpc('match_bot_knowledge', {
       query_embedding: embedding,
       match_page_id: pageId,
-      match_threshold: 0.7,
+      match_threshold: 0.5,
       match_count: 3
     });
 
@@ -231,12 +231,21 @@ export default async function handler(req, res) {
         const psid = event.sender?.id;
         const msgText = event.message?.text;
 
-        // ── Echo: admin replied → auto-pause 30 min ──
+        // ── Echo: only pause if human admin replied (not bot itself) ──
         if (event.message?.is_echo) {
-          const recipientPsid = event.recipient?.id;
-          if (recipientPsid) {
-            await autoPauseFromEcho(recipientPsid, pageId);
-            console.log(`[Echo] Admin replied to ${recipientPsid}. Bot paused 30 min.`);
+          // Bot's own AI replies also fire echoes — ignore those
+          // Human admin replies from Business Suite have no app_id or a different one
+          const botAppId = process.env.META_APP_ID;
+          const echoAppId = String(event.message?.app_id || '');
+          const isHumanReply = !echoAppId || echoAppId === '0' || (botAppId && echoAppId !== botAppId);
+          if (isHumanReply) {
+            const recipientPsid = event.recipient?.id;
+            if (recipientPsid) {
+              await autoPauseFromEcho(recipientPsid, pageId);
+              console.log(`[Echo] Human admin replied to ${recipientPsid}. Bot paused 10 min.`);
+            }
+          } else {
+            console.log(`[Echo] Bot own reply echo ignored (app_id: ${echoAppId}).`);
           }
           continue;
         }
