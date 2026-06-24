@@ -6,7 +6,7 @@ import { useToast } from '../../hooks/useToast';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 import {
   Bot, Send, Pause, Play, Trash2, Plus, BookOpen,
-  MessageSquare, Settings, RefreshCw, User, Tag, ArrowLeft, PauseCircle, PlayCircle
+  MessageSquare, Settings, RefreshCw, User, Tag, ArrowLeft, PauseCircle, PlayCircle, AlertTriangle
 } from 'lucide-react';
 
 const PAGE_ID_MAP: Record<string, string> = {
@@ -31,7 +31,7 @@ const labelClass = "block text-sm font-semibold text-gray-700 mb-1.5";
 
 type TabId = 'conversations' | 'knowledge' | 'settings';
 
-interface Conversation { psid: string; page_id: string; last_msg: string; last_at: string; paused: boolean; msg_count: number; name?: string; }
+interface Conversation { psid: string; page_id: string; last_msg: string; last_at: string; paused: boolean; msg_count: number; name?: string; pic?: string; needs_human?: boolean; }
 interface Message { id: string; psid: string; page_id: string; role: string; content: string; created_at: string; }
 interface KnowledgeItem { id: string; page_id: string; topic: string; keywords: string[]; content: string; created_at: string; }
 
@@ -50,7 +50,8 @@ export default function AdminBotManager() {
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [allPaused, setAllPaused] = useState(false);
-  const [nameCache, setNameCache] = useState<Record<string, string>>({});
+  const nameCache = useRef<Record<string, string>>({});
+  const picCache = useRef<Record<string, string>>({});
   const msgsEndRef = useRef<HTMLDivElement>(null);
 
   const [systemPrompt, setSystemPrompt] = useState('');
@@ -62,18 +63,20 @@ export default function AdminBotManager() {
   const [kbForm, setKbForm] = useState({ topic: '', keywords: '', content: '' });
   const [savingKb, setSavingKb] = useState(false);
 
-  // Fetch user name from Meta Graph API
-  const fetchUserName = useCallback(async (psid: string): Promise<string> => {
-    if (nameCache[psid]) return nameCache[psid];
+  // Fetch user name + pic from Meta Graph API
+  const fetchUserInfo = useCallback(async (psid: string): Promise<{ name: string; pic?: string }> => {
+    if (nameCache.current[psid]) return { name: nameCache.current[psid], pic: picCache.current[psid] };
     try {
       const res = await fetch(`/api/user-info?psid=${psid}&pageId=${pageId}`);
-      if (!res.ok) return psid.slice(-6);
+      if (!res.ok) return { name: `···${psid.slice(-6)}` };
       const data = await res.json();
-      const name = data.name || psid.slice(-6);
-      setNameCache(prev => ({ ...prev, [psid]: name }));
-      return name;
-    } catch { return psid.slice(-6); }
-  }, [pageId, nameCache]);
+      const name = data.name || `···${psid.slice(-6)}`;
+      const pic = data.profile_pic || '';
+      nameCache.current[psid] = name;
+      picCache.current[psid] = pic;
+      return { name, pic };
+    } catch { return { name: `···${psid.slice(-6)}` }; }
+  }, [pageId]);
 
   const fetchConvos = async () => {
     setLoadingConvos(true);
@@ -81,8 +84,9 @@ export default function AdminBotManager() {
       const { data: msgs } = await supabase
         .from('bot_conversations').select('psid, page_id, content, role, created_at')
         .eq('page_id', pageId).order('created_at', { ascending: false });
-      const { data: paused } = await supabase.from('bot_paused').select('psid').eq('page_id', pageId);
+      const { data: paused } = await supabase.from('bot_paused').select('psid, needs_human').eq('page_id', pageId);
       const pausedSet = new Set((paused || []).map((p: any) => p.psid));
+      const humanNeededSet = new Set((paused || []).filter((p: any) => p.needs_human).map((p: any) => p.psid));
 
       // Check all-paused state
       const { data: allPausedRow } = await supabase.from('bot_config')
@@ -92,18 +96,24 @@ export default function AdminBotManager() {
       const map = new Map<string, Conversation>();
       (msgs || []).forEach((m: any) => {
         if (!map.has(m.psid)) {
-          map.set(m.psid, { psid: m.psid, page_id: m.page_id, last_msg: m.content, last_at: m.created_at, paused: pausedSet.has(m.psid), msg_count: 1 });
+          map.set(m.psid, { psid: m.psid, page_id: m.page_id, last_msg: m.content, last_at: m.created_at, paused: pausedSet.has(m.psid), msg_count: 1, needs_human: humanNeededSet.has(m.psid) });
         } else { map.get(m.psid)!.msg_count++; }
       });
 
       const convoList = Array.from(map.values());
 
-      // Fetch names in background
+      // Fetch names + pics in background
       convoList.forEach(async c => {
-        const name = await fetchUserName(c.psid);
-        setConvos(prev => prev.map(p => p.psid === c.psid ? { ...p, name } : p));
+        const { name, pic } = await fetchUserInfo(c.psid);
+        setConvos(prev => prev.map(p => p.psid === c.psid ? { ...p, name, pic } : p));
       });
 
+      // Sort: needs_human first, then by latest message
+      convoList.sort((a, b) => {
+        if (a.needs_human && !b.needs_human) return -1;
+        if (!a.needs_human && b.needs_human) return 1;
+        return new Date(b.last_at).getTime() - new Date(a.last_at).getTime();
+      });
       setConvos(convoList);
     } catch { addToast('Failed to load conversations', 'error'); }
     finally { setLoadingConvos(false); }
@@ -133,9 +143,56 @@ export default function AdminBotManager() {
     setLoadingKb(false);
   };
 
+  // Request push notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   useEffect(() => { fetchConvos(); fetchSystemPrompt(); fetchKnowledge(); }, [pageId]);
   useEffect(() => { if (selectedPsid) fetchMessages(selectedPsid); }, [selectedPsid]);
   useEffect(() => { msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+  // Realtime: auto-update messages + convo list
+  useEffect(() => {
+    const channel = supabase.channel(`bot-rt-${pageId}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'bot_conversations',
+        filter: `page_id=eq.${pageId}`
+      }, (payload) => {
+        const msg = payload.new as Message;
+        // Update messages if viewing this convo
+        if (msg.psid === selectedPsid) {
+          setMessages(prev => [...prev, msg]);
+        }
+        // Update convo list preview
+        setConvos(prev => {
+          const exists = prev.find(c => c.psid === msg.psid);
+          if (exists) {
+            return prev.map(c => c.psid === msg.psid ? { ...c, last_msg: msg.content, last_at: msg.created_at, msg_count: c.msg_count + 1 } : c);
+          }
+          const newConvo: Conversation = { psid: msg.psid, page_id: msg.page_id, last_msg: msg.content, last_at: msg.created_at, paused: false, msg_count: 1 };
+          fetchUserInfo(msg.psid).then(({ name, pic }) => {
+            setConvos(p => p.map(c => c.psid === msg.psid ? { ...c, name, pic } : c));
+          });
+          return [newConvo, ...prev];
+        });
+        // Push notification for human support requests
+        if ((msg as any).needs_human_flag) {
+          fetchConvos(); // Refresh to get updated needs_human state
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('🚨 Human Support Requested', {
+              body: `A user needs human support on ${tenant.id.toUpperCase()}. Tap to view.`,
+              icon: '/favicon.ico',
+              tag: `human-support-${msg.psid}`,
+            });
+          }
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [pageId, selectedPsid]);
 
   const pauseUser = async (psid: string) => {
     await supabase.from('bot_paused').upsert(
@@ -233,7 +290,8 @@ export default function AdminBotManager() {
   };
 
   const selectedConvo = convos.find(c => c.psid === selectedPsid);
-  const displayName = (c: Conversation) => c.name && c.name !== c.psid.slice(-6) ? c.name : `···${c.psid.slice(-6)}`;
+  const displayName = (c: Conversation) => c.name || `···${c.psid.slice(-6)}`;
+  const displayPic = (c: Conversation) => c.pic || '';
 
   const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
     { id: 'conversations', label: 'Conversations', icon: <MessageSquare size={14} /> },
@@ -311,14 +369,19 @@ export default function AdminBotManager() {
                     <div className="p-6 text-center text-gray-400 text-xs">No conversations yet</div>
                   ) : convos.map(c => (
                     <button key={c.psid} onClick={() => { setSelectedPsid(c.psid); setShowChat(true); }}
-                      className={`w-full text-left px-3 py-2.5 border-b border-gray-100 hover:bg-white transition-colors ${selectedPsid === c.psid ? 'bg-white border-l-2 border-l-[var(--color-accent)]' : ''}`}
+                      className={`w-full text-left px-3 py-2.5 border-b border-gray-100 hover:bg-white transition-colors ${
+                        selectedPsid === c.psid
+                          ? c.needs_human ? 'bg-red-50 border-l-2 border-l-red-500' : 'bg-white border-l-2 border-l-[var(--color-accent)]'
+                          : c.needs_human ? 'bg-red-50/50' : ''
+                      }`}
                     >
                       <div className="flex items-center gap-2 mb-0.5">
-                        <div className="w-7 h-7 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center shrink-0">
-                          <User size={12} className="text-[var(--color-accent)]" />
+                        <div className="w-7 h-7 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center shrink-0 overflow-hidden">
+                          {displayPic(c) ? <img src={displayPic(c)} className="w-full h-full object-cover" /> : <User size={12} className="text-[var(--color-accent)]" />}
                         </div>
                         <span className="text-xs font-bold text-gray-800 truncate flex-1">{displayName(c)}</span>
-                        {c.paused && <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">PAUSED</span>}
+                        {c.needs_human && <span className="text-[9px] bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full font-bold shrink-0 flex items-center gap-0.5"><AlertTriangle size={8} />HUMAN</span>}
+                        {!c.needs_human && c.paused && <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-bold shrink-0">PAUSED</span>}
                       </div>
                       <p className="text-[11px] text-gray-500 truncate pl-9">{c.last_msg}</p>
                       <p className="text-[10px] text-gray-400 pl-9 mt-0.5">{new Date(c.last_at).toLocaleDateString()} · {c.msg_count} msgs</p>
@@ -341,13 +404,14 @@ export default function AdminBotManager() {
                       <button onClick={() => setShowChat(false)} className="md:hidden p-1.5 rounded-lg hover:bg-gray-200 text-gray-600 shrink-0">
                         <ArrowLeft size={16} />
                       </button>
-                      <div className="w-7 h-7 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center shrink-0">
-                        <User size={12} className="text-[var(--color-accent)]" />
+                      <div className="w-7 h-7 rounded-full bg-[var(--color-accent)]/10 flex items-center justify-center shrink-0 overflow-hidden">
+                        {selectedConvo && displayPic(selectedConvo) ? <img src={displayPic(selectedConvo)} className="w-full h-full object-cover" /> : <User size={12} className="text-[var(--color-accent)]" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-sm font-bold text-gray-900">{selectedConvo ? displayName(selectedConvo) : '...'}</span>
-                          {selectedConvo?.paused && <span className="text-[9px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-bold">PAUSED</span>}
+                          {selectedConvo?.needs_human && <span className="text-[9px] bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5"><AlertTriangle size={8} />NEEDS HUMAN</span>}
+                          {!selectedConvo?.needs_human && selectedConvo?.paused && <span className="text-[9px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-bold">PAUSED</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
