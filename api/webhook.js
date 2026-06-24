@@ -259,9 +259,13 @@ export default async function handler(req, res) {
 
         console.log(`[Msg] Page:${pageId} PSID:${psid} Text:"${msgText}"`);
 
-        // ── Check pause ──
-        const paused = await isPaused(psid, pageId);
-        if (paused) { console.log(`[Paused] Skipping AI for ${psid}.`); continue; }
+        // ── Check pause (individual or all) ──
+        const [paused, allPausedRow] = await Promise.all([
+          isPaused(psid, pageId),
+          getSupabase().from('bot_config').select('value').eq('page_id', pageId).eq('key', 'all_paused').single()
+        ]);
+        const allPaused = allPausedRow?.data?.value === 'true';
+        if (paused || allPaused) { console.log(`[Paused] Skipping AI for ${psid}. all=${allPaused}`); continue; }
 
         await sendTyping(psid, pageId);
 
