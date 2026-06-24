@@ -17,22 +17,14 @@ const PAGE_ID_MAP: Record<string, string> = {
 
 async function generateEmbedding(text: string): Promise<number[] | null> {
   try {
-    const key = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!key) { console.warn('[Embed] No VITE_GEMINI_API_KEY'); return null; }
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${key}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'models/text-embedding-004',
-          content: { role: 'user', parts: [{ text }] }
-        })
-      }
-    );
+    const res = await fetch('/api/embed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
     if (!res.ok) { console.warn('[Embed] API error', res.status); return null; }
     const data = await res.json();
-    return data.embedding?.values || null;
+    return data.embedding || null;
   } catch (e) { console.error('[Embed]', e); return null; }
 }
 
