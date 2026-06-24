@@ -223,15 +223,21 @@ async function isRequestingHuman(userMessage, systemPrompt, history) {
 
 async function handleHumanSupport(psid, pageId, userMessage) {
   const sb = getSupabase();
+  console.log(`[HumanSupport] Pausing ${psid} with needs_human=true`);
+
+  // Save human support message FIRST so it gets flagged
+  const { data: savedMsg } = await sb.from('bot_conversations').insert(
+    { psid, page_id: pageId, role: 'user', content: userMessage, needs_human_flag: true }
+  ).select().single();
+  console.log(`[HumanSupport] Saved flagged message:`, savedMsg?.id);
+
   // Pause with needs_human=true (no auto-resume)
-  await sb.from('bot_paused').upsert(
+  const { error: pauseErr } = await sb.from('bot_paused').upsert(
     { psid, page_id: pageId, paused_at: new Date().toISOString(), auto_resume_at: null, needs_human: true, reason: userMessage.slice(0, 200) },
     { onConflict: 'psid,page_id' }
   );
-  // Mark latest user message
-  await sb.from('bot_conversations').update({ needs_human_flag: true })
-    .eq('psid', psid).eq('page_id', pageId).eq('role', 'user')
-    .order('created_at', { ascending: false }).limit(1);
+  if (pauseErr) console.error('[HumanSupport] Pause error:', pauseErr);
+
   // Send response to user
   const reply = `We've received your request for human support! 🙏
 
@@ -240,6 +246,7 @@ A team member will reach out to you shortly. Please share what you need help wit
 Our AI assistant won't respond until a team member takes over. Thank you for your patience!`;
   await sendMessage(psid, reply, pageId);
   await saveMessage(psid, pageId, 'assistant', reply);
+  console.log(`[HumanSupport] Done. ${psid} flagged and paused.`);
 }
 
 // ── Messenger helpers ────────────────────────────────────────────────
@@ -340,9 +347,6 @@ export default async function handler(req, res) {
 
         await sendTyping(psid, pageId);
 
-        // Save user message first
-        await saveMessage(psid, pageId, 'user', msgText);
-
         // ── Two-stage human support detection ──
         if (hasHumanKeyword(msgText)) {
           const [systemPromptBase, history] = await Promise.all([
@@ -352,10 +356,13 @@ export default async function handler(req, res) {
           const requestingHuman = await isRequestingHuman(msgText, systemPromptBase, history);
           if (requestingHuman) {
             console.log(`[HumanSupport] Triggered for ${psid}`);
-            await handleHumanSupport(psid, pageId, msgText);
+            await handleHumanSupport(psid, pageId, msgText); // saves msg internally
             continue;
           }
         }
+
+        // Save user message (non-human-support flow)
+        await saveMessage(psid, pageId, 'user', msgText);
 
         const [systemPromptBase, history, ragContext] = await Promise.all([
           getSystemPrompt(pageId),
