@@ -20,7 +20,7 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
     const res = await fetch('/api/embed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ text, taskType: 'RETRIEVAL_DOCUMENT' })
     });
     if (!res.ok) { console.warn('[Embed] API error', res.status); return null; }
     const data = await res.json();
