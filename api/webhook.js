@@ -337,15 +337,14 @@ export default async function handler(req, res) {
 
         console.log(`[Msg] Page:${pageId} PSID:${psid} Text:"${msgText}"`);
 
-        // ── Check pause (individual or all) ──
+        await sendTyping(psid, pageId);
+
+        // ── Check pause (individual or all) — AFTER typing indicator ──
         const [paused, allPausedRow] = await Promise.all([
           isPaused(psid, pageId),
           getSupabase().from('bot_config').select('value').eq('page_id', pageId).eq('key', 'all_paused').single()
         ]);
         const allPaused = allPausedRow?.data?.value === 'true';
-        if (paused || allPaused) { console.log(`[Paused] Skipping AI for ${psid}. all=${allPaused}`); continue; }
-
-        await sendTyping(psid, pageId);
 
         // ── Two-stage human support detection ──
         if (hasHumanKeyword(msgText)) {
@@ -356,13 +355,16 @@ export default async function handler(req, res) {
           const requestingHuman = await isRequestingHuman(msgText, systemPromptBase, history);
           if (requestingHuman) {
             console.log(`[HumanSupport] Triggered for ${psid}`);
-            await handleHumanSupport(psid, pageId, msgText); // saves msg internally
+            await handleHumanSupport(psid, pageId, msgText); // saves msg internally with flag
             continue;
           }
         }
 
-        // Save user message (non-human-support flow)
+        // Always save user message first (even if paused — admins need to see it)
         await saveMessage(psid, pageId, 'user', msgText);
+
+        // Skip AI if paused
+        if (paused || allPaused) { console.log(`[Paused] Msg saved, skipping AI for ${psid}. all=${allPaused}`); continue; }
 
         const [systemPromptBase, history, ragContext] = await Promise.all([
           getSystemPrompt(pageId),
