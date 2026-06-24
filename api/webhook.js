@@ -78,11 +78,16 @@ async function ragSearch(pageId, userMessage) {
   try {
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
     const embRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: { parts: [{ text: userMessage }] } })
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
+        body: JSON.stringify({
+          model: 'models/gemini-embedding-001',
+          content: { parts: [{ text: userMessage }] },
+          taskType: 'RETRIEVAL_QUERY',
+          outputDimensionality: 768
+        })
       }
     );
     const embData = await embRes.json();
