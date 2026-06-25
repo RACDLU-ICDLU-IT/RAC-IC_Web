@@ -337,17 +337,20 @@ export default async function handler(req, res) {
           if (isHumanReply) {
             const recipientPsid = event.recipient?.id;
             if (recipientPsid) {
-              // If was needs_human, downgrade to regular 10min pause
               const sb = getSupabase();
-              const { data: pausedRow } = await sb.from('bot_paused').select('needs_human').eq('psid', recipientPsid).eq('page_id', pageId).single();
-              if (pausedRow?.needs_human) {
-                await autoPauseFromEcho(recipientPsid, pageId);
-                await sb.from('bot_paused').update({ needs_human: false, reason: null }).eq('psid', recipientPsid).eq('page_id', pageId);
-                console.log(`[Echo] Human took over needs_human convo ${recipientPsid}. Downgraded to 10min pause.`);
-              } else {
-                await autoPauseFromEcho(recipientPsid, pageId);
-                console.log(`[Echo] Human admin replied to ${recipientPsid}. Bot paused 10 min.`);
+              const resumeAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+              // Always set 10min timer + clear needs_human flag
+              const { error } = await sb.from('bot_paused').upsert(
+                { psid: recipientPsid, page_id: pageId, paused_at: new Date().toISOString(), auto_resume_at: resumeAt, needs_human: false, reason: null },
+                { onConflict: 'psid,page_id' }
+              );
+              if (error) {
+                // Row may not exist yet, insert fresh
+                await sb.from('bot_paused').insert({
+                  psid: recipientPsid, page_id: pageId, paused_at: new Date().toISOString(), auto_resume_at: resumeAt, needs_human: false, reason: null
+                }).catch(() => {});
               }
+              console.log(`[Echo] Human replied to ${recipientPsid}. Badge cleared, 10min pause set.`);
             }
           } else {
             console.log(`[Echo] Bot own reply echo ignored (app_id: ${echoAppId}).`);
