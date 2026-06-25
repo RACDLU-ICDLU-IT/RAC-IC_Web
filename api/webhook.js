@@ -363,7 +363,7 @@ export default async function handler(req, res) {
             getSystemPrompt(pageId),
             getHistory(psid, pageId)
           ]);
-          const requestingHuman = await isRequestingHuman(msgText, systemPromptBase, history);
+          const requestingHuman = await isRequestingHuman(msgText, history);
           if (requestingHuman) {
             console.log(`[HumanSupport] Triggered for ${psid}`);
             await handleHumanSupport(psid, pageId, msgText); // saves msg internally with flag
