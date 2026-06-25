@@ -11,9 +11,27 @@ Rules:
 - Respond in user's language (Bengali or English)
 - Do not mention specific club names unless told in this prompt`;
 
-// NOTE: llama-3.3-70b-versatile was deprecated by Groq (announced June 17, 2026).
-// Set back to 'llama-3.3-70b-versatile' if you want to keep the old model for now.
-const GROQ_MODEL = 'openai/gpt-oss-120b';
+// NOTE: llama-3.3-70b-versatile was deprecated by Groq (announced June 17, 2026)
+// and doesn't support prompt caching anyway.
+//
+// Each model on Groq has its OWN independent daily request quota — chaining
+// several as fallbacks stacks separate budgets instead of sharing one. Tried
+// in order; whichever one isn't rate-limited/erroring handles the reply.
+//   - gpt-oss-120b / gpt-oss-20b: caching-eligible, same free-tier limits
+//     (1K req/day, 8K TPM each) — using both effectively doubles that pool.
+//   - qwen3.6-27b: no caching, but a third independent 1K/day pool as backup.
+const GROQ_TEXT_MODELS = [
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
+  'qwen/qwen3.6-27b',
+];
+
+// The classifier needs a fast, literal yes/no, not a reasoning model that
+// can "overthink" a clear request — and it fires on every message containing
+// a human-related keyword, so a high daily request limit matters more than
+// raw capability here. llama-3.1-8b-instant: non-reasoning, 14.4K req/day
+// (vs 1K/day for the gpt-oss/qwen options) on the free tier.
+const GROQ_CLASSIFIER_MODEL = 'llama-3.1-8b-instant';
 
 function getSupabase() {
   return createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -142,7 +160,7 @@ async function callGemini(systemPrompt, history, userMessage) {
 }
 
 // ── Groq fallback ────────────────────────────────────────────────────
-async function callGroq(systemPrompt, history, userMessage) {
+async function callGroq(systemPrompt, history, userMessage, model) {
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
   if (!GROQ_API_KEY) throw new Error('Missing GROQ_API_KEY');
 
@@ -152,10 +170,20 @@ async function callGroq(systemPrompt, history, userMessage) {
     { role: 'user', content: userMessage }
   ];
 
+  // reasoning_effort is only supported on the gpt-oss family — sending it to
+  // qwen or other models could be rejected, so only attach it when relevant.
+  const supportsReasoningEffort = model.startsWith('openai/gpt-oss');
+  const body = {
+    model,
+    messages,
+    temperature: 0.7,
+    ...(supportsReasoningEffort ? { reasoning_effort: 'low' } : {})
+  };
+
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_API_KEY}` },
-    body: JSON.stringify({ model: GROQ_MODEL, messages, temperature: 0.7 })
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) { const e = await response.json(); throw new Error(`Groq ${response.status}: ${JSON.stringify(e)}`); }
@@ -176,15 +204,22 @@ async function getAIResponse(systemPrompt, history, userMessage, ragContext) {
     return reply;
   } catch (err) {
     console.warn(`[AI] Gemini failed (${err.message}). Trying Groq...`);
+  }
+
+  // Walk the Groq fallback chain — each model has its own quota, so a 429
+  // on one just moves to the next rather than failing the whole reply.
+  for (const model of GROQ_TEXT_MODELS) {
     try {
-      const reply = await callGroq(systemPrompt, history, finalMessage);
-      console.log('[AI] Groq success.');
+      const reply = await callGroq(systemPrompt, history, finalMessage, model);
+      console.log(`[AI] Groq success (${model}).`);
       return reply;
-    } catch (groqErr) {
-      console.error('[AI] Groq failed:', groqErr.message);
-      return 'Our assistant is temporarily unavailable. A team member will reach out to you soon. Thank you for your patience! 🙏';
+    } catch (err) {
+      console.warn(`[AI] Groq ${model} failed (${err.message}). Trying next...`);
     }
   }
+
+  console.error('[AI] All providers exhausted.');
+  return 'Our assistant is temporarily unavailable. A team member will reach out to you soon. Thank you for your patience! 🙏';
 }
 
 // ── Human support detection ──────────────────────────────────────────
@@ -214,9 +249,9 @@ async function isRequestingHuman(userMessage, history) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_API_KEY}` },
       body: JSON.stringify({
-        model: GROQ_MODEL,
+        model: GROQ_CLASSIFIER_MODEL,
         temperature: 0,
-        max_tokens: 10,
+        max_tokens: 20,
         messages: [
           {
             role: 'system',
@@ -235,8 +270,9 @@ async function isRequestingHuman(userMessage, history) {
     }
 
     const data = await response.json();
-    const answer = data.choices?.[0]?.message?.content?.trim().toLowerCase() || 'no';
-    console.log(`[HumanClassifier] Groq answer for "${userMessage}": "${answer}"`);
+    const raw = data.choices?.[0]?.message?.content?.trim().toLowerCase() || '';
+    const answer = raw.includes('yes') ? 'yes' : raw.includes('no') ? 'no' : raw || 'no';
+    console.log(`[HumanClassifier] Groq answer for "${userMessage}": "${answer}" (raw: "${raw}")`);
     return answer === 'yes';
   } catch (err) {
     console.error('[HumanClassifier] Error:', err.message);
