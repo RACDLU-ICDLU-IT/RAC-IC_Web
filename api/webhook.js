@@ -26,11 +26,12 @@ const GROQ_TEXT_MODELS = [
   'qwen/qwen3.6-27b',
 ];
 
-// DIAGNOSTIC: temporarily back on llama-3.3-70b-versatile to test whether
-// misclassification is actually model-specific, or a deeper prompt/context
-// issue — both gpt-oss-120b and llama-3.1-8b-instant said "no" to clear
-// human-support requests, which is suspicious across two unrelated models.
-const GROQ_CLASSIFIER_MODEL = 'llama-3.3-70b-versatile';
+// TESTING (Jun 26, 2026): trying qwen/qwen3.6-27b — Groq's own recommended
+// replacement for llama-3.3-70b-versatile — to see if it handles clear
+// human-support requests correctly. If it passes, swap permanently before
+// the 08/16/26 shutdown deadline. If it fails too, llama-3.3-70b-versatile
+// stays in place until then while we look for another option.
+const GROQ_CLASSIFIER_MODEL = 'qwen/qwen3.6-27b';
 
 function getSupabase() {
   return createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
