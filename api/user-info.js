@@ -2,7 +2,19 @@
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).send('Method Not Allowed');
 
-  const { psid, pageId } = req.query;
+  // Parse query params manually (same fix as webhook.js)
+  let psid = null, pageId = null;
+  const qi = req.url?.indexOf('?');
+  if (qi !== -1 && qi !== undefined) {
+    const sp = new URLSearchParams(req.url.slice(qi + 1));
+    psid = sp.get('psid');
+    pageId = sp.get('pageId');
+  }
+  if (!psid && req.query) {
+    psid = req.query.psid ?? null;
+    pageId = req.query.pageId ?? null;
+  }
+
   if (!psid || !pageId) return res.status(400).json({ error: 'Missing psid or pageId' });
 
   const PAGE_TOKEN_MAP = {
@@ -11,7 +23,7 @@ export default async function handler(req, res) {
   };
 
   const token = PAGE_TOKEN_MAP[pageId];
-  if (!token) return res.status(400).json({ error: 'Unknown page' });
+  if (!token) return res.status(400).json({ error: `Unknown pageId: ${pageId}` });
 
   try {
     const response = await fetch(
