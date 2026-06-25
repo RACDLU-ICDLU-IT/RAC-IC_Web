@@ -191,34 +191,46 @@ function hasHumanKeyword(text) {
   return HUMAN_KEYWORDS.some(kw => lower.includes(kw));
 }
 
-async function isRequestingHuman(userMessage, systemPrompt, history) {
-  console.log(`[HumanCheck] Classifying: "${userMessage}"`);
+async function isRequestingHuman(userMessage, history) {
   try {
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    const messages = [
-      ...history.slice(-4).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-      { role: 'user', parts: [{ text: userMessage }] }
-    ];
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: 'You are a classifier. Determine if the user is requesting to speak with a human agent/support person/club member instead of an AI. Reply with only JSON: {"needs_human": true} or {"needs_human": false}. Consider context carefully — mentioning a human in passing is not the same as requesting one.' }] },
-          contents: messages,
-          generationConfig: { temperature: 0, maxOutputTokens: 20 }
-        })
-      }
-    );
+    const GROQ_API_KEY = process.env.GROQ_API_KEY;
+    if (!GROQ_API_KEY) { console.error('[HumanClassifier] Missing GROQ_API_KEY'); return false; }
+
+    const recentHistory = (history || []).slice(-4).map(m => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: m.content
+    }));
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_API_KEY}` },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        temperature: 0,
+        max_tokens: 10,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a binary classifier. Determine if the user wants to speak with a real human instead of an AI assistant. Reply with ONLY the word "yes" or "no". No other text.'
+          },
+          ...recentHistory,
+          { role: 'user', content: userMessage }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      console.error('[HumanClassifier] Groq error:', response.status, JSON.stringify(err));
+      return false;
+    }
+
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{"needs_human":false}';
-    const clean = text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(clean);
-    console.log(`[HumanCheck] Result: needs_human=${parsed.needs_human}, raw="${text}"`);
-    return parsed.needs_human === true;
+    const answer = data.choices?.[0]?.message?.content?.trim().toLowerCase() || 'no';
+    console.log(`[HumanClassifier] Groq answer for "${userMessage}": "${answer}"`);
+    return answer === 'yes';
   } catch (err) {
-    console.error('[HumanCheck] Error:', err.message);
+    console.error('[HumanClassifier] Error:', err.message);
     return false;
   }
 }
