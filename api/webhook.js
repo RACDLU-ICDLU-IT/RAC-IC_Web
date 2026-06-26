@@ -26,10 +26,9 @@ const GROQ_TEXT_MODELS = [
   'qwen/qwen3.6-27b',
 ];
 
-// TESTING #2 (Jun 26, 2026): qwen/qwen3.6-27b again, but with
-// reasoning_effort: "none" — per Groq's docs, this is the ONLY model that
-// supports fully disabling reasoning (gpt-oss only goes as low as "low",
-// never off). No reasoning tokens = no <think> bleed, no truncation risk.
+// CONFIRMED (Jun 26, 2026): qwen/qwen3.6-27b with reasoning_effort: "none"
+// correctly classifies clear human-support requests — no <think> bleed,
+// no overthinking. Non-deprecated, non-reasoning, own 1K/day quota pool.
 const GROQ_CLASSIFIER_MODEL = 'qwen/qwen3.6-27b';
 
 function getSupabase() {
