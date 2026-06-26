@@ -26,11 +26,10 @@ const GROQ_TEXT_MODELS = [
   'qwen/qwen3.6-27b',
 ];
 
-// TESTING (Jun 26, 2026): trying qwen/qwen3.6-27b — Groq's own recommended
-// replacement for llama-3.3-70b-versatile — to see if it handles clear
-// human-support requests correctly. If it passes, swap permanently before
-// the 08/16/26 shutdown deadline. If it fails too, llama-3.3-70b-versatile
-// stays in place until then while we look for another option.
+// TESTING #2 (Jun 26, 2026): qwen/qwen3.6-27b again, but with
+// reasoning_effort: "none" — per Groq's docs, this is the ONLY model that
+// supports fully disabling reasoning (gpt-oss only goes as low as "low",
+// never off). No reasoning tokens = no <think> bleed, no truncation risk.
 const GROQ_CLASSIFIER_MODEL = 'qwen/qwen3.6-27b';
 
 function getSupabase() {
@@ -252,6 +251,10 @@ async function isRequestingHuman(userMessage, history) {
         model: GROQ_CLASSIFIER_MODEL,
         temperature: 0,
         max_tokens: 20,
+        // Only qwen3.6-27b supports fully disabling reasoning via "none" —
+        // sending this to a non-reasoning model like llama-3.3 could error,
+        // so it's gated behind a check rather than always included.
+        ...(GROQ_CLASSIFIER_MODEL === 'qwen/qwen3.6-27b' ? { reasoning_effort: 'none' } : {}),
         messages: [
           {
             role: 'system',
