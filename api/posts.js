@@ -8,16 +8,17 @@ function getSupabase() {
   return createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
-// Reuses the same page-token mapping as the Messenger webhook. The token
-// just needs pages_manage_posts (+ pages_manage_engagement for comment
-// actions) granted on it — same token, no separate auth flow needed.
+// Uses a dedicated token for posting/comment actions, separate from the
+// Messenger webhook's token — scoped narrowly to pages_manage_posts,
+// pages_read_engagement, and pages_manage_engagement, with no overlap with
+// the Messenger token's permissions.
 const PAGE_TOKEN_MAP = {
-  [process.env.PAGE_ID_1]: process.env.MESSENGER_PAGE_ACCESS_TOKEN,
-  [process.env.PAGE_ID_2]: process.env.MESSENGER_PAGE_ACCESS_TOKEN_2,
+  [process.env.PAGE_ID_1]: process.env.POSTS_PAGE_ACCESS_TOKEN,
+  [process.env.PAGE_ID_2]: process.env.POSTS_PAGE_ACCESS_TOKEN_2,
 };
 
 function getPageToken(pageId) {
-  return PAGE_TOKEN_MAP[pageId] || process.env.MESSENGER_PAGE_ACCESS_TOKEN;
+  return PAGE_TOKEN_MAP[pageId] || process.env.POSTS_PAGE_ACCESS_TOKEN;
 }
 
 const GRAPH_VERSION = 'v23.0';
