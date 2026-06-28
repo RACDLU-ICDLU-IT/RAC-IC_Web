@@ -61,6 +61,7 @@ import AdminForms from './pages/admin/AdminForms';
 import AdminFormBuilder from './pages/admin/AdminFormBuilder';
 import AdminFormResponses from './pages/admin/AdminFormResponses';
 import AdminBotManager from './pages/admin/AdminBotManager';
+import PostManager from './pages/admin/PostManager';
 
 import PublicForm from './pages/public/PublicForm';
 
@@ -139,6 +140,7 @@ export default function App() {
                     <Route path="forms/:id/edit" element={<AdminFormBuilder />} />
                     <Route path="forms/:id/responses" element={<AdminFormResponses />} />
                     <Route path="bot" element={<AdminBotManager />} />
+                    <Route path="posts" element={<PostManager />} />
                   </Route>
                 </Route>
 
