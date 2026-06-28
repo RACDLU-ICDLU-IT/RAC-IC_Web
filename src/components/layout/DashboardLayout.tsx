@@ -8,7 +8,7 @@ import {
   Home, User, CalendarDays, Calendar, Presentation, Bell, Settings,
   Users, UserCheck, CheckSquare, FolderOpen, Newspaper, Image as ImageIcon,
   HeartHandshake, Megaphone, Inbox, Palette, LogOut, Menu, X, LucideIcon, FileText, CreditCard,
-  Zap, HandCoins, Trophy, Bot
+  Zap, HandCoins, Trophy, Bot, Share2
 } from 'lucide-react';
 
 export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?: boolean }) {
@@ -117,8 +117,9 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       { path: '/admin/board', label: 'Our Team', icon: Users },
       { path: '/admin/contact', label: 'Contact Inbox', icon: Inbox, badge: unreadCount },
     ]},
-    { title: 'Bot', items: [
+    { title: 'Social Media', items: [
       { path: '/admin/bot', label: 'Bot Manager', icon: Bot },
+      { path: '/admin/posts', label: 'Post Manager', icon: Share2 },
     ]},
     { title: 'System', items: [
       { path: '/admin/sponsors', label: 'Sponsors', icon: HeartHandshake },
