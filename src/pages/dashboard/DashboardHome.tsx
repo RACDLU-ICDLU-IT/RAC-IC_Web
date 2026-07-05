@@ -1,5 +1,5 @@
 import { supabase } from '../../supabase';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import {
@@ -111,12 +111,64 @@ function timeAgo(dateStr?: string) {
   return new Date(then).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function memberTenure(joinDate?: string) {
+  if (!joinDate) return null;
+  const start = new Date(`${joinDate}T00:00:00`).getTime();
+  if (Number.isNaN(start)) return null;
+  const days = Math.floor((Date.now() - start) / 86400000);
+  if (days < 0) return null;
+  if (days < 30) return `${days}d`;
+  if (days < 365) return `${Math.floor(days / 30)}mo`;
+  return `${Math.floor(days / 365)}y`;
+}
+
+/** Isolated data layer — fetched in parallel, same tables/fields/filters as before. */
+async function loadDashboardData(tenantId: string) {
+  const today = new Date().toISOString().split('T')[0];
+
+  const [eventsRes, annRes] = await Promise.all([
+    supabase
+      .from('events')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .gte('date', today)
+      .order('date', { ascending: true })
+      .limit(3),
+    supabase
+      .from('announcements')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .order('createdAt', { ascending: false })
+      .limit(3),
+  ]);
+
+  if (eventsRes.error) throw eventsRes.error;
+  if (annRes.error) throw annRes.error;
+
+  return {
+    events: (eventsRes.data as EventRecord[]) || [],
+    announcements: (annRes.data as AnnouncementRecord[]) || [],
+  };
+}
+
 /* ------------------------------- building blocks ------------------------------- */
 
-function SectionCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function SectionCard({
+  children,
+  className = '',
+  hover = false,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  hover?: boolean;
+}) {
   return (
     <div
-      className={`bg-[color:var(--surface)] border border-[color:var(--border-subtle)] rounded-3xl shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${className}`}
+      className={`bg-[color:var(--surface)] border border-[color:var(--border-subtle)] rounded-3xl shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-200 ${
+        hover
+          ? 'hover:shadow-[0_10px_28px_rgba(0,0,0,0.07)] hover:border-[color:var(--border-strong)] hover:-translate-y-0.5 motion-reduce:hover:translate-y-0'
+          : ''
+      } ${className}`}
     >
       {children}
     </div>
@@ -141,13 +193,31 @@ function SectionHeader({ icon, title, to }: { icon: React.ReactNode; title: stri
   );
 }
 
-function EmptyState({ icon, label }: { icon: React.ReactNode; label: string }) {
+function EmptyState({
+  icon,
+  label,
+  actionLabel,
+  actionTo,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  actionLabel?: string;
+  actionTo?: string;
+}) {
   return (
     <div className="flex flex-col items-center gap-3 text-center py-10 px-4 bg-[color:var(--surface-2)] rounded-2xl border border-dashed border-[color:var(--border-subtle)]">
       <div className="w-11 h-11 rounded-full bg-[color:var(--accent-soft)] flex items-center justify-center text-accent">
         {icon}
       </div>
       <p className="text-[color:var(--text-3)] text-sm font-medium">{label}</p>
+      {actionLabel && actionTo && (
+        <Link
+          to={actionTo}
+          className="text-xs font-bold text-accent hover:underline underline-offset-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] focus-visible:ring-offset-2 px-1"
+        >
+          {actionLabel} →
+        </Link>
+      )}
     </div>
   );
 }
@@ -156,11 +226,13 @@ function StatCard({
   icon,
   label,
   value,
+  hint,
   tone = 'default',
 }: {
   icon: React.ReactNode;
   label: string;
   value: React.ReactNode;
+  hint?: string;
   tone?: 'default' | 'success' | 'danger';
 }) {
   const toneClasses =
@@ -171,7 +243,7 @@ function StatCard({
       : 'text-accent bg-[color:var(--accent-soft)]';
 
   return (
-    <SectionCard className="p-4 sm:p-5 flex items-center gap-3 sm:gap-4 hover:border-[color:var(--border-strong)] transition-colors">
+    <SectionCard hover className="p-4 sm:p-5 flex items-center gap-3 sm:gap-4">
       <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 ${toneClasses}`}>
         {icon}
       </div>
@@ -182,8 +254,26 @@ function StatCard({
         <p className="text-lg sm:text-xl font-heading font-bold text-[color:var(--text-1)] leading-tight truncate">
           {value}
         </p>
+        {hint && <p className="text-[11px] text-[color:var(--text-3)] mt-0.5 truncate">{hint}</p>}
       </div>
     </SectionCard>
+  );
+}
+
+function ErrorBanner({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-[color:var(--danger-soft)] text-[color:var(--danger)]"
+    >
+      <p className="text-sm font-bold">{message}</p>
+      <button
+        onClick={onRetry}
+        className="text-xs font-bold uppercase tracking-wider shrink-0 underline underline-offset-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--danger)] focus-visible:ring-offset-1"
+      >
+        Retry
+      </button>
+    </div>
   );
 }
 
@@ -220,49 +310,31 @@ export default function DashboardHome() {
   const [upcomingEvents, setUpcomingEvents] = useState<EventRecord[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchDashboard = useCallback(async () => {
+    if (!profile) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const { events, announcements: anns } = await loadDashboardData(tenant.id);
+      setUpcomingEvents(events);
+      setAnnouncements(anns);
+    } catch (err) {
+      console.error(err);
+      setError("Couldn't load your dashboard data.");
+    } finally {
+      setLoading(false);
+    }
+  }, [profile, tenant.id]);
 
   useEffect(() => {
-    if (!profile) return;
-    let active = true;
-
-    const fetchData = async () => {
-      try {
-        const today = new Date().toISOString().split('T')[0];
-
-        const { data: eventsSnap } = await supabase
-          .from('events')
-          .select('*')
-          .eq('tenant_id', tenant.id)
-          .gte('date', today)
-          .order('date', { ascending: true })
-          .limit(3);
-
-        const { data: annSnap } = await supabase
-          .from('announcements')
-          .select('*')
-          .eq('tenant_id', tenant.id)
-          .order('createdAt', { ascending: false })
-          .limit(3);
-
-        if (!active) return;
-        setUpcomingEvents(eventsSnap || []);
-        setAnnouncements(annSnap || []);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-
-    fetchData();
-    return () => {
-      active = false;
-    };
-  }, [profile, tenant.id]);
+    fetchDashboard();
+  }, [fetchDashboard]);
 
   if (loading) {
     return (
-      <div style={tokens}>
+      <div style={tokens} role="status" aria-busy="true" aria-label="Loading dashboard">
         <DashboardSkeleton />
       </div>
     );
@@ -273,8 +345,14 @@ export default function DashboardHome() {
   const isActive = profile?.status === 'active';
   const bannerBg = isLight ? 'var(--color-accent)' : 'var(--color-primary)';
 
+  const eventsThisWeek = upcomingEvents.filter((e) => formatEventDate(e.date).label).length;
+  const pinnedCount = announcements.filter((a) => a.isPinned).length;
+  const tenure = memberTenure(profile?.joinDate);
+
   return (
     <div style={tokens} className="space-y-6 sm:space-y-8 animate-fade-in-up">
+      {error && <ErrorBanner message={error} onRetry={fetchDashboard} />}
+
       {/* Welcome Banner */}
       <div
         className="p-6 sm:p-8 md:p-12 rounded-3xl relative overflow-hidden text-white isolate"
@@ -290,7 +368,11 @@ export default function DashboardHome() {
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="min-w-0">
-            <p className="text-white/70 text-xs sm:text-sm font-bold uppercase tracking-widest mb-2">
+            <p className="text-white/70 text-xs sm:text-sm font-bold uppercase tracking-widest mb-2 flex items-center gap-2">
+              <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/60 opacity-75 motion-reduce:hidden" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+              </span>
               {getGreeting()}
             </p>
             <h1 className="text-[clamp(1.6rem,5vw,3rem)] font-heading font-bold mb-2 leading-tight">
@@ -316,26 +398,46 @@ export default function DashboardHome() {
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard icon={<CalendarDays size={18} />} label="Upcoming" value={upcomingEvents.length} />
-        <StatCard icon={<Megaphone size={18} />} label="Updates" value={announcements.length} />
+        <StatCard
+          icon={<CalendarDays size={18} />}
+          label="Upcoming"
+          value={upcomingEvents.length}
+          hint={eventsThisWeek > 0 ? `${eventsThisWeek} this week` : undefined}
+        />
+        <StatCard
+          icon={<Megaphone size={18} />}
+          label="Updates"
+          value={announcements.length}
+          hint={pinnedCount > 0 ? `${pinnedCount} pinned` : undefined}
+        />
         <StatCard
           icon={<ShieldCheck size={18} />}
           label="Status"
           value={isActive ? 'Active' : 'Inactive'}
           tone={isActive ? 'success' : 'danger'}
         />
-        <StatCard icon={<User size={18} />} label="Role" value={<span className="capitalize">{profile?.role || 'Member'}</span>} />
+        <StatCard
+          icon={<User size={18} />}
+          label="Role"
+          value={<span className="capitalize">{profile?.role || 'Member'}</span>}
+          hint={tenure ? `Member for ${tenure}` : undefined}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
         {/* Left Column - Events & Announcements */}
         <div className="lg:col-span-2 space-y-6 sm:space-y-8">
           {/* Upcoming Events */}
-          <SectionCard className="p-5 sm:p-6 md:p-8">
+          <SectionCard hover className="p-5 sm:p-6 md:p-8">
             <SectionHeader icon={<CalendarDays size={22} />} title="Upcoming Events" to="/dashboard/calendar" />
 
             {upcomingEvents.length === 0 ? (
-              <EmptyState icon={<CalendarDays size={20} />} label="No upcoming events scheduled." />
+              <EmptyState
+                icon={<CalendarDays size={20} />}
+                label="No upcoming events scheduled."
+                actionLabel="Open calendar"
+                actionTo="/dashboard/calendar"
+              />
             ) : (
               <div className="space-y-3">
                 {upcomingEvents.map((event) => {
@@ -386,32 +488,47 @@ export default function DashboardHome() {
           </SectionCard>
 
           {/* Recent Announcements */}
-          <SectionCard className="p-5 sm:p-6 md:p-8">
+          <SectionCard hover className="p-5 sm:p-6 md:p-8">
             <SectionHeader icon={<Megaphone size={22} />} title="Announcements" to="/dashboard/announcements" />
 
             {announcements.length === 0 ? (
-              <EmptyState icon={<Megaphone size={20} />} label="No announcements at this time." />
+              <EmptyState
+                icon={<Megaphone size={20} />}
+                label="No announcements at this time."
+                actionLabel="Open announcements"
+                actionTo="/dashboard/announcements"
+              />
             ) : (
               <div className="space-y-3">
-                {announcements.map((ann) => (
-                  <div
-                    key={ann.id}
-                    className="p-4 sm:p-5 rounded-2xl bg-[color:var(--surface-2)] border border-[color:var(--border-subtle)] relative"
-                  >
-                    {ann.isPinned && (
-                      <span className="absolute top-0 right-5 -translate-y-1/2 bg-accent text-white text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <Pin size={10} /> Pinned
-                      </span>
-                    )}
-                    <div className="flex items-start justify-between gap-3">
-                      <h3 className="font-bold text-[color:var(--text-1)] leading-tight">{ann.title}</h3>
-                      <span className="text-xs text-[color:var(--text-3)] shrink-0 whitespace-nowrap">
-                        {timeAgo(ann.createdAt)}
-                      </span>
+                {announcements.map((ann) => {
+                  const isNew = ann.createdAt ? Date.now() - new Date(ann.createdAt).getTime() < 86400000 : false;
+                  return (
+                    <div
+                      key={ann.id}
+                      className="p-4 sm:p-5 rounded-2xl bg-[color:var(--surface-2)] border border-[color:var(--border-subtle)] relative"
+                    >
+                      {ann.isPinned && (
+                        <span className="absolute top-0 right-5 -translate-y-1/2 bg-accent text-white text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Pin size={10} /> Pinned
+                        </span>
+                      )}
+                      <div className="flex items-start justify-between gap-3">
+                        <h3 className="font-bold text-[color:var(--text-1)] leading-tight flex items-center gap-2">
+                          {ann.title}
+                          {isNew && (
+                            <span className="text-[9px] font-bold uppercase tracking-widest text-[color:var(--success)] bg-[color:var(--success-soft)] px-1.5 py-0.5 rounded-full shrink-0">
+                              New
+                            </span>
+                          )}
+                        </h3>
+                        <span className="text-xs text-[color:var(--text-3)] shrink-0 whitespace-nowrap">
+                          {timeAgo(ann.createdAt)}
+                        </span>
+                      </div>
+                      <p className="text-sm text-[color:var(--text-2)] mt-2 line-clamp-2">{ann.body || ann.content}</p>
                     </div>
-                    <p className="text-sm text-[color:var(--text-2)] mt-2 line-clamp-2">{ann.body || ann.content}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </SectionCard>
@@ -419,7 +536,7 @@ export default function DashboardHome() {
 
         {/* Right Column - Profile & Quick Links */}
         <div className="space-y-6">
-          <SectionCard className="p-5 sm:p-6">
+          <SectionCard hover className="p-5 sm:p-6">
             <h3 className="font-heading font-bold text-lg mb-4 flex items-center gap-2 text-[color:var(--text-1)]">
               <User size={18} className="text-accent" /> Your Profile Summary
             </h3>
@@ -440,12 +557,18 @@ export default function DashboardHome() {
                 <span className="text-[color:var(--text-3)]">Role</span>
                 <span className="font-bold text-[color:var(--text-1)] capitalize">{profile?.role}</span>
               </div>
-              <div className="flex justify-between items-center py-2.5">
+              <div className="flex justify-between items-center py-2.5 border-b border-[color:var(--border-subtle)]">
                 <span className="text-[color:var(--text-3)]">Join Date</span>
                 <span className="font-bold text-[color:var(--text-1)]">
                   {profile?.joinDate ? new Date(`${profile.joinDate}T00:00:00`).toLocaleDateString() : 'N/A'}
                 </span>
               </div>
+              {tenure && (
+                <div className="flex justify-between items-center py-2.5">
+                  <span className="text-[color:var(--text-3)]">Tenure</span>
+                  <span className="font-bold text-[color:var(--text-1)]">{tenure}</span>
+                </div>
+              )}
             </div>
             <Link
               to="/dashboard/profile"
