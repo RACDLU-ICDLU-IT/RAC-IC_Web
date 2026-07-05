@@ -178,8 +178,11 @@ function SectionCard({
 function SectionHeader({ icon, title, to }: { icon: React.ReactNode; title: string; to?: string }) {
   return (
     <div className="flex items-center justify-between mb-6">
-      <h2 className="text-xl sm:text-2xl font-heading font-bold flex items-center gap-2 text-[color:var(--text-1)]">
-        <span className="text-accent">{icon}</span> {title}
+      <h2 className="text-xl sm:text-2xl font-heading font-bold tracking-tight flex items-center gap-2.5 text-[color:var(--text-1)]">
+        <span className="text-accent bg-gradient-to-br from-[color:var(--accent-soft)] to-[color:var(--surface)] p-1.5 rounded-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
+          {icon}
+        </span>
+        {title}
       </h2>
       {to && (
         <Link
@@ -206,7 +209,7 @@ function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center gap-3 text-center py-10 px-4 bg-[color:var(--surface-2)] rounded-2xl border border-dashed border-[color:var(--border-subtle)]">
-      <div className="w-11 h-11 rounded-full bg-[color:var(--accent-soft)] flex items-center justify-center text-accent">
+      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[color:var(--accent-soft)] to-[color:var(--surface)] flex items-center justify-center text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
         {icon}
       </div>
       <p className="text-[color:var(--text-3)] text-sm font-medium">{label}</p>
@@ -237,21 +240,23 @@ function StatCard({
 }) {
   const toneClasses =
     tone === 'success'
-      ? 'text-[color:var(--success)] bg-[color:var(--success-soft)]'
+      ? 'text-[color:var(--success)] from-[color:var(--success-soft)] to-[color:var(--surface)]'
       : tone === 'danger'
-      ? 'text-[color:var(--danger)] bg-[color:var(--danger-soft)]'
-      : 'text-accent bg-[color:var(--accent-soft)]';
+      ? 'text-[color:var(--danger)] from-[color:var(--danger-soft)] to-[color:var(--surface)]'
+      : 'text-accent from-[color:var(--accent-soft)] to-[color:var(--surface)]';
 
   return (
     <SectionCard hover className="p-4 sm:p-5 flex items-center gap-3 sm:gap-4">
-      <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 ${toneClasses}`}>
+      <div
+        className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)] bg-gradient-to-br ${toneClasses}`}
+      >
         {icon}
       </div>
       <div className="min-w-0">
         <p className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-[color:var(--text-3)] truncate">
           {label}
         </p>
-        <p className="text-lg sm:text-xl font-heading font-bold text-[color:var(--text-1)] leading-tight truncate">
+        <p className="text-lg sm:text-xl font-heading font-bold tabular-nums text-[color:var(--text-1)] leading-tight truncate">
           {value}
         </p>
         {hint && <p className="text-[11px] text-[color:var(--text-3)] mt-0.5 truncate">{hint}</p>}
@@ -350,7 +355,7 @@ export default function DashboardHome() {
   const tenure = memberTenure(profile?.joinDate);
 
   return (
-    <div style={tokens} className="space-y-6 sm:space-y-8 animate-fade-in-up">
+    <div style={tokens} className="space-y-6 sm:space-y-8 animate-fade-in-up antialiased">
       {error && <ErrorBanner message={error} onRetry={fetchDashboard} />}
 
       {/* Welcome Banner */}
@@ -365,6 +370,14 @@ export default function DashboardHome() {
         />
         <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-white/10 blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 left-1/4 w-72 h-72 rounded-full bg-black/10 blur-3xl pointer-events-none" />
+        <div
+          className="absolute inset-0 opacity-[0.05] mix-blend-overlay pointer-events-none"
+          style={{
+            backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)',
+            backgroundSize: '3px 3px',
+          }}
+          aria-hidden="true"
+        />
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="min-w-0">
@@ -375,21 +388,21 @@ export default function DashboardHome() {
               </span>
               {getGreeting()}
             </p>
-            <h1 className="text-[clamp(1.6rem,5vw,3rem)] font-heading font-bold mb-2 leading-tight">
+            <h1 className="text-[clamp(1.6rem,5vw,3rem)] font-heading font-bold tracking-tight mb-2 leading-[1.1] [text-shadow:0_1px_3px_rgba(0,0,0,0.1)]">
               {firstName ? `Welcome back, ${firstName}!` : 'Welcome back!'}
             </h1>
-            <p className="text-white/70 text-base sm:text-lg">
-              {settings.clubName} • {settings.rotaryYear || 'Current Year'}
+            <p className="text-white/70 text-base sm:text-lg tracking-wide">
+              {settings.clubName} <span className="text-white/40">•</span> {settings.rotaryYear || 'Current Year'}
             </p>
           </div>
           {profile?.photo ? (
             <img
               src={profile.photo}
               alt={profile.name}
-              className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-white/30 object-cover shadow-xl shrink-0"
+              className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-white/30 object-cover shadow-xl shadow-[0_0_0_6px_rgba(255,255,255,0.06)] shrink-0"
             />
           ) : (
-            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-white/30 bg-white/10 flex items-center justify-center text-2xl sm:text-3xl font-heading font-bold shadow-xl shrink-0">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-white/30 bg-white/10 flex items-center justify-center text-2xl sm:text-3xl font-heading font-bold shadow-xl shadow-[0_0_0_6px_rgba(255,255,255,0.06)] shrink-0">
               {profile?.name?.[0]}
             </div>
           )}
@@ -449,7 +462,7 @@ export default function DashboardHome() {
                     >
                       <div className="w-14 sm:w-16 flex flex-col items-center justify-center shrink-0 border-r border-[color:var(--border-subtle)] pr-3 sm:pr-4">
                         <span className="text-accent font-bold text-[11px] uppercase tracking-widest">{month}</span>
-                        <span className="text-xl sm:text-2xl font-heading font-bold text-[color:var(--text-1)] leading-none group-hover:text-accent transition-colors">
+                        <span className="text-xl sm:text-2xl font-heading font-bold tabular-nums text-[color:var(--text-1)] leading-none group-hover:text-accent transition-colors">
                           {day}
                         </span>
                       </div>
