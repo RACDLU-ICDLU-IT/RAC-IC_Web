@@ -115,22 +115,22 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
   const navToUse = isAdminMode ? adminNav : memberNav;
 
   return (
-    <div className="flex min-h-screen h-[100dvh] bg-[#f5f5f9] dark:bg-[#25293c]">
+    <div className="flex min-h-screen h-[100dvh] bg-[#f5f5f9] dark:!bg-[#25293c]">
       {mobileOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={closeMobile} />
       )}
 
       <aside
         className={`fixed lg:relative flex flex-col h-full z-50 transition-[width,transform] duration-300 ease-in-out
-        bg-white/70 dark:bg-[#2f3349]/60 backdrop-blur-xl backdrop-saturate-150 border-r border-white/40 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.06)]
+        bg-white/90 backdrop-blur-xl backdrop-saturate-150 border-r border-white/40 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.06)]
         ${collapsed ? 'w-[84px]' : 'w-[260px]'}
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
       >
         <button
-          onClick={() => setCollapsed(c => !c)}
-          className="flex absolute -right-3 top-[26px] w-6 h-6 rounded-full bg-[#696cff] text-white items-center justify-center shadow-md z-10"
+          onClick={() => { if (window.innerWidth < 1024) { closeMobile(); } else { setCollapsed(c => !c); } }}
+          className={`flex absolute -right-3 top-[26px] w-6 h-6 rounded-full bg-[#696cff] text-white items-center justify-center shadow-md z-10 ${mobileOpen ? '' : 'lg:flex hidden'}`}
         >
-          <ChevronLeft size={14} className={`transition-transform ${collapsed ? 'rotate-180' : ''}`} />
+          <ChevronLeft size={14} className={`transition-transform lg:${collapsed ? 'rotate-180' : ''}`} />
         </button>
         <div className="h-[64px] shrink-0 flex items-center px-5">
           <NavLink to="/" className="flex items-center gap-2.5 min-w-0">
@@ -142,7 +142,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
             ) : (
               <span className="h-7 w-7 rounded-full bg-[#696cff] shrink-0" />
             )}
-            <span className={`font-heading font-bold text-[1.1rem] tracking-tight text-[#566a7f] dark:text-white truncate ${collapsed ? 'hidden' : ''}`}>
+            <span className={`font-heading font-bold text-[1.1rem] tracking-tight text-[#566a7f] dark:!text-white truncate ${collapsed ? 'hidden' : ''}`}>
               {settings.clubName}
             </span>
           </NavLink>
@@ -215,7 +215,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${roleColors[profile?.role || 'member']}`}>
               {profile?.role || 'Member'}
             </span>
-            <span className="text-[13px] font-medium text-[#566a7f] dark:text-white/80 truncate">
+            <span className="text-[13px] font-medium text-[#566a7f] dark:!text-white/80 truncate">
               {profile?.name || 'Loading...'}
             </span>
           </div>
@@ -230,11 +230,11 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
-        <header className="h-[64px] shrink-0 flex items-center justify-between px-4 lg:px-6 bg-white/80 dark:bg-[#2f3349]/60 backdrop-blur-xl border-b border-[#eceef1] dark:border-white/10">
+        <header className="h-[64px] shrink-0 flex items-center justify-between px-4 lg:px-6 bg-white/80 dark:!bg-[#2f3349]/60 backdrop-blur-xl border-b border-[#eceef1] dark:border-white/10">
           <button onClick={() => setMobileOpen(true)} className="lg:hidden p-1 text-[#566a7f] dark:text-white/70 hover:text-[#696cff] rounded">
             <Menu size={22} />
           </button>
-          <span className="hidden lg:block font-heading font-semibold text-[#566a7f] dark:text-white">
+          <span className="hidden lg:block font-heading font-semibold text-[#566a7f] dark:!text-white">
             {isAdminMode ? 'Admin Panel' : 'Dashboard'}
           </span>
           <div className="w-6 lg:hidden" />
