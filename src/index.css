@@ -12,8 +12,36 @@
 
 @layer base {
   body {
-    @apply font-sans antialiased bg-[var(--color-page-bg)] text-gray-900;
+    @apply font-sans antialiased bg-[var(--color-page-bg)] text-gray-900 transition-colors duration-200;
   }
+}
+
+html.dark {
+  --color-page-bg: #0C0C0E;
+  --color-primary: #E6E8EC;
+}
+
+html.dark body {
+  @apply bg-[var(--color-page-bg)] text-gray-100;
+}
+
+html.dark .bg-white {
+  background-color: #16161A !important;
+}
+
+html.dark .text-gray-900 {
+  color: #E6E8EC !important;
+}
+
+html.dark .text-gray-600,
+html.dark .text-gray-500,
+html.dark .text-gray-400 {
+  color: #A0A3AD !important;
+}
+
+html.dark .border-gray-100,
+html.dark .border-gray-200 {
+  border-color: #2A2A2E !important;
 }
 
 @layer utilities {
@@ -58,6 +86,10 @@ html.lenis, html.lenis body {
 .fc .fc-button { background: var(--color-primary) !important; border: none !important; border-radius: 0.5rem !important; text-transform: capitalize; }
 .fc .fc-day-today { background: color-mix(in srgb, var(--color-accent) 15%, white) !important; }
 .fc-event { border-radius: 4px !important; font-size: 12px !important; padding: 2px 6px !important; cursor: pointer; }
+
+html.dark .fc-day-today {
+  background: color-mix(in srgb, var(--color-accent) 20%, #16161A) !important;
+}
 
 /* Hide scrollbar for webkit and others */
 .hide-scrollbar::-webkit-scrollbar {
