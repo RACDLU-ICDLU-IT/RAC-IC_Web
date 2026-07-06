@@ -7,6 +7,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { TenantProvider } from './contexts/TenantContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './hooks/useToast';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -74,82 +75,84 @@ import MemberDues from './pages/dashboard/MemberDues';
 
 export default function App() {
   return (
-    <AuthProvider>
-      <TenantProvider>
-        <ToastProvider>
-          <BrowserRouter>
-            <ErrorBoundary>
-              <Routes>
-                <Route element={<MainLayout />}>
-                  <Route path="/" element={<Home />} />
-                  <Route path="/about" element={<About />} />
-                  <Route path="/projects" element={<Projects />} />
-                  <Route path="/projects/:id" element={<ProjectDetail />} />
-                  <Route path="/events" element={<Events />} />
-                  <Route path="/board" element={<Board />} />
-                  <Route path="/news" element={<News />} />
-                  <Route path="/news/:id" element={<NewsDetail />} />
-                  <Route path="/gallery" element={<Gallery />} />
-                  <Route path="/contact" element={<Contact />} />
-                  <Route path="/join" element={<Join />} />
-                  <Route path="/sponsorship" element={<Sponsorship />} />
-                  <Route path="/donate" element={<Donate />} />
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/terms-of-service" element={<TermsOfService />} />
-                  <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-                </Route>
-
-                <Route element={<ProtectedRoute />}>
-                  <Route path="/dashboard" element={<DashboardLayout />}>
-                    <Route index element={<DashboardHome />} />
-                    <Route path="profile" element={<DashboardProfile />} />
-                    <Route path="attendance" element={<DashboardAttendance />} />
-                    <Route path="projects" element={<DashboardProjects />} />
-                    <Route path="calendar" element={<DashboardCalendar />} />
-                    <Route path="reminders" element={<DashboardReminders />} />
-                    <Route path="announcements" element={<DashboardAnnouncements />} />
-                    <Route path="resources" element={<DashboardResources />} />
-                    <Route path="dues" element={<MemberDues />} />
-                    <Route path="points" element={<MemberPoints />} />
+    <ThemeProvider>
+      <AuthProvider>
+        <TenantProvider>
+          <ToastProvider>
+            <BrowserRouter>
+              <ErrorBoundary>
+                <Routes>
+                  <Route element={<MainLayout />}>
+                    <Route path="/" element={<Home />} />
+                    <Route path="/about" element={<About />} />
+                    <Route path="/projects" element={<Projects />} />
+                    <Route path="/projects/:id" element={<ProjectDetail />} />
+                    <Route path="/events" element={<Events />} />
+                    <Route path="/board" element={<Board />} />
+                    <Route path="/news" element={<News />} />
+                    <Route path="/news/:id" element={<NewsDetail />} />
+                    <Route path="/gallery" element={<Gallery />} />
+                    <Route path="/contact" element={<Contact />} />
+                    <Route path="/join" element={<Join />} />
+                    <Route path="/sponsorship" element={<Sponsorship />} />
+                    <Route path="/donate" element={<Donate />} />
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/terms-of-service" element={<TermsOfService />} />
+                    <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                   </Route>
-                </Route>
 
-                <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin /></AdminTenantProvider>}>
-                  <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                    <Route index element={<AdminOverview />} />
-                    <Route path="members" element={<AdminMembers />} />
-                    <Route path="applications" element={<AdminApplications />} />
-                    <Route path="attendance" element={<AdminAttendance />} />
-                    <Route path="dues" element={<AdminDues />} />
-                    <Route path="events" element={<AdminEvents />} />
-                    <Route path="projects" element={<AdminProjects />} />
-                    <Route path="board" element={<AdminTeam />} />
-                    <Route path="news" element={<AdminNews />} />
-                    <Route path="gallery" element={<AdminGallery />} />
-                    <Route path="communications" element={<AdminCommunications />} />
-                    <Route path="reminders" element={<AdminReminders />} />
-                    <Route path="resources" element={<AdminResources />} />
-                    <Route path="pages" element={<AdminPages />} />
-                    <Route path="contact" element={<AdminContactInbox />} />
-                    <Route path="sponsors" element={<AdminSponsors />} />
-                    <Route path="theme" element={<AdminTheme />} />
-                    <Route path="settings" element={<AdminSettings />} />
-                    <Route path="donations" element={<AdminDonations />} />
-                    <Route path="levels" element={<AdminLevelConfig />} />
-                    <Route path="forms" element={<AdminForms />} />
-                    <Route path="forms/:id/edit" element={<AdminFormBuilder />} />
-                    <Route path="forms/:id/responses" element={<AdminFormResponses />} />
-                    <Route path="bot" element={<AdminBotManager />} />
-                    <Route path="posts" element={<PostManager />} />
+                  <Route element={<ProtectedRoute />}>
+                    <Route path="/dashboard" element={<DashboardLayout />}>
+                      <Route index element={<DashboardHome />} />
+                      <Route path="profile" element={<DashboardProfile />} />
+                      <Route path="attendance" element={<DashboardAttendance />} />
+                      <Route path="projects" element={<DashboardProjects />} />
+                      <Route path="calendar" element={<DashboardCalendar />} />
+                      <Route path="reminders" element={<DashboardReminders />} />
+                      <Route path="announcements" element={<DashboardAnnouncements />} />
+                      <Route path="resources" element={<DashboardResources />} />
+                      <Route path="dues" element={<MemberDues />} />
+                      <Route path="points" element={<MemberPoints />} />
+                    </Route>
                   </Route>
-                </Route>
 
-                <Route path="/forms/:slug" element={<PublicForm />} />
-              </Routes>
-            </ErrorBoundary>
-          </BrowserRouter>
-        </ToastProvider>
-      </TenantProvider>
-    </AuthProvider>
+                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin /></AdminTenantProvider>}>
+                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
+                      <Route index element={<AdminOverview />} />
+                      <Route path="members" element={<AdminMembers />} />
+                      <Route path="applications" element={<AdminApplications />} />
+                      <Route path="attendance" element={<AdminAttendance />} />
+                      <Route path="dues" element={<AdminDues />} />
+                      <Route path="events" element={<AdminEvents />} />
+                      <Route path="projects" element={<AdminProjects />} />
+                      <Route path="board" element={<AdminTeam />} />
+                      <Route path="news" element={<AdminNews />} />
+                      <Route path="gallery" element={<AdminGallery />} />
+                      <Route path="communications" element={<AdminCommunications />} />
+                      <Route path="reminders" element={<AdminReminders />} />
+                      <Route path="resources" element={<AdminResources />} />
+                      <Route path="pages" element={<AdminPages />} />
+                      <Route path="contact" element={<AdminContactInbox />} />
+                      <Route path="sponsors" element={<AdminSponsors />} />
+                      <Route path="theme" element={<AdminTheme />} />
+                      <Route path="settings" element={<AdminSettings />} />
+                      <Route path="donations" element={<AdminDonations />} />
+                      <Route path="levels" element={<AdminLevelConfig />} />
+                      <Route path="forms" element={<AdminForms />} />
+                      <Route path="forms/:id/edit" element={<AdminFormBuilder />} />
+                      <Route path="forms/:id/responses" element={<AdminFormResponses />} />
+                      <Route path="bot" element={<AdminBotManager />} />
+                      <Route path="posts" element={<PostManager />} />
+                    </Route>
+                  </Route>
+
+                  <Route path="/forms/:slug" element={<PublicForm />} />
+                </Routes>
+              </ErrorBoundary>
+            </BrowserRouter>
+          </ToastProvider>
+        </TenantProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
