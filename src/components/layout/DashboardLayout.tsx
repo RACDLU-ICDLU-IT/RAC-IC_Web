@@ -10,6 +10,7 @@ import {
   HeartHandshake, Megaphone, Inbox, Palette, LogOut, Menu, X, LucideIcon, FileText, CreditCard,
   Zap, HandCoins, Trophy, Bot, Share2
 } from 'lucide-react';
+import ThemeToggle from '../common/ThemeToggle';
 
 export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?: boolean }) {
   const { profile, signOut } = useAuth();
@@ -200,7 +201,8 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           ))}
         </div>
 
-        <div className={`p-4 border-t ${sidebarBorder} shrink-0`}>
+        <div className={`p-4 border-t ${sidebarBorder} shrink-0 flex flex-col gap-3`}>
+          <ThemeToggle isLight={isLight} />
           <button onClick={handleSignOut}
             className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg transition-colors text-sm ${sidebarMuted} ${sidebarHoverBg} hover:${isLight ? 'text-[var(--color-accent)]' : 'text-white'}`}
           >
