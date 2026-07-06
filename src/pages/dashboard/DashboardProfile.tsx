@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/useToast';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
-import { Save, Loader2, Info, Zap, Star, Trophy } from 'lucide-react';
+import { Save, Loader2, Info, Zap, Star, Trophy, Lock, Eye, EyeOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTenant } from '../../hooks/useTenant';
 
@@ -14,6 +14,14 @@ export default function DashboardProfile() {
   const [formData, setFormData] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Password change state
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
 
   useEffect(() => {
     const userId = user?.id;
@@ -38,8 +46,6 @@ export default function DashboardProfile() {
     if (!user) return;
     setSaving(true);
     try {
-      // Only send editable fields - never let a member overwrite
-      // admin-managed fields like xp, fp, level, role, status
       const { xp, fp, level, role, status, id, email, tenant_id, created_at, updatedAt, ...editableFields } = formData;
       await supabase.from('users').update({
         ...editableFields,
@@ -51,6 +57,53 @@ export default function DashboardProfile() {
       addToast('Failed to update profile.', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePasswordChange = async () => {
+    if (!user?.email) return;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      addToast('Please fill in all password fields.', 'error');
+      return;
+    }
+    if (newPassword.length < 8) {
+      addToast('New password must be at least 8 characters.', 'error');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      addToast('New password and confirmation do not match.', 'error');
+      return;
+    }
+    if (newPassword === currentPassword) {
+      addToast('New password must be different from your current password.', 'error');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+
+      if (verifyError) {
+        addToast('Current password is incorrect.', 'error');
+        return;
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateError) throw updateError;
+
+      addToast('Password changed successfully!', 'success');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to change password.', 'error');
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -83,7 +136,6 @@ export default function DashboardProfile() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* Photo Upload */}
         <div className="col-span-1">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
             <h3 className="font-bold text-gray-900 mb-4 font-heading border-b pb-2">Profile Photo</h3>
@@ -113,7 +165,6 @@ export default function DashboardProfile() {
                 <span className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Club Role</span>
                 <div className="font-bold text-gray-900 capitalize">{formData.role || 'Member'}</div>
               </div>
-              {/* Points Summary */}
               <div className="pt-4 border-t border-gray-50">
                 <span className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Points</span>
                 <div className="space-y-2">
@@ -138,7 +189,6 @@ export default function DashboardProfile() {
           </div>
         </div>
 
-        {/* Form Fields */}
         <div className="col-span-1 md:col-span-2 space-y-6">
           <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100">
             <h3 className="font-bold text-gray-900 mb-6 font-heading border-b pb-2">Personal Information</h3>
@@ -265,6 +315,77 @@ export default function DashboardProfile() {
                 placeholder="Name and relationship..."
                 className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent focus:bg-white transition-colors resize-none"
               />
+            </div>
+          </div>
+
+          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-100">
+            <h3 className="font-bold text-gray-900 mb-6 font-heading border-b pb-2 flex items-center gap-2">
+              <Lock size={18} className="text-gray-400" /> Change Password
+            </h3>
+
+            <div className="space-y-6 max-w-md">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1.5">Current Password</label>
+                <div className="relative">
+                  <input
+                    type={showCurrentPw ? 'text' : 'password'}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    autoComplete="current-password"
+                    className="w-full px-4 py-2 pr-10 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent focus:bg-white transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPw(!showCurrentPw)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    tabIndex={-1}
+                  >
+                    {showCurrentPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1.5">New Password</label>
+                <div className="relative">
+                  <input
+                    type={showNewPw ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    autoComplete="new-password"
+                    placeholder="Minimum 8 characters"
+                    className="w-full px-4 py-2 pr-10 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent focus:bg-white transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPw(!showNewPw)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    tabIndex={-1}
+                  >
+                    {showNewPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1.5">Confirm New Password</label>
+                <input
+                  type={showNewPw ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                  className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent focus:bg-white transition-colors"
+                />
+              </div>
+
+              <button
+                onClick={handlePasswordChange}
+                disabled={changingPassword}
+                className="bg-primary text-white px-6 py-2.5 rounded-xl font-bold hover:bg-primary/90 transition-colors flex items-center gap-2 shadow-sm disabled:opacity-60"
+              >
+                {changingPassword ? <Loader2 size={18} className="animate-spin" /> : <Lock size={18} />}
+                Update Password
+              </button>
             </div>
           </div>
         </div>
