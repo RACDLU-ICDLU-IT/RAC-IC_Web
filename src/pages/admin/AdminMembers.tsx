@@ -5,7 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
-import { Users, Pencil, Trash, Eye, Download } from 'lucide-react';
+import { Users, Pencil, Trash, Eye, Download, KeyRound } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
@@ -16,22 +16,23 @@ export default function AdminMembers() {
   const { adminTenant: tenant } = useAdminTenant();
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Search & Filter
+
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [schoolFilter, setSchoolFilter] = useState('all');
 
-  // Bulk actions
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  
-  // Modals
+
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [viewMember, setViewMember] = useState<any>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const [resetPasswordMember, setResetPasswordMember] = useState<any>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState('');
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   const { addToast } = useToast();
 
@@ -76,25 +77,28 @@ export default function AdminMembers() {
     else setSelectedIds([...selectedIds, id]);
   };
 
-  // Prevent UI promotion if just officer
   const isMasterAdmin = profile?.role === 'master_admin';
   const canSetRole = isMasterAdmin || profile?.role === 'admin';
-  
-  // Rule: only master_admin can change the username of other admins
+
   const isAdminOrMaster = formData.role === 'admin' || formData.role === 'master_admin';
   const canChangeName = !isAdminOrMaster || isMasterAdmin || user?.id === formData.id;
+
+  const canResetPasswordFor = (m: any) => {
+    const targetIsElevated = m.role === 'admin' || m.role === 'master_admin';
+    return !targetIsElevated || isMasterAdmin;
+  };
 
   const handleSave = async () => {
     const isNew = !formData.id;
     let docId = formData.id;
-    
+
     try {
       if (isNew) {
         if (!formData.email || !formData.password) {
           addToast('Email and password required for new members', 'error');
           return;
         }
-        
+
         const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-member`, {
           method: 'POST',
@@ -102,17 +106,17 @@ export default function AdminMembers() {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + session?.access_token
           },
-          body: JSON.stringify({...formData, tenant_id: tenant.id}) // explicit tenant_id pass
+          body: JSON.stringify({...formData, tenant_id: tenant.id})
         });
-        
+
         const resData = await res.json();
         if (!res.ok) {
           throw new Error(resData.error || 'Failed to create member via Edge Function');
         }
-        
+
         docId = resData.uid;
       }
-      
+
       const { password, ...dataToSave } = formData;
       await supabase.from('users').upsert({ id: docId, tenant_id: tenant.id, ...dataToSave }, { onConflict: 'id' });
       addToast('Member saved', 'success');
@@ -150,6 +154,38 @@ export default function AdminMembers() {
       fetchMembers();
     } catch (err) {
       addToast('Bulk update failed', 'error');
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetPasswordMember || !resetPasswordValue) return;
+    if (resetPasswordValue.length < 8) {
+      addToast('Password must be at least 8 characters', 'error');
+      return;
+    }
+    setResettingPassword(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + session?.access_token
+        },
+        body: JSON.stringify({ uid: resetPasswordMember.id, newPassword: resetPasswordValue })
+      });
+      const resData = await res.json();
+      if (!res.ok) {
+        throw new Error(resData.error || 'Failed to reset password');
+      }
+      addToast(`Password reset for ${resetPasswordMember.name}`, 'success');
+      setResetPasswordMember(null);
+      setResetPasswordValue('');
+    } catch (err: any) {
+      console.error(err);
+      addToast(err.message || 'Failed to reset password', 'error');
+    } finally {
+      setResettingPassword(false);
     }
   };
 
@@ -201,19 +237,19 @@ export default function AdminMembers() {
           </div>
           <p className="text-gray-500 text-sm mt-1">Manage club roster</p>
         </div>
-        <Button onClick={() => { 
-          setFormData({ role: 'member', status: 'active', tenant_id: tenant.id, memberId: `${tenant.shortName.substring(0,2).toUpperCase()}-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}` }); 
-          setIsFormOpen(true); 
+        <Button onClick={() => {
+          setFormData({ role: 'member', status: 'active', tenant_id: tenant.id, memberId: `${tenant.shortName.substring(0,2).toUpperCase()}-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}` });
+          setIsFormOpen(true);
         }}>
            Add Member
         </Button>
       </div>
 
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-4 items-center">
-        <input 
-          placeholder="Search members..." 
+        <input
+          placeholder="Search members..."
           value={search} onChange={e => setSearch(e.target.value)}
-          className={inputClass + ' md:w-64'} 
+          className={inputClass + ' md:w-64'}
         />
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className={inputClass + ' md:w-auto'}>
           <option value="all">All Roles</option>
@@ -278,7 +314,7 @@ export default function AdminMembers() {
             </td>
             <td className="px-6 py-4 text-sm text-gray-500">{m.school} {m.grade && `(Gr ${m.grade})`}</td>
             <td className="px-6 py-4">
-              <button 
+              <button
                 onClick={async () => {
                   await supabase.from('users')
                     .update({ duesPaid: !m.duesPaid })
@@ -294,6 +330,9 @@ export default function AdminMembers() {
               <div className="flex gap-2">
                 <button onClick={() => { setFormData(m); setIsFormOpen(true); }} className="text-gray-500 hover:text-primary"><Pencil size={18} /></button>
                 <button onClick={() => { setViewMember(m); setIsViewOpen(true); }} className="text-gray-500 hover:text-primary"><Eye size={18} /></button>
+                {canResetPasswordFor(m) && (
+                  <button onClick={() => setResetPasswordMember(m)} className="text-gray-500 hover:text-amber-600" title="Reset Password"><KeyRound size={18} /></button>
+                )}
                 <button onClick={() => { setDeleteId(m.id); }} className="text-gray-500 hover:text-red-500"><Trash size={18} /></button>
               </div>
             </td>
@@ -301,7 +340,6 @@ export default function AdminMembers() {
         )}
       />
 
-      {/* Bulk Actions Bar */}
       {selectedIds.length > 0 && (
         <div className="fixed bottom-0 left-0 md:left-[260px] right-0 bg-white border-t border-gray-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] flex items-center justify-between z-40 transform animate-in slide-in-from-bottom">
           <span className="font-medium text-gray-700">{selectedIds.length} selected</span>
@@ -313,7 +351,6 @@ export default function AdminMembers() {
         </div>
       )}
 
-      {/* Add/Edit Modal */}
       <Modal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} title={formData.id ? 'Edit Member' : 'Add Member'} size="lg">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="md:col-span-2 flex items-center gap-6">
@@ -323,11 +360,11 @@ export default function AdminMembers() {
             <div className="flex-1 grid grid-cols-2 gap-4">
               <div className="col-span-2">
                 <label className={labelClass}>Full Name</label>
-                <input 
-                   disabled={!canChangeName} 
-                   value={formData.name || ''} 
-                   onChange={e => setFormData({...formData, name: e.target.value})} 
-                   className={inputClass + (!canChangeName ? " bg-gray-50 opacity-70" : "")} 
+                <input
+                   disabled={!canChangeName}
+                   value={formData.name || ''}
+                   onChange={e => setFormData({...formData, name: e.target.value})}
+                   className={inputClass + (!canChangeName ? " bg-gray-50 opacity-70" : "")}
                 />
                 {!canChangeName && <p className="text-[10px] text-gray-500 mt-1">Only master admins can update the name of other admins.</p>}
               </div>
@@ -361,10 +398,10 @@ export default function AdminMembers() {
               <option value="inactive">Inactive</option>
             </select>
           </div>
-          
+
           <div><label className={labelClass}>Phone</label><input value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} className={inputClass} /></div>
           <div><label className={labelClass}>Date of Birth</label><input type="date" value={formData.dob || ''} onChange={e => setFormData({...formData, dob: e.target.value})} className={inputClass} /></div>
-          
+
           <div>
             <label className={labelClass}>Gender</label>
             <select value={formData.gender || ''} onChange={e => setFormData({...formData, gender: e.target.value})} className={inputClass}>
@@ -403,7 +440,6 @@ export default function AdminMembers() {
         </div>
       </Modal>
 
-      {/* View Modal */}
       <Modal isOpen={isViewOpen} onClose={() => setIsViewOpen(false)} title="Member Profile">
         {viewMember && (
           <div className="space-y-4 text-sm">
@@ -431,6 +467,32 @@ export default function AdminMembers() {
             )}
             <div className="mt-6 pt-4 border-t border-gray-100 flex justify-center">
                <a href={`/admin/attendance?memberId=${viewMember.id}`} className="text-primary font-medium hover:underline text-sm">View Attendance History</a>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal isOpen={!!resetPasswordMember} onClose={() => { setResetPasswordMember(null); setResetPasswordValue(''); }} title="Reset Member Password">
+        {resetPasswordMember && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Set a new password for <strong>{resetPasswordMember.name}</strong> ({resetPasswordMember.email}). They will need to use this new password to log in.
+            </p>
+            <div>
+              <label className={labelClass}>New Password</label>
+              <input
+                type="password"
+                value={resetPasswordValue}
+                onChange={e => setResetPasswordValue(e.target.value)}
+                className={inputClass}
+                placeholder="Minimum 8 characters"
+              />
+            </div>
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+              <Button variant="outline" onClick={() => { setResetPasswordMember(null); setResetPasswordValue(''); }}>Cancel</Button>
+              <Button onClick={handleResetPassword} disabled={resettingPassword}>
+                {resettingPassword ? 'Resetting...' : 'Reset Password'}
+              </Button>
             </div>
           </div>
         )}
