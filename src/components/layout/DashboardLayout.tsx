@@ -8,7 +8,7 @@ import {
   Home, User, CalendarDays, Calendar, Presentation, Bell, Settings,
   Users, UserCheck, CheckSquare, FolderOpen, Newspaper, Image as ImageIcon,
   HeartHandshake, Megaphone, Inbox, Palette, LogOut, Menu, LucideIcon, FileText, CreditCard,
-  Zap, HandCoins, Trophy, Bot, Share2
+  Zap, HandCoins, Trophy, Bot, Share2, ChevronLeft
 } from 'lucide-react';
 import ThemeToggle from '../common/ThemeToggle';
 
@@ -18,6 +18,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
   const { adminTenant, setAdminTenant } = useAdminTenant();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -120,10 +121,17 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       )}
 
       <aside
-        className={`fixed lg:relative flex flex-col w-[260px] h-full z-50 transform transition-transform duration-300 ease-in-out
+        className={`fixed lg:relative flex flex-col h-full z-50 transition-[width,transform] duration-300 ease-in-out
         bg-white/70 dark:bg-[#2f3349]/60 backdrop-blur-xl backdrop-saturate-150 border-r border-white/40 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.06)]
+        ${collapsed ? 'w-[84px]' : 'w-[260px]'}
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
       >
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          className="flex absolute -right-3 top-[26px] w-6 h-6 rounded-full bg-[#696cff] text-white items-center justify-center shadow-md z-10"
+        >
+          <ChevronLeft size={14} className={`transition-transform ${collapsed ? 'rotate-180' : ''}`} />
+        </button>
         <div className="h-[64px] shrink-0 flex items-center px-5">
           <NavLink to="/" className="flex items-center gap-2.5 min-w-0">
             {settings.logoUrl ? (
@@ -134,14 +142,14 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
             ) : (
               <span className="h-7 w-7 rounded-full bg-[#696cff] shrink-0" />
             )}
-            <span className="font-heading font-bold text-[1.1rem] tracking-tight text-[#566a7f] dark:text-white truncate">
+            <span className={`font-heading font-bold text-[1.1rem] tracking-tight text-[#566a7f] dark:text-white truncate ${collapsed ? 'hidden' : ''}`}>
               {settings.clubName}
             </span>
           </NavLink>
         </div>
 
         {isAdminMode && profile?.role === 'master_admin' && (
-          <div className="mx-4 mb-2 p-1 bg-[#f5f5f9] dark:bg-white/5 rounded-lg flex gap-1 shrink-0">
+          <div className={`mx-4 mb-2 p-1 bg-[#f5f5f9] dark:bg-white/5 rounded-lg flex gap-1 shrink-0 ${collapsed ? 'hidden' : ''}`}>
             <button onClick={() => setAdminTenant('icdlu')}
               className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold transition-all ${
                 adminTenant.id === 'icdlu' ? 'bg-[#696cff] text-white shadow-sm' : 'text-[#a1acb8] hover:text-[#696cff]'
@@ -157,15 +165,15 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           {navToUse.map((section, idx) => (
             <div key={idx} className="mb-1">
               {section.title && (
-                <h4 className="text-[11px] font-semibold uppercase tracking-widest text-[#a1acb8] dark:text-white/30 px-2 mt-5 mb-2">
+                <h4 className={`text-[11px] font-semibold uppercase tracking-widest text-[#a1acb8] dark:text-white/30 px-2 mt-5 mb-2 ${collapsed ? 'hidden' : ''}`}>
                   {section.title}
                 </h4>
               )}
               <div className="flex flex-col gap-0.5">
                 {section.items.map((item) => (
-                  <NavLink key={item.path} to={item.path} end={item.exact} onClick={closeMobile}
+                  <NavLink key={item.path} to={item.path} end={item.exact} onClick={closeMobile} title={collapsed ? item.label : undefined}
                     className={({ isActive }) =>
-                      `group flex items-center gap-3 px-2 py-2 rounded-md transition-colors text-[13.5px] ${
+                      `group relative flex items-center gap-3 px-2 py-2 rounded-md transition-colors text-[13.5px] ${collapsed ? 'justify-center' : ''} ${
                         isActive
                           ? 'bg-white/60 dark:bg-white/10 backdrop-blur-sm shadow-[0_2px_10px_rgba(105,108,255,0.15)] text-[#696cff] font-semibold'
                           : 'text-[#697a8d] dark:text-white/70 hover:bg-white/30 dark:hover:bg-white/5 hover:text-[#696cff] font-normal'
@@ -174,10 +182,13 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
                   >
                     {({ isActive }) => (
                       <>
+                        {isActive && (
+                          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full bg-[#696cff]" />
+                        )}
                         <item.icon size={18} strokeWidth={2} className={`shrink-0 ${isActive ? 'text-[#696cff]' : 'text-[#a1acb8] group-hover:text-[#696cff]'}`} />
-                        <span className="flex-1 truncate">{item.label}</span>
+                        <span className={`flex-1 truncate ${collapsed ? 'hidden' : ''}`}>{item.label}</span>
                         {item.badge !== undefined && item.badge > 0 && (
-                          <span className="min-w-[20px] h-5 px-1 rounded-full bg-[#ff3e1d] text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                          <span className={`min-w-[20px] h-5 px-1 rounded-full bg-[#ff3e1d] text-white flex items-center justify-center text-[10px] font-bold shrink-0 ${collapsed ? 'hidden' : ''}`}>
                             {item.badge}
                           </span>
                         )}
@@ -190,8 +201,17 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           ))}
         </nav>
 
+        <div className={`mx-4 mb-3 rounded-xl bg-gradient-to-br from-[#696cff] to-[#8f92ff] p-4 text-white shrink-0 ${collapsed ? 'hidden' : ''}`}>
+          <p className="text-sm font-semibold">Need help?</p>
+          <p className="text-xs text-white/80 mt-0.5">Check club resources & guides</p>
+          <NavLink to={isAdminMode ? '/admin/resources' : '/dashboard/resources'}
+            className="mt-3 block w-full text-center bg-white text-[#696cff] text-xs font-bold py-2 rounded-lg">
+            Resources
+          </NavLink>
+        </div>
+
         <div className="p-4 flex flex-col gap-3 shrink-0">
-          <div className="flex items-center gap-2.5 px-2">
+          <div className={`flex items-center gap-2.5 px-2 ${collapsed ? 'hidden' : ''}`}>
             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${roleColors[profile?.role || 'member']}`}>
               {profile?.role || 'Member'}
             </span>
@@ -199,18 +219,18 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
               {profile?.name || 'Loading...'}
             </span>
           </div>
-          <ThemeToggle isLight={isLight} />
-          <button onClick={handleSignOut}
-            className="flex items-center gap-3 w-full px-2 py-2 rounded-md transition-colors text-[13.5px] text-[#a1acb8] hover:text-[#ff3e1d]"
+          <div className={collapsed ? 'hidden' : ''}><ThemeToggle isLight={isLight} /></div>
+          <button onClick={handleSignOut} title={collapsed ? 'Sign Out' : undefined}
+            className={`flex items-center gap-3 w-full px-2 py-2 rounded-md transition-colors text-[13.5px] text-[#a1acb8] hover:text-[#ff3e1d] ${collapsed ? 'justify-center' : ''}`}
           >
             <LogOut size={18} className="shrink-0" />
-            <span>Sign Out</span>
+            <span className={collapsed ? 'hidden' : ''}>Sign Out</span>
           </button>
         </div>
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
-        <header className="h-[64px] shrink-0 flex items-center justify-between px-4 lg:px-6 bg-white dark:bg-[#2f3349] border-b border-[#eceef1] dark:border-white/10">
+        <header className="h-[64px] shrink-0 flex items-center justify-between px-4 lg:px-6 bg-white/80 dark:bg-[#2f3349]/60 backdrop-blur-xl border-b border-[#eceef1] dark:border-white/10">
           <button onClick={() => setMobileOpen(true)} className="lg:hidden p-1 text-[#566a7f] dark:text-white/70 hover:text-[#696cff] rounded">
             <Menu size={22} />
           </button>
