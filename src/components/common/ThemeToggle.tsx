@@ -1,6 +1,6 @@
 import React from 'react';
 import { Sun, Moon, Monitor } from 'lucide-react';
-import { useTheme, ThemeMode } from '../contexts/ThemeContext';
+import { useTheme, ThemeMode } from '../../contexts/ThemeContext';
 
 interface ThemeToggleProps {
   /** Pass the sidebar's existing light/dark flag so the toggle matches its surroundings */
