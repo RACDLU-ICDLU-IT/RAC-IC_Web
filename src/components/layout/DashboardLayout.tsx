@@ -125,8 +125,8 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
     border: dark ? 'rgba(255,255,255,0.1)' : '#eceef1',
     brandText: dark ? '#ffffff' : '#566a7f',
     sectionLabel: dark ? 'rgba(255,255,255,0.3)' : '#a1acb8',
-    navText: dark ? 'rgba(255,255,255,0.7)' : '#697a8d',
-    navIcon: dark ? 'rgba(255,255,255,0.4)' : '#a1acb8',
+    navText: dark ? 'rgba(255,255,255,0.85)' : '#42526b',
+    navIcon: dark ? 'rgba(255,255,255,0.55)' : '#697a8d',
     navHoverBg: dark ? 'rgba(255,255,255,0.05)' : 'rgba(105,108,255,0.06)',
     activeBg: dark ? 'rgba(105,108,255,0.16)' : 'rgba(105,108,255,0.1)',
     accent: '#696cff',
@@ -145,7 +145,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       )}
 
       <aside
-        className={`fixed lg:relative flex flex-col h-full z-50 transition-[width,transform] duration-300 ease-in-out backdrop-blur-2xl backdrop-saturate-150 border-r
+        className={`fixed lg:relative flex flex-col h-full z-50 transition-transform lg:transition-[width] duration-300 [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] will-change-transform backdrop-blur-2xl backdrop-saturate-150 border-r
         ${collapsed ? 'w-[84px]' : 'w-[260px]'}
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
         style={{ background: c.sidebarBg, borderColor: c.sidebarBorder, boxShadow: dark ? '0 8px 32px rgba(0,0,0,0.3)' : '0 8px 32px rgba(31,45,61,0.1)' }}
@@ -159,7 +159,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           <ChevronLeft size={14} className={`transition-transform ${collapsed ? 'rotate-180' : ''}`} />
         </button>
 
-        <div className="h-[64px] shrink-0 flex items-center justify-center px-3">
+        <div className="h-[64px] shrink-0 flex items-center justify-center px-6 py-3">
           <NavLink to="/" className="flex items-center justify-center w-full">
             {settings.logoUrl ? (
               <span
