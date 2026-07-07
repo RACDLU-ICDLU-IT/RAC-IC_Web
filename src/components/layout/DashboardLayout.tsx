@@ -196,13 +196,13 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
                 src={(profile as any)?.avatarUrl || (profile as any)?.avatar_url}
                 alt={profile?.name || 'Profile'}
                 className="h-11 w-11 rounded-full object-cover shrink-0"
-                style={{ boxShadow: '0 3px 10px rgba(105,108,255,0.3)' }}
+                style={{ boxShadow: `0 3px 10px ${c.accent}55` }}
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             ) : (
               <div
                 className="h-11 w-11 rounded-full flex items-center justify-center text-white font-bold text-base shrink-0"
-                style={{ background: `linear-gradient(135deg, ${c.accent}, #8f92ff)`, boxShadow: '0 3px 10px rgba(105,108,255,0.35)' }}
+                style={{ background: c.accent, boxShadow: `0 3px 10px ${c.accent}55` }}
               >
                 {(profile?.name || 'U').charAt(0).toUpperCase()}
               </div>
@@ -273,7 +273,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
         </nav>
 
         {!collapsed && (
-          <div className="mx-4 mb-3 rounded-xl p-4 text-white shrink-0" style={{ background: `linear-gradient(135deg, ${c.accent}, #8f92ff)` }}>
+          <div className="mx-4 mb-3 rounded-xl p-4 text-white shrink-0" style={{ background: c.accent }}>
             <p className="text-sm font-semibold">Need help?</p>
             <p className="text-xs text-white/80 mt-0.5">Check club resources & guides</p>
             <NavLink to={isAdminMode ? '/admin/resources' : '/dashboard/resources'}
