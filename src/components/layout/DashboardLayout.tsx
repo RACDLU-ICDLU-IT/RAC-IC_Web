@@ -135,8 +135,12 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
 
   return (
     <div className="flex min-h-screen h-[100dvh]" style={{ background: c.pageBg }}>
+      <style>{`
+        @keyframes slideIn { from { opacity:0; transform: translateX(-8px); } to { opacity:1; transform: translateX(0); } }
+        @keyframes navItemIn { from { opacity:0; transform: translateX(-6px); } to { opacity:1; transform: translateX(0); } }
+      `}</style>
       {mobileOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={closeMobile} />
+        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-300" onClick={closeMobile} />
       )}
 
       <aside
@@ -154,23 +158,32 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           <ChevronLeft size={14} className={`transition-transform ${collapsed ? 'rotate-180' : ''}`} />
         </button>
 
-        <div className="h-[64px] shrink-0 flex items-center px-5">
-          <NavLink to="/" className="flex items-center gap-2.5 min-w-0">
+        <div className="h-[64px] shrink-0 flex items-center justify-center px-3">
+          <NavLink to="/" className="flex items-center justify-center w-full">
             {settings.logoUrl ? (
               <img src={settings.logoUrl} alt="Logo"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                className="h-7 w-7 object-contain rounded shrink-0"
+                className={`object-contain rounded ${collapsed ? 'h-8 w-8' : 'h-9 w-auto max-w-full'}`}
               />
             ) : (
-              <span className="h-7 w-7 rounded-full shrink-0" style={{ background: c.accent }} />
-            )}
-            {!collapsed && (
-              <span className="font-heading font-bold text-[1.1rem] tracking-tight truncate" style={{ color: c.brandText }}>
-                {settings.clubName}
-              </span>
+              <span className="h-8 w-8 rounded-full shrink-0" style={{ background: c.accent }} />
             )}
           </NavLink>
         </div>
+
+        {!collapsed && (
+          <div className="mx-4 mb-2 p-3 rounded-xl flex items-center gap-3 shrink-0 animate-[slideIn_0.35s_ease-out]" style={{ background: c.tenantSwitchBg }}>
+            <div className="h-10 w-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0" style={{ background: c.accent }}>
+              {(profile?.name || 'U').charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold truncate" style={{ color: c.brandText }}>{profile?.name || 'Loading...'}</p>
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider mt-0.5 ${roleColors[profile?.role || 'member']}`}>
+                {profile?.role || 'Member'}
+              </span>
+            </div>
+          </div>
+        )}
 
         {isAdminMode && profile?.role === 'master_admin' && !collapsed && (
           <div className="mx-4 mb-2 p-1 rounded-lg flex gap-1 shrink-0" style={{ background: c.tenantSwitchBg }}>
@@ -194,8 +207,9 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
                 </h4>
               )}
               <div className="flex flex-col gap-0.5">
-                {section.items.map((item) => (
+                {section.items.map((item, i) => (
                   <NavLink key={item.path} to={item.path} end={item.exact} onClick={closeMobile} title={collapsed ? item.label : undefined}
+                    style={{ animation: `navItemIn 0.3s ease-out ${i * 0.02}s both` }}
                     className={`relative flex items-center gap-3 rounded-md transition-colors text-[13.5px] ${collapsed ? 'justify-center px-0' : 'px-2'} py-2`}
                   >
                     {({ isActive }) => (
@@ -239,16 +253,6 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
         )}
 
         <div className="p-4 flex flex-col gap-3 shrink-0">
-          {!collapsed && (
-            <div className="flex items-center gap-2.5 px-2">
-              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${roleColors[profile?.role || 'member']}`}>
-                {profile?.role || 'Member'}
-              </span>
-              <span className="text-[13px] font-medium truncate" style={{ color: c.brandText }}>
-                {profile?.name || 'Loading...'}
-              </span>
-            </div>
-          )}
           {!collapsed && <ThemeToggle isLight={!dark} />}
           <button type="button" onClick={handleSignOut} title={collapsed ? 'Sign Out' : undefined}
             className={`flex items-center gap-3 w-full px-2 py-2 rounded-md transition-colors text-[13.5px] ${collapsed ? 'justify-center' : ''}`}
