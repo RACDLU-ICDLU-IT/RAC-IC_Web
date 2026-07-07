@@ -154,12 +154,12 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           type="button"
           onClick={() => { if (window.innerWidth < 1024) closeMobile(); else setCollapsed(v => !v); }}
           className={`flex absolute -right-3 top-[26px] w-7 h-7 rounded-full text-white items-center justify-center z-10 ${mobileOpen ? '' : 'hidden lg:flex'}`}
-          style={{ background: c.accent, border: `3px solid ${dark ? '#000000' : '#f7f8fd'}` }}
+          style={{ background: c.accent, border: `3px solid ${dark ? '#0a0a0a' : '#f0f1fa'}` }}
         >
           <ChevronLeft size={14} className={`transition-transform ${collapsed ? 'rotate-180' : ''}`} />
         </button>
 
-        <div className="shrink-0 flex items-center justify-center px-8 py-8">
+        <div className="shrink-0 flex items-center justify-center px-6 py-4">
           <NavLink to="/" className="flex items-center justify-center w-full">
             {settings.logoUrl ? (
               <span
@@ -273,11 +273,11 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
         </nav>
 
         {!collapsed && (
-          <div className="mx-4 my-3 rounded-xl p-4 shrink-0" style={{ background: '#ffffff', border: `1px solid ${c.border}`, boxShadow: '0 4px 14px rgba(0,0,0,0.12)' }}>
-            <p className="text-sm font-semibold" style={{ color: c.accent }}>Need help?</p>
-            <p className="text-xs mt-0.5" style={{ color: '#697a8d' }}>Check club resources & guides</p>
+          <div className="mx-4 my-3 rounded-xl p-4 shrink-0" style={{ background: c.accent }}>
+            <p className="text-sm font-semibold text-white">Need help?</p>
+            <p className="text-xs text-white/80 mt-0.5">Check club resources & guides</p>
             <NavLink to={isAdminMode ? '/admin/resources' : '/dashboard/resources'}
-              className="mt-3 block w-full text-center text-xs font-bold py-2 rounded-lg text-white" style={{ background: c.accent }}>
+              className="mt-3 block w-full text-center text-xs font-bold py-2 rounded-lg bg-white" style={{ color: c.accent }}>
               Resources
             </NavLink>
           </div>
