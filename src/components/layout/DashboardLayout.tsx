@@ -15,7 +15,7 @@ import ThemeToggle from '../common/ThemeToggle';
 
 export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?: boolean }) {
   const { profile, signOut } = useAuth();
-  const { settings } = useTenant();
+  const { settings, theme } = useTenant();
   const { adminTenant, setAdminTenant } = useAdminTenant();
   const { resolvedTheme } = useTheme();
   const navigate = useNavigate();
@@ -129,7 +129,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
     navIcon: dark ? 'rgba(255,255,255,0.55)' : '#697a8d',
     navHoverBg: dark ? 'rgba(255,255,255,0.05)' : 'rgba(105,108,255,0.06)',
     activeBg: dark ? 'rgba(105,108,255,0.16)' : 'rgba(105,108,255,0.1)',
-    accent: '#696cff',
+    accent: isAdminMode ? (adminTenant.id === 'racdlu' ? '#D41367' : '#0A2540') : (theme.accentColor || '#696cff'),
     danger: '#ff3e1d',
     tenantSwitchBg: dark ? 'rgba(255,255,255,0.05)' : '#f5f5f9',
   };
@@ -159,7 +159,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           <ChevronLeft size={14} className={`transition-transform ${collapsed ? 'rotate-180' : ''}`} />
         </button>
 
-        <div className="h-[64px] shrink-0 flex items-center justify-center px-6 py-3">
+        <div className="h-[64px] shrink-0 flex items-center justify-center px-8 py-4">
           <NavLink to="/" className="flex items-center justify-center w-full">
             {settings.logoUrl ? (
               <span
