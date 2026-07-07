@@ -154,12 +154,12 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           type="button"
           onClick={() => { if (window.innerWidth < 1024) closeMobile(); else setCollapsed(v => !v); }}
           className={`flex absolute -right-3 top-[26px] w-7 h-7 rounded-full text-white items-center justify-center z-10 ${mobileOpen ? '' : 'hidden lg:flex'}`}
-          style={{ background: c.accent, border: `3px solid ${dark ? '#0a0a0a' : '#f0f1fa'}` }}
+          style={{ background: c.accent, border: `3px solid ${dark ? '#1c1c1c' : '#e9eafc'}` }}
         >
           <ChevronLeft size={14} className={`transition-transform ${collapsed ? 'rotate-180' : ''}`} />
         </button>
 
-        <div className="shrink-0 flex items-center justify-center px-6 py-4">
+        <div className="shrink-0 flex items-center justify-center px-6 py-3">
           <NavLink to="/" className="flex items-center justify-center w-full">
             {settings.logoUrl ? (
               <span
@@ -250,7 +250,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
                           style={{ background: isActive ? c.activeBg : 'transparent' }}
                         />
                         {isActive && (
-                          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full" style={{ background: c.accent }} />
+                          <span className="absolute right-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full" style={{ background: c.accent }} />
                         )}
                         <item.icon size={18} strokeWidth={2} className="shrink-0" style={{ color: isActive ? c.accent : c.navIcon }} />
                         {!collapsed && (
@@ -277,7 +277,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
             <p className="text-sm font-semibold text-white">Need help?</p>
             <p className="text-xs text-white/80 mt-0.5">Check club resources & guides</p>
             <NavLink to={isAdminMode ? '/admin/resources' : '/dashboard/resources'}
-              className="mt-3 block w-full text-center text-xs font-bold py-2 rounded-lg bg-white" style={{ color: c.accent }}>
+              className="mt-3 block w-full text-center text-xs font-bold py-2 rounded-lg" style={{ background: '#ffffff', color: c.accent }}>
               Resources
             </NavLink>
           </div>
