@@ -119,8 +119,9 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
   // Sneat design tokens, resolved per-render from actual theme state (no stray dark: classes)
   const c = {
     pageBg: dark ? '#25293c' : '#f5f5f9',
-    sidebarBg: dark ? 'rgba(47,51,73,0.75)' : 'rgba(255,255,255,0.65)',
-    headerBg: dark ? 'rgba(47,51,73,0.75)' : 'rgba(255,255,255,0.6)',
+    sidebarBg: dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.7)',
+    headerBg: dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.65)',
+    sidebarBorder: dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.6)',
     border: dark ? 'rgba(255,255,255,0.1)' : '#eceef1',
     brandText: dark ? '#ffffff' : '#566a7f',
     sectionLabel: dark ? 'rgba(255,255,255,0.3)' : '#a1acb8',
@@ -134,7 +135,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
   };
 
   return (
-    <div className="flex min-h-screen h-[100dvh]" style={{ background: c.pageBg }}>
+    <div className="flex min-h-screen h-[100dvh]" style={{ background: dark ? 'linear-gradient(160deg,#1e2235,#2d3250)' : 'linear-gradient(160deg,#eef0fb,#f7f8fd)' }}>
       <style>{`
         @keyframes slideIn { from { opacity:0; transform: translateX(-8px); } to { opacity:1; transform: translateX(0); } }
         @keyframes navItemIn { from { opacity:0; transform: translateX(-6px); } to { opacity:1; transform: translateX(0); } }
@@ -144,10 +145,10 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       )}
 
       <aside
-        className={`fixed lg:relative flex flex-col h-full z-50 transition-[width,transform] duration-300 ease-in-out backdrop-blur-xl backdrop-saturate-150 border-r
+        className={`fixed lg:relative flex flex-col h-full z-50 transition-[width,transform] duration-300 ease-in-out backdrop-blur-2xl backdrop-saturate-150 border-r
         ${collapsed ? 'w-[84px]' : 'w-[260px]'}
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
-        style={{ background: c.sidebarBg, borderColor: c.border, boxShadow: '0 8px 32px rgba(0,0,0,0.06)' }}
+        style={{ background: c.sidebarBg, borderColor: c.sidebarBorder, boxShadow: dark ? '0 8px 32px rgba(0,0,0,0.3)' : '0 8px 32px rgba(31,45,61,0.1)' }}
       >
         <button
           type="button"
@@ -163,7 +164,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
             {settings.logoUrl ? (
               <span
                 role="img" aria-label="Logo"
-                className={`object-contain ${collapsed ? 'h-8 w-8' : 'h-9 w-full max-w-[160px]'}`}
+                className={`object-contain ${collapsed ? 'h-10 w-10' : 'h-14 w-full max-w-[200px]'}`}
                 style={{
                   display: 'inline-block',
                   backgroundColor: dark ? '#ffffff' : (adminTenant.id === 'racdlu' ? '#D41367' : '#0A2540'),
@@ -182,20 +183,30 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
 
         {!collapsed && (
           <div
-            className="mx-4 mb-3 p-3.5 rounded-2xl flex items-center gap-3 shrink-0 backdrop-blur-sm"
+            className="mx-4 mb-3 p-3.5 rounded-2xl flex items-center gap-3 shrink-0"
             style={{
-              background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.55)',
-              border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.8)'}`,
-              boxShadow: dark ? 'none' : '0 4px 14px rgba(105,108,255,0.08)',
+              background: dark ? 'rgba(255,255,255,0.06)' : '#ffffff',
+              border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : c.border}`,
+              boxShadow: dark ? 'none' : '0 2px 8px rgba(31,45,61,0.08)',
               animation: 'slideIn 0.4s ease-out',
             }}
           >
-            <div
-              className="h-11 w-11 rounded-full flex items-center justify-center text-white font-bold text-base shrink-0"
-              style={{ background: `linear-gradient(135deg, ${c.accent}, #8f92ff)`, boxShadow: '0 3px 10px rgba(105,108,255,0.35)' }}
-            >
-              {(profile?.name || 'U').charAt(0).toUpperCase()}
-            </div>
+            {(profile as any)?.avatarUrl || (profile as any)?.avatar_url ? (
+              <img
+                src={(profile as any)?.avatarUrl || (profile as any)?.avatar_url}
+                alt={profile?.name || 'Profile'}
+                className="h-11 w-11 rounded-full object-cover shrink-0"
+                style={{ boxShadow: '0 3px 10px rgba(105,108,255,0.3)' }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            ) : (
+              <div
+                className="h-11 w-11 rounded-full flex items-center justify-center text-white font-bold text-base shrink-0"
+                style={{ background: `linear-gradient(135deg, ${c.accent}, #8f92ff)`, boxShadow: '0 3px 10px rgba(105,108,255,0.35)' }}
+              >
+                {(profile?.name || 'U').charAt(0).toUpperCase()}
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <p className="text-[13.5px] font-semibold truncate" style={{ color: c.brandText }}>{profile?.name || 'Loading...'}</p>
               <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider mt-1 ${roleColors[profile?.role || 'member']}`}>
@@ -287,8 +298,8 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
-        <header className="h-[64px] shrink-0 flex items-center justify-between px-4 lg:px-6 backdrop-blur-xl border-b"
-          style={{ background: c.headerBg, borderColor: c.border }}>
+        <header className="h-[64px] shrink-0 flex items-center justify-between px-4 lg:px-6 backdrop-blur-2xl border-b"
+          style={{ background: c.headerBg, borderColor: c.sidebarBorder }}>
           <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-1 rounded" style={{ color: c.brandText }}>
             <Menu size={22} />
           </button>
