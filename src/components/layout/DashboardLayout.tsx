@@ -154,7 +154,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           type="button"
           onClick={() => { if (window.innerWidth < 1024) closeMobile(); else setCollapsed(v => !v); }}
           className={`flex absolute -right-3 top-[26px] w-7 h-7 rounded-full text-white items-center justify-center z-10 ${mobileOpen ? '' : 'hidden lg:flex'}`}
-          style={{ background: c.accent, border: `3px solid ${dark ? '#000000' : '#eef0fb'}` }}
+          style={{ background: c.accent, boxShadow: '0 0 0 2px rgba(0,0,0,0.15)' }}
         >
           <ChevronLeft size={14} className={`transition-transform ${collapsed ? 'rotate-180' : ''}`} />
         </button>
@@ -196,13 +196,13 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
                 src={(profile as any).photo}
                 alt={profile?.name || 'Profile'}
                 className="h-11 w-11 rounded-full object-cover shrink-0"
-                style={{ boxShadow: `0 3px 10px ${c.accent}55` }}
+                style={{ border: `2px solid ${c.accent}` }}
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             ) : (
               <div
                 className="h-11 w-11 rounded-full flex items-center justify-center text-white font-bold text-base shrink-0"
-                style={{ background: c.accent, boxShadow: `0 3px 10px ${c.accent}55` }}
+                style={{ background: c.accent }}
               >
                 {(profile?.name || 'U').charAt(0).toUpperCase()}
               </div>
