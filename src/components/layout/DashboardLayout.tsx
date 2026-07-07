@@ -135,7 +135,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
   };
 
   return (
-    <div className="flex min-h-screen h-[100dvh]" style={{ background: dark ? 'linear-gradient(160deg,#1e2235,#2d3250)' : 'linear-gradient(160deg,#eef0fb,#f7f8fd)' }}>
+    <div className="flex min-h-screen h-[100dvh]" style={{ background: dark ? '#000000' : 'linear-gradient(160deg,#eef0fb,#f7f8fd)' }}>
       <style>{`
         @keyframes slideIn { from { opacity:0; transform: translateX(-8px); } to { opacity:1; transform: translateX(0); } }
         @keyframes navItemIn { from { opacity:0; transform: translateX(-6px); } to { opacity:1; transform: translateX(0); } }
@@ -153,13 +153,13 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
         <button
           type="button"
           onClick={() => { if (window.innerWidth < 1024) closeMobile(); else setCollapsed(v => !v); }}
-          className={`flex absolute -right-3 top-[26px] w-6 h-6 rounded-full text-white items-center justify-center shadow-md z-10 ${mobileOpen ? '' : 'hidden lg:flex'}`}
-          style={{ background: c.accent }}
+          className={`flex absolute -right-3 top-[26px] w-7 h-7 rounded-full text-white items-center justify-center z-10 ${mobileOpen ? '' : 'hidden lg:flex'}`}
+          style={{ background: c.accent, border: `3px solid ${dark ? '#000000' : '#f7f8fd'}` }}
         >
           <ChevronLeft size={14} className={`transition-transform ${collapsed ? 'rotate-180' : ''}`} />
         </button>
 
-        <div className="h-[64px] shrink-0 flex items-center justify-center px-8 py-4">
+        <div className="shrink-0 flex items-center justify-center px-8 py-8">
           <NavLink to="/" className="flex items-center justify-center w-full">
             {settings.logoUrl ? (
               <span
@@ -229,7 +229,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           </div>
         )}
 
-        <nav className="flex-1 overflow-y-auto py-2 px-4 flex flex-col gap-0.5 hide-scrollbar">
+        <nav className="flex-1 min-h-0 overflow-y-auto py-2 px-4 flex flex-col gap-0.5 hide-scrollbar">
           {navToUse.map((section, idx) => (
             <div key={idx} className="mb-1">
               {section.title && !collapsed && (
@@ -273,11 +273,11 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
         </nav>
 
         {!collapsed && (
-          <div className="mx-4 mb-3 rounded-xl p-4 text-white shrink-0" style={{ background: c.accent }}>
-            <p className="text-sm font-semibold">Need help?</p>
-            <p className="text-xs text-white/80 mt-0.5">Check club resources & guides</p>
+          <div className="mx-4 my-3 rounded-xl p-4 shrink-0" style={{ background: '#ffffff', border: `1px solid ${c.border}`, boxShadow: '0 4px 14px rgba(0,0,0,0.12)' }}>
+            <p className="text-sm font-semibold" style={{ color: c.accent }}>Need help?</p>
+            <p className="text-xs mt-0.5" style={{ color: '#697a8d' }}>Check club resources & guides</p>
             <NavLink to={isAdminMode ? '/admin/resources' : '/dashboard/resources'}
-              className="mt-3 block w-full text-center bg-white text-xs font-bold py-2 rounded-lg" style={{ color: c.accent }}>
+              className="mt-3 block w-full text-center text-xs font-bold py-2 rounded-lg text-white" style={{ background: c.accent }}>
               Resources
             </NavLink>
           </div>
