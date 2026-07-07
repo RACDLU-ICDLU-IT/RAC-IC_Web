@@ -129,7 +129,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
     navIcon: dark ? 'rgba(255,255,255,0.55)' : '#697a8d',
     navHoverBg: dark ? 'rgba(255,255,255,0.05)' : 'rgba(105,108,255,0.06)',
     activeBg: dark ? 'rgba(105,108,255,0.16)' : 'rgba(105,108,255,0.1)',
-    accent: isAdminMode ? (adminTenant.id === 'racdlu' ? '#D41367' : '#0A2540') : (theme.accentColor || '#696cff'),
+    accent: isAdminMode ? (adminTenant.id === 'racdlu' ? '#D41367' : '#0A2540') : (theme.accent || '#696cff'),
     danger: '#ff3e1d',
     tenantSwitchBg: dark ? 'rgba(255,255,255,0.05)' : '#f5f5f9',
   };
