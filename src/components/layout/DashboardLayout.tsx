@@ -154,7 +154,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           type="button"
           onClick={() => { if (window.innerWidth < 1024) closeMobile(); else setCollapsed(v => !v); }}
           className={`flex absolute -right-3 top-[26px] w-7 h-7 rounded-full text-white items-center justify-center z-10 ${mobileOpen ? '' : 'hidden lg:flex'}`}
-          style={{ background: c.accent, border: `3px solid ${dark ? '#1c1c1c' : '#e9eafc'}` }}
+          style={{ background: c.accent, border: `3px solid ${dark ? '#000000' : '#eef0fb'}` }}
         >
           <ChevronLeft size={14} className={`transition-transform ${collapsed ? 'rotate-180' : ''}`} />
         </button>
@@ -191,9 +191,9 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
               animation: 'slideIn 0.4s ease-out',
             }}
           >
-            {(profile as any)?.avatarUrl || (profile as any)?.avatar_url ? (
+            {(profile as any)?.photo ? (
               <img
-                src={(profile as any)?.avatarUrl || (profile as any)?.avatar_url}
+                src={(profile as any).photo}
                 alt={profile?.name || 'Profile'}
                 className="h-11 w-11 rounded-full object-cover shrink-0"
                 style={{ boxShadow: `0 3px 10px ${c.accent}55` }}
