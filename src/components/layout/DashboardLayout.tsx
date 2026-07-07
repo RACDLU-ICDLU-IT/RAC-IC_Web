@@ -119,8 +119,8 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
   // Sneat design tokens, resolved per-render from actual theme state (no stray dark: classes)
   const c = {
     pageBg: dark ? '#25293c' : '#f5f5f9',
-    sidebarBg: dark ? 'rgba(47,51,73,0.85)' : 'rgba(255,255,255,0.9)',
-    headerBg: dark ? 'rgba(47,51,73,0.85)' : 'rgba(255,255,255,0.85)',
+    sidebarBg: dark ? 'rgba(47,51,73,0.75)' : 'rgba(255,255,255,0.65)',
+    headerBg: dark ? 'rgba(47,51,73,0.75)' : 'rgba(255,255,255,0.6)',
     border: dark ? 'rgba(255,255,255,0.1)' : '#eceef1',
     brandText: dark ? '#ffffff' : '#566a7f',
     sectionLabel: dark ? 'rgba(255,255,255,0.3)' : '#a1acb8',
@@ -161,9 +161,18 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
         <div className="h-[64px] shrink-0 flex items-center justify-center px-3">
           <NavLink to="/" className="flex items-center justify-center w-full">
             {settings.logoUrl ? (
-              <img src={settings.logoUrl} alt="Logo"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                className={`object-contain rounded ${collapsed ? 'h-8 w-8' : 'h-9 w-auto max-w-full'}`}
+              <span
+                role="img" aria-label="Logo"
+                className={`object-contain ${collapsed ? 'h-8 w-8' : 'h-9 w-full max-w-[160px]'}`}
+                style={{
+                  display: 'inline-block',
+                  backgroundColor: dark ? '#ffffff' : (adminTenant.id === 'racdlu' ? '#D41367' : '#0A2540'),
+                  WebkitMaskImage: `url(${settings.logoUrl})`,
+                  maskImage: `url(${settings.logoUrl})`,
+                  WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
+                  WebkitMaskPosition: 'center', maskPosition: 'center',
+                  WebkitMaskSize: 'contain', maskSize: 'contain',
+                }}
               />
             ) : (
               <span className="h-8 w-8 rounded-full shrink-0" style={{ background: c.accent }} />
@@ -172,13 +181,24 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
         </div>
 
         {!collapsed && (
-          <div className="mx-4 mb-2 p-3 rounded-xl flex items-center gap-3 shrink-0 animate-[slideIn_0.35s_ease-out]" style={{ background: c.tenantSwitchBg }}>
-            <div className="h-10 w-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0" style={{ background: c.accent }}>
+          <div
+            className="mx-4 mb-3 p-3.5 rounded-2xl flex items-center gap-3 shrink-0 backdrop-blur-sm"
+            style={{
+              background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.55)',
+              border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.8)'}`,
+              boxShadow: dark ? 'none' : '0 4px 14px rgba(105,108,255,0.08)',
+              animation: 'slideIn 0.4s ease-out',
+            }}
+          >
+            <div
+              className="h-11 w-11 rounded-full flex items-center justify-center text-white font-bold text-base shrink-0"
+              style={{ background: `linear-gradient(135deg, ${c.accent}, #8f92ff)`, boxShadow: '0 3px 10px rgba(105,108,255,0.35)' }}
+            >
               {(profile?.name || 'U').charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-semibold truncate" style={{ color: c.brandText }}>{profile?.name || 'Loading...'}</p>
-              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider mt-0.5 ${roleColors[profile?.role || 'member']}`}>
+              <p className="text-[13.5px] font-semibold truncate" style={{ color: c.brandText }}>{profile?.name || 'Loading...'}</p>
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider mt-1 ${roleColors[profile?.role || 'member']}`}>
                 {profile?.role || 'Member'}
               </span>
             </div>
@@ -210,7 +230,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
                 {section.items.map((item, i) => (
                   <NavLink key={item.path} to={item.path} end={item.exact} onClick={closeMobile} title={collapsed ? item.label : undefined}
                     style={{ animation: `navItemIn 0.3s ease-out ${i * 0.02}s both` }}
-                    className={`relative flex items-center gap-3 rounded-md transition-colors text-[13.5px] ${collapsed ? 'justify-center px-0' : 'px-2'} py-2`}
+                    className={`relative flex items-center gap-3 rounded-md transition-all duration-150 hover:scale-[1.02] active:scale-[0.98] text-[13.5px] ${collapsed ? 'justify-center px-0' : 'px-2'} py-2`}
                   >
                     {({ isActive }) => (
                       <>
