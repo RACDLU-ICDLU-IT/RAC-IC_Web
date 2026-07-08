@@ -13,6 +13,10 @@ import {
   MapPin,
   Pin,
   ShieldCheck,
+  CheckCircle2,
+  HelpCircle,
+  XCircle,
+  FolderKanban,
 } from 'lucide-react';
 import { useTenant } from '../../hooks/useTenant';
 
@@ -25,11 +29,12 @@ import { useTenant } from '../../hooks/useTenant';
  * primary / --color-page-bg, already provided by the theme layer)
  * via `color-mix()`, with safe neutral fallbacks so this still
  * renders correctly even before a tenant defines the optional
- * --color-surface / --color-success / --color-danger overrides.
+ * --color-surface / --color-success / --color-danger / --color-warning
+ * overrides.
  *
  * To art-direct a specific tenant further, set any of these at the
  * tenant theme root — nothing in this file needs to change:
- *   --color-surface, --color-success, --color-danger
+ *   --color-surface, --color-success, --color-danger, --color-warning
  */
 function useThemeTokens(): React.CSSProperties {
   return useMemo(
@@ -47,6 +52,14 @@ function useThemeTokens(): React.CSSProperties {
       ['--success-soft' as any]: 'color-mix(in srgb, var(--success) 14%, var(--surface))',
       ['--danger' as any]: 'var(--color-danger, #b91c1c)',
       ['--danger-soft' as any]: 'color-mix(in srgb, var(--danger) 14%, var(--surface))',
+      ['--warning' as any]: 'var(--color-warning, #b45309)',
+      ['--warning-soft' as any]: 'color-mix(in srgb, var(--warning) 14%, var(--surface))',
+      // Soft-UI-derived layered shadow tokens (kept tenant-neutral: pure black at low
+      // opacity, so they read correctly against any brand surface color).
+      ['--shadow-card' as any]: '0 1px 2px rgba(12,12,14,0.04), 0 1px 1px rgba(12,12,14,0.03)',
+      ['--shadow-card-hover' as any]:
+        '0 12px 24px -8px rgba(12,12,14,0.10), 0 4px 8px -4px rgba(12,12,14,0.06)',
+      ['--shadow-chip' as any]: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 5px -1px rgba(12,12,14,0.12)',
     }),
     []
   );
@@ -68,6 +81,26 @@ type AnnouncementRecord = {
   content?: string;
   isPinned?: boolean;
   createdAt?: string;
+};
+
+/**
+ * Matches the real `attendance` table as used in DashboardAttendance.tsx:
+ * id, userId, eventId, status ('present' | 'absent' | 'excused' | 'late'),
+ * tenant_id. This is admin-marked after the fact, not a member-facing RSVP —
+ * there is no RSVP/intent-to-attend feature in this schema.
+ */
+type AttendanceRecord = {
+  id: string;
+  userId: string;
+  eventId: string;
+  status: 'present' | 'absent' | 'excused' | 'late' | string;
+};
+
+type ProjectRecord = {
+  id: string;
+  title: string;
+  status?: string;
+  description?: string;
 };
 
 function getGreeting() {
@@ -122,11 +155,15 @@ function memberTenure(joinDate?: string) {
   return `${Math.floor(days / 365)}y`;
 }
 
-/** Isolated data layer — fetched in parallel, same tables/fields/filters as before. */
-async function loadDashboardData(tenantId: string) {
+/**
+ * Isolated data layer — fetched in parallel. Events + announcements are
+ * unchanged from the previous version (same tables/fields/filters). RSVPs
+ * and projects are new, additive queries.
+ */
+async function loadDashboardData(tenantId: string, memberId?: string) {
   const today = new Date().toISOString().split('T')[0];
 
-  const [eventsRes, annRes] = await Promise.all([
+  const [eventsRes, annRes, attendanceRes, projectsRes] = await Promise.all([
     supabase
       .from('events')
       .select('*')
@@ -140,14 +177,30 @@ async function loadDashboardData(tenantId: string) {
       .eq('tenant_id', tenantId)
       .order('createdAt', { ascending: false })
       .limit(3),
+    // Matches the query already used in DashboardAttendance.tsx: attendance
+    // is keyed by userId + tenant_id, no orderBy (avoids requiring a composite
+    // index). We fetch all records and sort/slice client-side, same as that page.
+    memberId
+      ? supabase.from('attendance').select('*').eq('userId', memberId).eq('tenant_id', tenantId)
+      : Promise.resolve({ data: [], error: null } as any),
+    supabase
+      .from('projects')
+      .select('id, title, status, description')
+      .eq('tenant_id', tenantId)
+      .order('id', { ascending: false })
+      .limit(3),
   ]);
 
   if (eventsRes.error) throw eventsRes.error;
   if (annRes.error) throw annRes.error;
+  if (attendanceRes.error) console.warn('[dashboard] Attendance fetch failed:', attendanceRes.error);
+  if (projectsRes.error) console.warn('[dashboard] Projects fetch failed:', projectsRes.error);
 
   return {
     events: (eventsRes.data as EventRecord[]) || [],
     announcements: (annRes.data as AnnouncementRecord[]) || [],
+    attendance: (attendanceRes.data as AttendanceRecord[]) || [],
+    projects: (projectsRes.data as ProjectRecord[]) || [],
   };
 }
 
@@ -164,9 +217,9 @@ function SectionCard({
 }) {
   return (
     <div
-      className={`bg-[color:var(--surface)] border border-[color:var(--border-subtle)] rounded-3xl shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-200 ${
+      className={`bg-[color:var(--surface)] border border-[color:var(--border-subtle)] rounded-3xl shadow-[var(--shadow-card)] transition-all duration-200 ${
         hover
-          ? 'hover:shadow-[0_10px_28px_rgba(0,0,0,0.07)] hover:border-[color:var(--border-strong)] hover:-translate-y-0.5 motion-reduce:hover:translate-y-0'
+          ? 'hover:shadow-[var(--shadow-card-hover)] hover:border-[color:var(--border-strong)] hover:-translate-y-0.5 motion-reduce:hover:translate-y-0'
           : ''
       } ${className}`}
     >
@@ -179,7 +232,7 @@ function SectionHeader({ icon, title, to }: { icon: React.ReactNode; title: stri
   return (
     <div className="flex items-center justify-between mb-6">
       <h2 className="text-xl sm:text-2xl font-heading font-bold tracking-tight flex items-center gap-2.5 text-[color:var(--text-1)]">
-        <span className="text-accent bg-gradient-to-br from-[color:var(--accent-soft)] to-[color:var(--surface)] p-1.5 rounded-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
+        <span className="text-accent bg-gradient-to-br from-[color:var(--accent-soft)] to-[color:var(--surface)] p-1.5 rounded-xl shadow-[var(--shadow-chip)]">
           {icon}
         </span>
         {title}
@@ -209,7 +262,7 @@ function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center gap-3 text-center py-10 px-4 bg-[color:var(--surface-2)] rounded-2xl border border-dashed border-[color:var(--border-subtle)]">
-      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[color:var(--accent-soft)] to-[color:var(--surface)] flex items-center justify-center text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
+      <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[color:var(--accent-soft)] to-[color:var(--surface)] flex items-center justify-center text-accent shadow-[var(--shadow-chip)]">
         {icon}
       </div>
       <p className="text-[color:var(--text-3)] text-sm font-medium">{label}</p>
@@ -248,7 +301,7 @@ function StatCard({
   return (
     <SectionCard hover className="p-4 sm:p-5 flex items-center gap-3 sm:gap-4">
       <div
-        className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)] bg-gradient-to-br ${toneClasses}`}
+        className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-[var(--shadow-chip)] bg-gradient-to-br ${toneClasses}`}
       >
         {icon}
       </div>
@@ -298,10 +351,43 @@ function DashboardSkeleton() {
         </div>
         <div className="space-y-6">
           <div className="h-56 rounded-3xl bg-[color:var(--surface-2)]" />
+          <div className="h-40 rounded-3xl bg-[color:var(--surface-2)]" />
           <div className="h-32 rounded-3xl bg-[color:var(--surface-2)]" />
         </div>
       </div>
     </div>
+  );
+}
+
+/** Small attendance status chip — icon + label, tone follows status. Matches
+ * the vocabulary used in DashboardAttendance.tsx: present/absent/excused/late. */
+function AttendanceStatusChip({ status }: { status: string }) {
+  const normalized = status.toLowerCase();
+  if (normalized === 'present') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[color:var(--success)] bg-[color:var(--success-soft)] px-2 py-0.5 rounded-full shrink-0">
+        <CheckCircle2 size={11} /> Present
+      </span>
+    );
+  }
+  if (normalized === 'absent') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[color:var(--danger)] bg-[color:var(--danger-soft)] px-2 py-0.5 rounded-full shrink-0">
+        <XCircle size={11} /> Absent
+      </span>
+    );
+  }
+  if (normalized === 'late') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-accent bg-[color:var(--accent-soft)] px-2 py-0.5 rounded-full shrink-0">
+        <Clock size={11} /> Late
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[color:var(--warning)] bg-[color:var(--warning-soft)] px-2 py-0.5 rounded-full shrink-0">
+      <HelpCircle size={11} /> Excused
+    </span>
   );
 }
 
@@ -314,6 +400,9 @@ export default function DashboardHome() {
 
   const [upcomingEvents, setUpcomingEvents] = useState<EventRecord[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [eventLookup, setEventLookup] = useState<Record<string, EventRecord>>({});
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -322,9 +411,33 @@ export default function DashboardHome() {
     setLoading(true);
     setError(null);
     try {
-      const { events, announcements: anns } = await loadDashboardData(tenant.id);
-      setUpcomingEvents(events);
-      setAnnouncements(anns);
+      const data = await loadDashboardData(tenant.id, profile.id as string | undefined);
+      setUpcomingEvents(data.events);
+      setAnnouncements(data.announcements);
+      setProjects(data.projects);
+
+      // Sort attendance by most recent event first (mirrors DashboardAttendance.tsx)
+      // and cross-reference event titles/dates the same way that page does.
+      if (data.attendance.length > 0) {
+        const { data: eventsSnap } = await supabase
+          .from('events')
+          .select('*')
+          .eq('tenant_id', tenant.id);
+        const lookup: Record<string, EventRecord> = {};
+        (eventsSnap || []).forEach((e: any) => {
+          lookup[e.id] = e;
+        });
+        setEventLookup(lookup);
+
+        const sorted = [...data.attendance].sort((a, b) => {
+          const dateA = lookup[a.eventId]?.date || '';
+          const dateB = lookup[b.eventId]?.date || '';
+          return dateB > dateA ? 1 : -1;
+        });
+        setAttendance(sorted);
+      } else {
+        setAttendance([]);
+      }
     } catch (err) {
       console.error(err);
       setError("Couldn't load your dashboard data.");
@@ -353,6 +466,8 @@ export default function DashboardHome() {
   const eventsThisWeek = upcomingEvents.filter((e) => formatEventDate(e.date).label).length;
   const pinnedCount = announcements.filter((a) => a.isPinned).length;
   const tenure = memberTenure(profile?.joinDate);
+  const presentCount = attendance.filter((a) => a.status === 'present' || a.status === 'late').length;
+  const attendanceRate = attendance.length > 0 ? Math.round((presentCount / attendance.length) * 100) : null;
 
   return (
     <div style={tokens} className="space-y-6 sm:space-y-8 animate-fade-in-up antialiased">
@@ -547,7 +662,7 @@ export default function DashboardHome() {
           </SectionCard>
         </div>
 
-        {/* Right Column - Profile & Quick Links */}
+        {/* Right Column - Profile, RSVPs & Quick Links */}
         <div className="space-y-6">
           <SectionCard hover className="p-5 sm:p-6">
             <h3 className="font-heading font-bold text-lg mb-4 flex items-center gap-2 text-[color:var(--text-1)]">
@@ -591,6 +706,95 @@ export default function DashboardHome() {
             </Link>
           </SectionCard>
 
+          {/* My Attendance */}
+          <SectionCard hover className="p-5 sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-heading font-bold text-lg flex items-center gap-2 text-[color:var(--text-1)]">
+                <CheckCircle2 size={18} className="text-accent" /> My Attendance
+              </h3>
+              {attendanceRate !== null && (
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${
+                    attendanceRate >= 75
+                      ? 'text-[color:var(--success)] bg-[color:var(--success-soft)]'
+                      : attendanceRate >= 50
+                      ? 'text-[color:var(--warning)] bg-[color:var(--warning-soft)]'
+                      : 'text-[color:var(--danger)] bg-[color:var(--danger-soft)]'
+                  }`}
+                >
+                  {attendanceRate}% rate
+                </span>
+              )}
+            </div>
+
+            {attendance.length === 0 ? (
+              <EmptyState
+                icon={<CheckCircle2 size={20} />}
+                label="No attendance records yet."
+                actionLabel="View full history"
+                actionTo="/dashboard/attendance"
+              />
+            ) : (
+              <>
+                <div className="space-y-2.5">
+                  {attendance.slice(0, 4).map((record) => {
+                    const event = eventLookup[record.eventId];
+                    return (
+                      <div
+                        key={record.id}
+                        className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-[color:var(--surface-2)] border border-[color:var(--border-subtle)]"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm text-[color:var(--text-1)] truncate">
+                            {event?.title || 'Club Meeting'}
+                          </p>
+                          {event?.date && (
+                            <p className="text-xs text-[color:var(--text-3)] mt-0.5">
+                              {new Date(`${event.date}T00:00:00`).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                            </p>
+                          )}
+                        </div>
+                        <AttendanceStatusChip status={record.status} />
+                      </div>
+                    );
+                  })}
+                </div>
+                <Link
+                  to="/dashboard/attendance"
+                  className="block w-full text-center mt-4 py-2.5 bg-[color:var(--surface-2)] hover:bg-[color:var(--surface-hover)] text-sm font-bold text-[color:var(--text-2)] rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] focus-visible:ring-offset-2"
+                >
+                  View full history
+                </Link>
+              </>
+            )}
+          </SectionCard>
+
+          {/* Active Projects preview */}
+          {projects.length > 0 && (
+            <SectionCard hover className="p-5 sm:p-6">
+              <SectionHeader icon={<FolderKanban size={18} />} title="Active Projects" to="/dashboard/projects" />
+              <div className="space-y-2.5">
+                {projects.map((project) => (
+                  <Link
+                    key={project.id}
+                    to="/dashboard/projects"
+                    className="flex items-center justify-between gap-3 p-3 rounded-2xl hover:bg-[color:var(--surface-hover)] border border-transparent hover:border-[color:var(--border-subtle)] transition-colors group"
+                  >
+                    <p className="font-bold text-sm text-[color:var(--text-1)] truncate">{project.title}</p>
+                    {project.status && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-accent bg-[color:var(--accent-soft)] px-2 py-0.5 rounded-full shrink-0">
+                        {project.status}
+                      </span>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+
           <Link
             to="/dashboard/projects"
             className="block hover:-translate-y-1 hover:shadow-lg motion-reduce:hover:translate-y-0 transition-all group overflow-hidden relative text-white p-6 rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)] focus-visible:ring-offset-2"
@@ -604,7 +808,7 @@ export default function DashboardHome() {
                 className="opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all"
               />
             </div>
-            <h3 className="relative z-10 font-heading font-bold text-xl mt-4 mb-1">Active Projects</h3>
+            <h3 className="relative z-10 font-heading font-bold text-xl mt-4 mb-1">Explore Projects</h3>
             <p className="relative z-10 text-sm text-white/70">
               View ongoing club projects and volunteer opportunities.
             </p>
