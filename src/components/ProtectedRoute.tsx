@@ -4,8 +4,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTenant } from '../hooks/useTenant';
 import { Loader2, ShieldAlert } from 'lucide-react';
 
-export const ProtectedRoute = ({ requireAdmin = false }: { requireAdmin?: boolean }) => {
-  const { user, profile, loading } = useAuth();
+export const ProtectedRoute = ({ requireAdmin = false, pageKey }: { requireAdmin?: boolean; pageKey?: string }) => {
+  const { user, profile, loading, isMasterAdmin, permissions } = useAuth();
   const { tenant } = useTenant();
 
   if (loading) {
@@ -24,12 +24,18 @@ export const ProtectedRoute = ({ requireAdmin = false }: { requireAdmin?: boolea
     return <Navigate to="/join" replace />;
   }
 
-  if (requireAdmin && profile?.role !== 'admin' && profile?.role !== 'master_admin') {
+  const hasPageAccess = pageKey ? (isMasterAdmin || permissions[pageKey]?.can_view) : true;
+
+  if (requireAdmin && !isMasterAdmin && !hasPageAccess) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  // Cross-tenant protection for members and local administrators
-  if (profile && profile.role !== 'master_admin' && profile.tenant_id !== tenant.id) {
+  if (pageKey && !hasPageAccess) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  // Cross-tenant protection for non-master-admin users
+  if (profile && !isMasterAdmin && profile.tenant_id !== tenant.id) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
         <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100 text-center flex flex-col items-center">
