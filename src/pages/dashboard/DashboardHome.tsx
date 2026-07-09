@@ -25,17 +25,15 @@ import {
  * ------------------------------------------------------------------
  * Theme contract
  * ------------------------------------------------------------------
- * Same pattern as DashboardLayout.tsx: a plain JS token object `t`,
- * resolved per-render from `useTheme().resolvedTheme`.
+ * Plain JS token object `t`, resolved per-render from
+ * `useTheme().resolvedTheme` — same pattern as DashboardLayout.tsx.
  *
- * Glass tokens (`glassBg` / `glassBorder` / `glassShadow`) are copied
- * VERBATIM from DashboardLayout's sidebar/header recipe — same rgba
- * values, same intent — so the new glass panel here matches the
- * shell exactly instead of introducing a second, slightly-different
- * glass language. Scope follows Apple's own HIG: translucency is for
- * chrome and glanceable widget clusters, not dense text content — so
- * only the greeting+stats panel is glass; the event/announcement/
- * attendance lists below stay fully opaque for legibility.
+ * No translucency/backdrop-blur anywhere in this version. None of the
+ * reference dashboards use glassmorphism — every one uses solid fills
+ * (a bold accent-colored hero card next to neutral cards) and real
+ * chart widgets (rings, bars). Solid fills also sidestep every dark-
+ * mode alpha-blend issue from earlier versions: a solid color renders
+ * identically regardless of what's behind it or which mode you're in.
  */
 function hexToRgba(hex: string, alpha: number) {
   const clean = hex.replace('#', '');
@@ -53,15 +51,14 @@ function useDashboardTokens(accent: string, dark: boolean) {
     const danger = '#ff3e1d';
     const warning = '#ffab00';
     return {
-      pageBg: dark ? '#1a1d2b' : '#f5f5f9',
       surface: dark ? '#282c3f' : '#ffffff',
-      surfaceMuted: dark ? 'rgba(255,255,255,0.04)' : '#f8f8fb',
-      surfaceHover: dark ? 'rgba(255,255,255,0.06)' : '#f5f5f9',
+      surfaceMuted: dark ? 'rgba(255,255,255,0.05)' : '#f8f8fb',
+      surfaceHover: dark ? 'rgba(255,255,255,0.07)' : '#f5f5f9',
       border: dark ? 'rgba(255,255,255,0.09)' : '#eceef1',
       borderStrong: dark ? 'rgba(255,255,255,0.16)' : '#dfe1e7',
-      text1: dark ? 'rgba(255,255,255,0.92)' : '#2b2c40',
-      text2: dark ? 'rgba(255,255,255,0.6)' : '#566a7f',
-      text3: dark ? 'rgba(255,255,255,0.38)' : '#a1acb8',
+      text1: dark ? 'rgba(255,255,255,0.94)' : '#2b2c40',
+      text2: dark ? 'rgba(255,255,255,0.62)' : '#566a7f',
+      text3: dark ? 'rgba(255,255,255,0.4)' : '#a1acb8',
       accent,
       accentSoft: hexToRgba(accent, dark ? 0.22 : 0.1),
       success,
@@ -71,11 +68,6 @@ function useDashboardTokens(accent: string, dark: boolean) {
       warning,
       warningSoft: hexToRgba(warning, dark ? 0.2 : 0.12),
       shadowHover: dark ? '0 10px 24px rgba(0,0,0,0.4)' : '0 10px 24px rgba(31,45,61,0.1)',
-      // Copied verbatim from DashboardLayout.tsx: c.sidebarBg / c.sidebarBorder /
-      // the aside's boxShadow. Same translucency, same blur intent, same source.
-      glassBg: dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.7)',
-      glassBorder: dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.6)',
-      glassShadow: dark ? '0 8px 32px rgba(0,0,0,0.3)' : '0 8px 32px rgba(31,45,61,0.1)',
     };
   }, [accent, dark]);
 }
@@ -118,6 +110,23 @@ type ProjectRecord = {
   executionDate?: string;
   coverImage?: string;
 };
+
+/** Ported directly from DashboardCalendar.tsx so event-type color coding
+ * matches the Calendar page exactly instead of inventing a new palette. */
+function getEventTypeColor(type?: string) {
+  switch (type) {
+    case 'Meeting':
+      return '#3b82f6';
+    case 'Community Project':
+      return '#14b8a6';
+    case 'International':
+      return '#a855f7';
+    case 'Social':
+      return '#f59e0b';
+    default:
+      return '#6b7280';
+  }
+}
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -180,7 +189,7 @@ function memberTenure(joinDate?: string) {
   return `${Math.floor(days / 365)}y`;
 }
 
-/** Data layer — unchanged and verified against the real schema
+/** Data layer — unchanged, verified against the real schema
  * (DashboardAttendance.tsx / DashboardProjects.tsx / AuthContext.tsx). */
 async function loadDashboardData(tenantId: string, memberId?: string) {
   const today = new Date().toISOString().split('T')[0];
@@ -225,9 +234,9 @@ async function loadDashboardData(tenantId: string, memberId?: string) {
 
 /* ------------------------------- building blocks ------------------------------- */
 
-/** Opaque content card — hairline border, zero shadow at rest, shadow+lift
- * only on hover. Used for dense/text-heavy content (events, announcements,
- * attendance, projects) where legibility matters more than translucency. */
+/** Opaque content card. Hairline border, zero shadow at rest, shadow+lift
+ * only on hover. rounded-2xl — rounder than earlier versions, matching the
+ * generous corner radius every reference image uses. */
 function Card({
   t,
   children,
@@ -246,7 +255,7 @@ function Card({
     <div
       onMouseEnter={() => hover && setHovered(true)}
       onMouseLeave={() => hover && setHovered(false)}
-      className={`rounded-xl transition-all duration-200 ${className}`}
+      className={`rounded-2xl transition-all duration-200 ${className}`}
       style={{
         background: t.surface,
         border: `1px solid ${hovered ? t.borderStrong : t.border}`,
@@ -270,12 +279,19 @@ function SectionHeader({ t, icon, title, to }: { t: Tokens; icon: React.ReactNod
       {to && (
         <Link
           to={to}
-          className="text-xs font-semibold flex items-center gap-0.5 shrink-0 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-          style={{ color: t.text3 }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = t.accent)}
-          onMouseLeave={(e) => (e.currentTarget.style.color = t.text3)}
+          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+          style={{ background: t.surfaceMuted, color: t.text2 }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = t.accentSoft;
+            e.currentTarget.style.color = t.accent;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = t.surfaceMuted;
+            e.currentTarget.style.color = t.text2;
+          }}
+          aria-label={`View all ${title}`}
         >
-          View all <ChevronRight size={14} />
+          <ArrowUpRight size={15} />
         </Link>
       )}
     </div>
@@ -297,7 +313,7 @@ function EmptyState({
 }) {
   return (
     <div
-      className="flex flex-col items-center gap-2.5 text-center py-9 px-4 rounded-lg"
+      className="flex flex-col items-center gap-2.5 text-center py-9 px-4 rounded-xl"
       style={{ background: t.surfaceMuted, border: `1px solid ${t.border}` }}
     >
       <div
@@ -323,18 +339,19 @@ function EmptyState({
 }
 
 /**
- * Stat cell — NOT individually carded. Lives inside the glass hero panel,
- * grouped by that single panel boundary rather than 4 competing borders.
- * No icon-chip background; small monochrome/status-colored glyph inline
- * with the label, big tabular number carries the weight. Value never
- * truncates — a long role wraps instead of ending in an ellipsis.
+ * Stat tile — modeled directly on the Donezo reference: icon in its own
+ * circle, label, big bold number, small hint below. `bold` makes it a
+ * solid accent-filled hero cell (used once, for the lead metric) — the
+ * rest stay neutral, exactly mirroring "one colored card + three neutral
+ * cards in the same row" from that reference.
  */
-function StatCell({
+function StatTile({
   t,
   icon,
   label,
   value,
   hint,
+  bold = false,
   tone = 'default',
 }: {
   t: Tokens;
@@ -342,22 +359,32 @@ function StatCell({
   label: string;
   value: React.ReactNode;
   hint?: string;
+  bold?: boolean;
   tone?: 'default' | 'success' | 'danger';
 }) {
   const statusColor = tone === 'success' ? t.success : tone === 'danger' ? t.danger : null;
+  const iconBg = bold ? 'rgba(255,255,255,0.2)' : tone === 'success' ? t.successSoft : tone === 'danger' ? t.dangerSoft : t.surfaceMuted;
+  const iconColor = bold ? '#ffffff' : statusColor || t.text2;
+  const labelColor = bold ? 'rgba(255,255,255,0.75)' : t.text3;
+  const valueColor = bold ? '#ffffff' : statusColor || t.text1;
+  const hintColor = bold ? 'rgba(255,255,255,0.65)' : t.text3;
+
   return (
-    <div className="min-w-0">
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <span style={{ color: statusColor || t.text2 }}>{icon}</span>
-        <p className="text-[11px] font-semibold uppercase tracking-wider truncate" style={{ color: t.text3 }}>
-          {label}
-        </p>
-      </div>
-      <p className="text-lg font-bold leading-snug tabular-nums" style={{ color: statusColor || t.text1 }}>
+    <div
+      className="rounded-2xl p-4"
+      style={{ background: bold ? t.accent : t.surface, border: bold ? 'none' : `1px solid ${t.border}` }}
+    >
+      <span className="w-8 h-8 rounded-full flex items-center justify-center mb-3" style={{ background: iconBg, color: iconColor }}>
+        {icon}
+      </span>
+      <p className="text-[11px] font-semibold uppercase tracking-wider mb-1 truncate" style={{ color: labelColor }}>
+        {label}
+      </p>
+      <p className="text-2xl font-bold tabular-nums leading-none" style={{ color: valueColor }}>
         {value}
       </p>
       {hint && (
-        <p className="text-[11px] mt-0.5 truncate" style={{ color: t.text3 }}>
+        <p className="text-[11px] mt-1.5 truncate" style={{ color: hintColor }}>
           {hint}
         </p>
       )}
@@ -365,13 +392,35 @@ function StatCell({
   );
 }
 
+/** Plain SVG ring — renders identically regardless of theme/mode since it's
+ * explicit geometry, not a compositing effect. Matches the circular progress
+ * widgets in the Financial (36%) and Phoenix (74%) reference dashboards. */
+function RingProgress({ value, size = 56, stroke = 5, color, track }: { value: number; size?: number; stroke?: number; color: string; track: string }) {
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - Math.min(Math.max(value, 0), 100) / 100);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={track} strokeWidth={stroke} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke={color}
+        strokeWidth={stroke}
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+      />
+    </svg>
+  );
+}
+
 function ErrorBanner({ t, message, onRetry }: { t: Tokens; message: string; onRetry: () => void }) {
   return (
-    <div
-      role="alert"
-      className="flex items-center justify-between gap-4 p-3.5 rounded-lg"
-      style={{ background: t.dangerSoft, color: t.danger }}
-    >
+    <div role="alert" className="flex items-center justify-between gap-4 p-3.5 rounded-xl" style={{ background: t.dangerSoft, color: t.danger }}>
       <p className="text-sm font-semibold">{message}</p>
       <button
         onClick={onRetry}
@@ -383,22 +432,25 @@ function ErrorBanner({ t, message, onRetry }: { t: Tokens; message: string; onRe
   );
 }
 
-/** Reflects the new structure: one taller block for the glass hero panel,
- * then the zoned content cards below. */
 function DashboardSkeleton({ t }: { t: Tokens }) {
   const pulse = { background: t.surfaceMuted };
   return (
     <div className="space-y-6 animate-pulse">
-      <div className="h-[210px] sm:h-[168px] rounded-2xl" style={pulse} />
+      <div className="h-9 w-56 rounded-lg" style={pulse} />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-[120px] rounded-2xl" style={pulse} />
+        ))}
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
-          <div className="h-60 rounded-xl" style={pulse} />
-          <div className="h-60 rounded-xl" style={pulse} />
+          <div className="h-60 rounded-2xl" style={pulse} />
+          <div className="h-60 rounded-2xl" style={pulse} />
         </div>
         <div className="space-y-4">
-          <div className="h-52 rounded-xl" style={pulse} />
-          <div className="h-40 rounded-xl" style={pulse} />
-          <div className="h-28 rounded-xl" style={pulse} />
+          <div className="h-52 rounded-2xl" style={pulse} />
+          <div className="h-40 rounded-2xl" style={pulse} />
+          <div className="h-28 rounded-2xl" style={pulse} />
         </div>
       </div>
     </div>
@@ -415,18 +467,15 @@ function AttendanceStatusChip({ t, status }: { t: Tokens; status: string }) {
   };
   const s = map[normalized] || map.excused;
   return (
-    <span
-      className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0"
-      style={{ background: s.bg, color: s.color }}
-    >
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0" style={{ background: s.bg, color: s.color }}>
       {s.icon} {s.label}
     </span>
   );
 }
 
-/** Small uppercase-tracked zone label, borrowed directly from DashboardLayout's
- * own nav section-title pattern (`section.title` styled with `c.sectionLabel`) —
- * reused here to group dashboard content the same way the sidebar groups nav. */
+/** Small uppercase-tracked zone label, borrowed from DashboardLayout's own
+ * nav section-title pattern — groups dashboard content the same way the
+ * sidebar groups nav items. */
 function ZoneLabel({ t, children }: { t: Tokens; children: React.ReactNode }) {
   return (
     <p className="text-[11px] font-semibold uppercase tracking-widest px-1" style={{ color: t.text3 }}>
@@ -507,74 +556,50 @@ export default function DashboardHome() {
   const tenure = memberTenure(profile?.joinDate);
   const presentCount = attendance.filter((a) => a.status === 'present' || a.status === 'late').length;
   const attendanceRate = attendance.length > 0 ? Math.round((presentCount / attendance.length) * 100) : null;
+  const ringColor = attendanceRate === null ? t.text3 : attendanceRate >= 75 ? t.success : attendanceRate >= 50 ? t.warning : t.danger;
 
   return (
     <div className="space-y-6 antialiased animate-fade-in-up">
       {error && <ErrorBanner t={t} message={error} onRetry={fetchDashboard} />}
 
-      {/* Glass hero panel — greeting + stats merged into one widget, mirroring
-          DashboardLayout's sidebar/header glass recipe exactly. This is the one
-          place translucency belongs: a glanceable cluster, not dense text. */}
-      <div
-        className="rounded-2xl p-5 sm:p-6 backdrop-blur-2xl backdrop-saturate-150"
-        style={{ background: t.glassBg, border: `1px solid ${t.glassBorder}`, boxShadow: t.glassShadow }}
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: t.text3 }}>
-              {getGreeting()}
-            </p>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: t.text1 }}>
-              {firstName ? `Welcome back, ${firstName}` : 'Welcome back'}
-            </h1>
-            <p className="text-sm mt-0.5" style={{ color: t.text2 }}>
-              {settings.clubName} <span style={{ color: t.text3 }}>·</span> {settings.rotaryYear || 'Current Year'}
-            </p>
+      {/* Plain-text greeting — no card wrapper, matching the Crextio reference's
+          "Welcome in, Nixtio" pattern. Color/presence now lives in the stat row below. */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: t.text3 }}>
+            {getGreeting()}
+          </p>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight" style={{ color: t.text1 }}>
+            {firstName ? `Welcome back, ${firstName}` : 'Welcome back'}
+          </h1>
+          <p className="text-sm mt-0.5" style={{ color: t.text2 }}>
+            {settings.clubName} <span style={{ color: t.text3 }}>·</span> {settings.rotaryYear || 'Current Year'}
+          </p>
+        </div>
+        {profile?.photo ? (
+          <img src={profile.photo} alt={profile.name} className="w-12 h-12 rounded-full object-cover shrink-0" style={{ border: `2px solid ${t.accent}` }} />
+        ) : (
+          <div className="w-12 h-12 rounded-full flex items-center justify-center text-base font-bold text-white shrink-0" style={{ background: t.accent }}>
+            {profile?.name?.[0]}
           </div>
-          {profile?.photo ? (
-            <img
-              src={profile.photo}
-              alt={profile.name}
-              className="w-12 h-12 rounded-full object-cover shrink-0"
-              style={{ border: `2px solid ${t.accent}` }}
-            />
-          ) : (
-            <div
-              className="w-12 h-12 rounded-full flex items-center justify-center text-base font-bold text-white shrink-0"
-              style={{ background: t.accent }}
-            >
-              {profile?.name?.[0]}
-            </div>
-          )}
-        </div>
+        )}
+      </div>
 
-        <div
-          className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 mt-5 pt-5"
-          style={{ borderTop: `1px solid ${t.glassBorder}` }}
-        >
-          <StatCell
-            t={t}
-            icon={<CalendarDays size={13} />}
-            label="Upcoming"
-            value={upcomingEvents.length}
-            hint={eventsThisWeek > 0 ? `${eventsThisWeek} this week` : undefined}
-          />
-          <StatCell
-            t={t}
-            icon={<Megaphone size={13} />}
-            label="Updates"
-            value={announcements.length}
-            hint={pinnedCount > 0 ? `${pinnedCount} pinned` : undefined}
-          />
-          <StatCell
-            t={t}
-            icon={<ShieldCheck size={13} />}
-            label="Status"
-            value={isActive ? 'Active' : 'Inactive'}
-            tone={isActive ? 'success' : 'danger'}
-          />
-          <StatCell t={t} icon={<User size={13} />} label="Role" value={formatRole(profile?.role)} hint={tenure ? `Member for ${tenure}` : undefined} />
-        </div>
+      {/* Stat row — one bold accent-filled hero cell + three neutral cells,
+          same row, same size. Directly mirrors the Donezo reference's
+          "Total Projects" (colored) next to "Ended/Running/Pending" (neutral). */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatTile
+          t={t}
+          bold
+          icon={<CalendarDays size={15} />}
+          label="Upcoming"
+          value={upcomingEvents.length}
+          hint={eventsThisWeek > 0 ? `${eventsThisWeek} this week` : 'events scheduled'}
+        />
+        <StatTile t={t} icon={<Megaphone size={15} />} label="Updates" value={announcements.length} hint={pinnedCount > 0 ? `${pinnedCount} pinned` : 'announcements'} />
+        <StatTile t={t} icon={<ShieldCheck size={15} />} label="Status" value={isActive ? 'Active' : 'Inactive'} tone={isActive ? 'success' : 'danger'} />
+        <StatTile t={t} icon={<User size={15} />} label="Role" value={formatRole(profile?.role)} hint={tenure ? `Member for ${tenure}` : undefined} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -586,21 +611,17 @@ export default function DashboardHome() {
             <SectionHeader t={t} icon={<CalendarDays size={16} />} title="Upcoming Events" to="/dashboard/calendar" />
 
             {upcomingEvents.length === 0 ? (
-              <EmptyState
-                t={t}
-                icon={<CalendarDays size={18} />}
-                label="No upcoming events scheduled."
-                actionLabel="Open calendar"
-                actionTo="/dashboard/calendar"
-              />
+              <EmptyState t={t} icon={<CalendarDays size={18} />} label="No upcoming events scheduled." actionLabel="Open calendar" actionTo="/dashboard/calendar" />
             ) : (
               <div className="space-y-1">
                 {upcomingEvents.map((event) => {
                   const { month, day, label } = formatEventDate(event.date);
+                  const typeColor = getEventTypeColor(event.type);
                   return (
                     <div
                       key={event.id}
-                      className="flex gap-4 p-3 rounded-lg transition-colors cursor-pointer"
+                      className="flex gap-4 p-3 rounded-xl transition-colors cursor-pointer"
+                      style={{ borderLeft: `3px solid ${typeColor}` }}
                       onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
@@ -618,10 +639,7 @@ export default function DashboardHome() {
                             {event.title}
                           </h3>
                           {label && (
-                            <span
-                              className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full shrink-0"
-                              style={{ color: t.accent, background: t.accentSoft }}
-                            >
+                            <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full shrink-0" style={{ color: t.accent, background: t.accentSoft }}>
                               {label}
                             </span>
                           )}
@@ -639,10 +657,7 @@ export default function DashboardHome() {
                           )}
                         </p>
                         {event.type && (
-                          <span
-                            className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-full"
-                            style={{ background: t.surfaceMuted, color: t.text2 }}
-                          >
+                          <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-full" style={{ background: hexToRgba(typeColor, dark ? 0.2 : 0.12), color: typeColor }}>
                             {event.type}
                           </span>
                         )}
@@ -658,24 +673,15 @@ export default function DashboardHome() {
             <SectionHeader t={t} icon={<Megaphone size={16} />} title="Announcements" to="/dashboard/announcements" />
 
             {announcements.length === 0 ? (
-              <EmptyState
-                t={t}
-                icon={<Megaphone size={18} />}
-                label="No announcements at this time."
-                actionLabel="Open announcements"
-                actionTo="/dashboard/announcements"
-              />
+              <EmptyState t={t} icon={<Megaphone size={18} />} label="No announcements at this time." actionLabel="Open announcements" actionTo="/dashboard/announcements" />
             ) : (
               <div className="space-y-2.5">
                 {announcements.map((ann) => {
                   const isNew = ann.createdAt ? Date.now() - new Date(ann.createdAt).getTime() < 86400000 : false;
                   return (
-                    <div key={ann.id} className="p-4 rounded-lg relative" style={{ background: t.surfaceMuted, border: `1px solid ${t.border}` }}>
+                    <div key={ann.id} className="p-4 rounded-xl relative" style={{ background: t.surfaceMuted, border: `1px solid ${t.border}` }}>
                       {ann.isPinned && (
-                        <span
-                          className="absolute top-0 right-4 -translate-y-1/2 text-white text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1"
-                          style={{ background: t.accent }}
-                        >
+                        <span className="absolute top-0 right-4 -translate-y-1/2 text-white text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1" style={{ background: t.accent }}>
                           <Pin size={9} /> Pinned
                         </span>
                       )}
@@ -683,10 +689,7 @@ export default function DashboardHome() {
                         <h3 className="font-semibold text-sm leading-tight flex items-center gap-2" style={{ color: t.text1 }}>
                           {ann.title}
                           {isNew && (
-                            <span
-                              className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full shrink-0"
-                              style={{ color: t.success, background: t.successSoft }}
-                            >
+                            <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full shrink-0" style={{ color: t.success, background: t.successSoft }}>
                               New
                             </span>
                           )}
@@ -747,29 +750,33 @@ export default function DashboardHome() {
             </div>
             <Link
               to="/dashboard/profile"
-              className="block w-full text-center mt-4 py-2 text-sm font-semibold rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+              className="block w-full text-center mt-4 py-2 text-sm font-semibold rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
               style={{ background: t.surfaceMuted, color: t.text2 }}
             >
               Edit Profile
             </Link>
           </Card>
 
+          {/* My Attendance — real ring-progress widget instead of a text badge,
+              matching the circular gauges in the Financial/Phoenix references. */}
           <Card t={t} className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-sm flex items-center gap-2" style={{ color: t.text1 }}>
-                <CheckCircle2 size={15} style={{ color: t.accent }} /> My Attendance
-              </h3>
-              {attendanceRate !== null && (
-                <span
-                  className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0"
-                  style={{
-                    background: attendanceRate >= 75 ? t.successSoft : attendanceRate >= 50 ? t.warningSoft : t.dangerSoft,
-                    color: attendanceRate >= 75 ? t.success : attendanceRate >= 50 ? t.warning : t.danger,
-                  }}
-                >
-                  {attendanceRate}% rate
-                </span>
-              )}
+            <div className="flex items-center gap-4 mb-4">
+              <div className="relative shrink-0" style={{ width: 56, height: 56 }}>
+                <RingProgress value={attendanceRate ?? 0} color={ringColor} track={t.border} />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-xs font-bold tabular-nums" style={{ color: t.text1 }}>
+                    {attendanceRate !== null ? `${attendanceRate}%` : '—'}
+                  </span>
+                </div>
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-semibold text-sm" style={{ color: t.text1 }}>
+                  My Attendance
+                </h3>
+                <p className="text-xs mt-0.5" style={{ color: t.text3 }}>
+                  {attendance.length > 0 ? `${presentCount} of ${attendance.length} events` : 'No records yet'}
+                </p>
+              </div>
             </div>
 
             {attendance.length === 0 ? (
@@ -780,7 +787,7 @@ export default function DashboardHome() {
                   {attendance.slice(0, 4).map((record) => {
                     const event = eventLookup[record.eventId];
                     return (
-                      <div key={record.id} className="flex items-center justify-between gap-3 p-2.5 rounded-lg" style={{ background: t.surfaceMuted, border: `1px solid ${t.border}` }}>
+                      <div key={record.id} className="flex items-center justify-between gap-3 p-2.5 rounded-xl" style={{ background: t.surfaceMuted, border: `1px solid ${t.border}` }}>
                         <div className="min-w-0">
                           <p className="font-semibold text-sm truncate" style={{ color: t.text1 }}>
                             {event?.title || 'Club Meeting'}
@@ -798,7 +805,7 @@ export default function DashboardHome() {
                 </div>
                 <Link
                   to="/dashboard/attendance"
-                  className="block w-full text-center mt-3 py-2 text-sm font-semibold rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                  className="block w-full text-center mt-3 py-2 text-sm font-semibold rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
                   style={{ background: t.surfaceMuted, color: t.text2 }}
                 >
                   View full history
@@ -822,11 +829,11 @@ export default function DashboardHome() {
                     <Link
                       key={project.id}
                       to="/dashboard/projects"
-                      className="flex items-center gap-3 p-2.5 rounded-lg transition-colors"
+                      className="flex items-center gap-3 p-2.5 rounded-xl transition-colors"
                       onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
-                      <div className="w-9 h-9 rounded-lg overflow-hidden shrink-0" style={{ background: t.accentSoft }}>
+                      <div className="w-11 h-11 rounded-xl overflow-hidden shrink-0" style={{ background: t.accentSoft }}>
                         {project.coverImage && <img src={project.coverImage} alt="" className="w-full h-full object-cover" />}
                       </div>
                       <div className="min-w-0 flex-1">
@@ -851,8 +858,12 @@ export default function DashboardHome() {
 
           <Link
             to="/dashboard/projects"
-            className="block group overflow-hidden relative text-white p-5 rounded-xl transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-            style={{ background: t.accent }}
+            className="block group overflow-hidden relative text-white p-5 rounded-2xl transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+            style={{
+              background: t.accent,
+              backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.15) 1px, transparent 1px)',
+              backgroundSize: '14px 14px',
+            }}
           >
             <div className="relative z-10 flex items-start justify-between">
               <Presentation size={24} />
