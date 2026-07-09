@@ -7,9 +7,9 @@ import { useToast } from '../../hooks/useToast';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { useAuth } from '../../contexts/AuthContext';
 import { Shield, Plus, Pencil, Trash, Lock } from 'lucide-react';
-import { PAGE_KEYS } from '../../tenants/pageKeys';
+import { usePageRegistry } from '../../hooks/usePageRegistry';
 
-interface RoleRow { id: string; name: string; label: string; color: string; is_system: boolean; }
+interface RoleRow { id: string; name: string; label: string; color: string; is_system: boolean; is_protected: boolean; }
 type PermMap = Record<string, { can_view: boolean; can_edit: boolean; can_delete: boolean }>;
 
 export default function AdminRoles() {
@@ -24,11 +24,22 @@ export default function AdminRoles() {
   const [nameInput, setNameInput] = useState('');
   const [colorInput, setColorInput] = useState('#696cff');
   const [perms, setPerms] = useState<PermMap>({});
+  const [activeTab, setActiveTab] = useState<'admin' | 'member'>('admin');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const { pages: registryPages } = usePageRegistry(tenant.id);
+  const ADMIN_KEYS = registryPages.filter(p => p.mode === 'admin').map(p => ({ key: p.pageKey, label: p.label }));
+  const MEMBER_KEYS = registryPages.filter(p => p.mode === 'member').map(p => ({ key: p.pageKey, label: p.label }));
+
+  const blankPerms = (): PermMap => {
+    const blank: PermMap = {};
+    [...ADMIN_KEYS, ...MEMBER_KEYS].forEach(p => { blank[p.key] = { can_view: false, can_edit: false, can_delete: false }; });
+    return blank;
+  };
 
   const fetchRoles = async () => {
     setLoading(true);
-    const { data } = await supabase.from('roles').select('*').eq('tenant_id', tenant.id).order('is_system', { ascending: false });
+    const { data } = await supabase.from('roles').select('*').eq('tenant_id', tenant.id).order('is_protected', { ascending: false });
     setRoles((data || []) as RoleRow[]);
     setLoading(false);
   };
@@ -39,9 +50,8 @@ export default function AdminRoles() {
     setEditingRole(null);
     setNameInput('');
     setColorInput('#696cff');
-    const blank: PermMap = {};
-    PAGE_KEYS.forEach(p => { blank[p.key] = { can_view: false, can_edit: false, can_delete: false }; });
-    setPerms(blank);
+    setPerms(blankPerms());
+    setActiveTab('admin');
     setIsFormOpen(true);
   };
 
@@ -50,12 +60,12 @@ export default function AdminRoles() {
     setNameInput(r.label);
     setColorInput(r.color);
     const { data } = await supabase.from('role_permissions').select('*').eq('role_id', r.id);
-    const map: PermMap = {};
-    PAGE_KEYS.forEach(p => { map[p.key] = { can_view: false, can_edit: false, can_delete: false }; });
+    const map = blankPerms();
     (data || []).forEach((row: any) => {
       map[row.page_key] = { can_view: row.can_view, can_edit: row.can_edit, can_delete: row.can_delete };
     });
     setPerms(map);
+    setActiveTab('admin');
     setIsFormOpen(true);
   };
 
@@ -63,7 +73,6 @@ export default function AdminRoles() {
     setPerms(prev => {
       const cur = prev[pageKey] || { can_view: false, can_edit: false, can_delete: false };
       const next = { ...cur, [action]: !cur[action] };
-      // edit/delete imply view
       if ((action === 'can_edit' || action === 'can_delete') && next[action]) next.can_view = true;
       if (action === 'can_view' && !next.can_view) { next.can_edit = false; next.can_delete = false; }
       return { ...prev, [pageKey]: next };
@@ -80,13 +89,14 @@ export default function AdminRoles() {
         await supabase.from('roles').update({ label: nameInput.trim(), color: colorInput }).eq('id', editingRole.id);
       } else {
         const { data, error } = await supabase.from('roles')
-          .insert({ tenant_id: tenant.id, name: slug, label: nameInput.trim(), color: colorInput, is_system: false })
+          .insert({ tenant_id: tenant.id, name: slug, label: nameInput.trim(), color: colorInput, is_system: false, is_protected: false })
           .select().single();
         if (error) throw error;
         roleId = data.id;
       }
 
-      const rows = PAGE_KEYS.map(p => ({
+      const allKeys = [...ADMIN_KEYS, ...MEMBER_KEYS];
+      const rows = allKeys.map(p => ({
         role_id: roleId,
         page_key: p.key,
         can_view: perms[p.key]?.can_view || false,
@@ -126,6 +136,7 @@ export default function AdminRoles() {
 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-colors bg-white";
   const labelClass = "block text-sm font-medium text-gray-700 mb-1.5";
+  const activeKeys = activeTab === 'admin' ? ADMIN_KEYS : MEMBER_KEYS;
 
   return (
     <div className="space-y-8 pb-16">
@@ -146,17 +157,19 @@ export default function AdminRoles() {
               <span className="w-3 h-3 rounded-full" style={{ background: r.color }} />
               <div>
                 <p className="font-semibold text-gray-900">{r.label}</p>
-                {r.is_system && <p className="text-[10px] uppercase text-gray-400 font-bold">System Role</p>}
+                {r.is_system && <p className="text-[10px] uppercase text-gray-400 font-bold">Full Access · Locked</p>}
+                {r.is_protected && !r.is_system && <p className="text-[10px] uppercase text-gray-400 font-bold">Default Role · Editable</p>}
               </div>
             </div>
             <div className="flex gap-2">
               {!r.is_system && (
-                <>
-                  <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-primary"><Pencil size={16} /></button>
-                  <button onClick={() => setDeleteId(r.id)} className="text-gray-500 hover:text-red-500"><Trash size={16} /></button>
-                </>
+                <button onClick={() => openEdit(r)} className="text-gray-500 hover:text-primary"><Pencil size={16} /></button>
+              )}
+              {!r.is_protected && (
+                <button onClick={() => setDeleteId(r.id)} className="text-gray-500 hover:text-red-500"><Trash size={16} /></button>
               )}
               {r.is_system && <Shield size={16} className="text-amber-700" />}
+              {r.is_protected && !r.is_system && <Lock size={14} className="text-gray-400" />}
             </div>
           </div>
         ))}
@@ -167,7 +180,7 @@ export default function AdminRoles() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>Role Name</label>
-              <input value={nameInput} onChange={e => setNameInput(e.target.value)} className={inputClass} placeholder="e.g. President" />
+              <input value={nameInput} onChange={e => setNameInput(e.target.value)} className={inputClass} placeholder="e.g. President" disabled={!!editingRole?.is_protected} />
             </div>
             <div>
               <label className={labelClass}>Color</label>
@@ -176,7 +189,19 @@ export default function AdminRoles() {
           </div>
 
           <div>
-            <h4 className="text-xs font-bold uppercase text-gray-400 mb-3">Page Permissions</h4>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-bold uppercase text-gray-400">Page Permissions</h4>
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
+                <button type="button" onClick={() => setActiveTab('admin')}
+                  className={`px-3 py-1.5 ${activeTab === 'admin' ? 'bg-primary text-white' : 'bg-white text-gray-500'}`}>
+                  Admin Pages
+                </button>
+                <button type="button" onClick={() => setActiveTab('member')}
+                  className={`px-3 py-1.5 ${activeTab === 'member' ? 'bg-primary text-white' : 'bg-white text-gray-500'}`}>
+                  Member Dashboard
+                </button>
+              </div>
+            </div>
             <div className="border border-gray-100 rounded-lg overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">
@@ -188,7 +213,7 @@ export default function AdminRoles() {
                   </tr>
                 </thead>
                 <tbody>
-                  {PAGE_KEYS.map(p => (
+                  {activeKeys.map(p => (
                     <tr key={p.key} className="border-t border-gray-100">
                       <td className="px-3 py-2 text-gray-700">{p.label}</td>
                       {(['can_view', 'can_edit', 'can_delete'] as const).map(a => (
