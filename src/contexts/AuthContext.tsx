@@ -8,6 +8,7 @@ export interface RoleInfo {
   label: string;
   color: string;
   is_system: boolean;
+  is_protected: boolean;
 }
 
 interface UserProfile {
