@@ -11,18 +11,12 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './hooks/useToast';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { useTenant } from './hooks/useTenant';
+import { usePageRegistry } from './hooks/usePageRegistry';
+import { Loader2 } from 'lucide-react';
 
 import MainLayout from './components/layout/MainLayout';
 import DashboardLayout from './components/layout/DashboardLayout';
-
-import DashboardHome from './pages/dashboard/DashboardHome';
-import DashboardProfile from './pages/dashboard/DashboardProfile';
-import DashboardAttendance from './pages/dashboard/DashboardAttendance';
-import DashboardProjects from './pages/dashboard/DashboardProjects';
-import DashboardCalendar from './pages/dashboard/DashboardCalendar';
-import DashboardReminders from './pages/dashboard/DashboardReminders';
-import DashboardAnnouncements from './pages/dashboard/DashboardAnnouncements';
-import DashboardResources from './pages/dashboard/DashboardResources';
 
 import Home from './pages/Home';
 import About from './pages/About';
@@ -40,39 +34,58 @@ import Sponsorship from './pages/Sponsorship';
 import Donate from './pages/Donate';
 import TermsOfService from './pages/TermsOfService';
 import PrivacyPolicy from './pages/PrivacyPolicy';
-
-import AdminOverview from './pages/admin/AdminOverview';
-import AdminSettings from './pages/admin/AdminSettings';
-import AdminMembers from './pages/admin/AdminMembers';
-import AdminApplications from './pages/admin/AdminApplications';
-import AdminAttendance from './pages/admin/AdminAttendance';
-import AdminEvents from './pages/admin/AdminEvents';
-import AdminProjects from './pages/admin/AdminProjects';
-import AdminTeam from './pages/admin/AdminTeam';
-import AdminNews from './pages/admin/AdminNews';
-import AdminGallery from './pages/admin/AdminGallery';
-import AdminCommunications from './pages/admin/AdminCommunications';
-import AdminReminders from './pages/admin/AdminReminders';
-import AdminResources from './pages/admin/AdminResources';
-import AdminPages from './pages/admin/AdminPages';
-import AdminContactInbox from './pages/admin/AdminContactInbox';
-import AdminTheme from './pages/admin/AdminTheme';
-import AdminSponsors from './pages/admin/AdminSponsors';
-import AdminForms from './pages/admin/AdminForms';
 import AdminFormBuilder from './pages/admin/AdminFormBuilder';
 import AdminFormResponses from './pages/admin/AdminFormResponses';
-import AdminBotManager from './pages/admin/AdminBotManager';
-import PostManager from './pages/admin/PostManager';
-import AdminRoles from './pages/admin/AdminRoles';
 
 import PublicForm from './pages/public/PublicForm';
-
 import { AdminTenantProvider } from './contexts/AdminTenantContext';
-import AdminDues from './pages/admin/AdminDues';
-import AdminDonations from './pages/admin/AdminDonations';
-import AdminLevelConfig from './pages/admin/AdminLevelConfig';
-import MemberPoints from './pages/dashboard/MemberPoints';
-import MemberDues from './pages/dashboard/MemberDues';
+
+/** Renders dashboard/admin routes built from page_registry (DB), resolved to real components. */
+function DynamicDashboardRoutes() {
+  const { tenant } = useTenant();
+  const { pages, loading } = usePageRegistry(tenant?.id);
+
+  if (loading) {
+    return (
+      <Route path="*" element={
+        <div className="min-h-screen flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-accent animate-spin" />
+        </div>
+      } />
+    );
+  }
+
+  const memberPages = pages.filter(p => p.mode === 'member');
+  const adminPages = pages.filter(p => p.mode === 'admin');
+
+  return (
+    <>
+      {memberPages.map(p => (
+        <Route key={`member-${p.pageKey}`} element={<ProtectedRoute pageKey={p.exact ? undefined : p.pageKey} />}>
+          <Route path="/dashboard" element={<DashboardLayout />}>
+            <Route index={p.exact} path={p.exact ? undefined : p.path} element={<p.element />} />
+          </Route>
+        </Route>
+      ))}
+
+      {adminPages.map(p => (
+        <Route key={`admin-${p.pageKey}`} element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey={p.exact ? undefined : p.pageKey} /></AdminTenantProvider>}>
+          <Route path="/admin" element={<DashboardLayout isAdminMode />}>
+            <Route index={p.exact} path={p.exact ? undefined : p.path} element={<p.element />} />
+          </Route>
+        </Route>
+      ))}
+
+      {/* Fixed sub-routes for the built-in Forms page (dynamic :id params can't live in the registry) */}
+      <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_forms" /></AdminTenantProvider>}>
+        <Route path="/admin" element={<DashboardLayout isAdminMode />}>
+          <Route path="forms/:id/edit" element={<AdminFormBuilder />} />
+          <Route path="forms/:id/responses" element={<AdminFormResponses />} />
+        </Route>
+      </Route>
+    </>
+  );
+}
 
 export default function App() {
   return (
@@ -102,166 +115,7 @@ export default function App() {
                     <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                   </Route>
 
-                  <Route element={<ProtectedRoute />}>
-                    <Route path="/dashboard" element={<DashboardLayout />}>
-                      <Route index element={<DashboardHome />} />
-                      <Route path="profile" element={<DashboardProfile />} />
-                      <Route path="attendance" element={<DashboardAttendance />} />
-                      <Route path="projects" element={<DashboardProjects />} />
-                      <Route path="calendar" element={<DashboardCalendar />} />
-                      <Route path="reminders" element={<DashboardReminders />} />
-                      <Route path="announcements" element={<DashboardAnnouncements />} />
-                      <Route path="resources" element={<DashboardResources />} />
-                      <Route path="dues" element={<MemberDues />} />
-                      <Route path="points" element={<MemberPoints />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route index element={<AdminOverview />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_members" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="members" element={<AdminMembers />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_applications" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="applications" element={<AdminApplications />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_attendance" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="attendance" element={<AdminAttendance />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_dues" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="dues" element={<AdminDues />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_events" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="events" element={<AdminEvents />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_projects" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="projects" element={<AdminProjects />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_board" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="board" element={<AdminTeam />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_news" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="news" element={<AdminNews />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_gallery" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="gallery" element={<AdminGallery />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_communications" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="communications" element={<AdminCommunications />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_reminders" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="reminders" element={<AdminReminders />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_resources" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="resources" element={<AdminResources />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_pages" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="pages" element={<AdminPages />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_contact" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="contact" element={<AdminContactInbox />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_sponsors" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="sponsors" element={<AdminSponsors />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_theme" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="theme" element={<AdminTheme />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_settings" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="settings" element={<AdminSettings />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_donations" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="donations" element={<AdminDonations />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_levels" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="levels" element={<AdminLevelConfig />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_forms" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="forms" element={<AdminForms />} />
-                      <Route path="forms/:id/edit" element={<AdminFormBuilder />} />
-                      <Route path="forms/:id/responses" element={<AdminFormResponses />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_bot" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="bot" element={<AdminBotManager />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_posts" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="posts" element={<PostManager />} />
-                    </Route>
-                  </Route>
-
-                  <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_roles" /></AdminTenantProvider>}>
-                    <Route path="/admin" element={<DashboardLayout isAdminMode />}>
-                      <Route path="roles" element={<AdminRoles />} />
-                    </Route>
-                  </Route>
+                  {DynamicDashboardRoutes()}
 
                   <Route path="/forms/:slug" element={<PublicForm />} />
                 </Routes>
