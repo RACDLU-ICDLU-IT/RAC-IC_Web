@@ -5,14 +5,9 @@ import { useTenant } from '../../hooks/useTenant';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../supabase';
-import {
-  Home, User, CalendarDays, Calendar, Presentation, Bell, Settings,
-  Users, UserCheck, CheckSquare, FolderOpen, Newspaper, Image as ImageIcon,
-  HeartHandshake, Megaphone, Inbox, Palette, LogOut, Menu, LucideIcon, FileText, CreditCard,
-  Zap, HandCoins, Trophy, Bot, Share2, ChevronLeft
-} from 'lucide-react';
+import { LogOut, Menu, ChevronLeft } from 'lucide-react';
 import ThemeToggle from '../common/ThemeToggle';
-import { Shield } from 'lucide-react';
+import { usePageRegistry } from '../../hooks/usePageRegistry';
 
 export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?: boolean }) {
   const { profile, signOut, role, isMasterAdmin, permissions } = useAuth();
@@ -53,62 +48,8 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
   const handleSignOut = async () => { await signOut(); navigate('/'); };
   const closeMobile = () => setMobileOpen(false);
 
-  type NavItem = { path: string; label: string; icon: LucideIcon; exact?: boolean; badge?: number; pageKey?: string };
+  type NavItem = { path: string; label: string; icon: any; exact?: boolean; badge?: number; pageKey?: string };
   type NavSection = { title?: string; items: NavItem[] };
-
-  const memberNav: NavSection[] = [
-    { items: [
-      { path: '/dashboard', label: 'Dashboard Home', icon: Home, exact: true },
-      { path: '/dashboard/profile', label: 'My Profile', icon: User },
-      { path: '/dashboard/attendance', label: 'Attendance', icon: CheckSquare },
-      { path: '/dashboard/projects', label: 'Projects', icon: Presentation },
-      { path: '/dashboard/calendar', label: 'Calendar', icon: CalendarDays },
-      { path: '/dashboard/reminders', label: 'Reminders', icon: Bell },
-      { path: '/dashboard/announcements', label: 'Announcements', icon: Megaphone },
-      { path: '/dashboard/resources', label: 'Resources', icon: FolderOpen },
-      { path: '/dashboard/dues', label: 'Dues & Fees', icon: CreditCard },
-      { path: '/dashboard/points', label: 'My Points', icon: Zap },
-    ]}
-  ];
-
-  const adminNavRaw: NavSection[] = [
-    { items: [
-      { path: '/admin', label: 'Overview', icon: Home, exact: true, pageKey: 'admin_overview' },
-    ]},
-    { title: 'Members', items: [
-      { path: '/admin/members', label: 'Members', icon: Users, pageKey: 'admin_members' },
-      { path: '/admin/applications', label: 'Applications', icon: UserCheck, badge: pendingCount, pageKey: 'admin_applications' },
-      { path: '/admin/attendance', label: 'Attendance', icon: CheckSquare, pageKey: 'admin_attendance' },
-      { path: '/admin/dues', label: 'Dues & Fees', icon: CreditCard, pageKey: 'admin_dues' },
-      { path: '/admin/donations', label: 'Donations', icon: HandCoins, pageKey: 'admin_donations' },
-      { path: '/admin/levels', label: 'Level Config', icon: Trophy, pageKey: 'admin_levels' },
-    ]},
-    { title: 'Operations', items: [
-      { path: '/admin/events', label: 'Events', icon: Calendar, pageKey: 'admin_events' },
-      { path: '/admin/projects', label: 'Projects', icon: Presentation, pageKey: 'admin_projects' },
-      { path: '/admin/communications', label: 'Communications', icon: Megaphone, pageKey: 'admin_communications' },
-      { path: '/admin/reminders', label: 'Reminders', icon: Bell, pageKey: 'admin_reminders' },
-      { path: '/admin/resources', label: 'Resources', icon: FolderOpen, pageKey: 'admin_resources' },
-      { path: '/admin/forms', label: 'Forms', icon: FileText, pageKey: 'admin_forms' },
-    ]},
-    { title: 'Website', items: [
-      { path: '/admin/pages', label: 'Page Content', icon: Newspaper, pageKey: 'admin_pages' },
-      { path: '/admin/news', label: 'News', icon: Newspaper, pageKey: 'admin_news' },
-      { path: '/admin/gallery', label: 'Gallery', icon: ImageIcon, pageKey: 'admin_gallery' },
-      { path: '/admin/board', label: 'Our Team', icon: Users, pageKey: 'admin_board' },
-      { path: '/admin/contact', label: 'Contact Inbox', icon: Inbox, badge: unreadCount, pageKey: 'admin_contact' },
-    ]},
-    { title: 'Social Media', items: [
-      { path: '/admin/bot', label: 'Bot Manager', icon: Bot, pageKey: 'admin_bot' },
-      { path: '/admin/posts', label: 'Post Manager', icon: Share2, pageKey: 'admin_posts' },
-    ]},
-    { title: 'System', items: [
-      { path: '/admin/sponsors', label: 'Sponsors', icon: HeartHandshake, pageKey: 'admin_sponsors' },
-      { path: '/admin/theme', label: 'Theme', icon: Palette, pageKey: 'admin_theme' },
-      { path: '/admin/settings', label: 'Settings', icon: Settings, pageKey: 'admin_settings' },
-      { path: '/admin/roles', label: 'Roles & Permissions', icon: Shield, pageKey: 'admin_roles' },
-    ]}
-  ];
 
   const canSeePage = (pageKey?: string) => {
     if (!pageKey) return true;
@@ -116,10 +57,44 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
     return !!permissions[pageKey]?.can_view;
   };
 
-  const adminNav: NavSection[] = adminNavRaw
-    .map(section => ({ ...section, items: section.items.filter(i => canSeePage(i.pageKey)) }))
-    .filter(section => section.items.length > 0);
+  const { pages: registryPages } = usePageRegistry(isAdminMode ? adminTenant.id : profile?.tenant_id);
 
+  const badgeFor = (pageKey: string) =>
+    pageKey === 'admin_applications' ? pendingCount : pageKey === 'admin_contact' ? unreadCount : undefined;
+
+  const buildNav = (mode: 'admin' | 'member'): NavSection[] => {
+    const base = mode === 'admin' ? '/admin' : '/dashboard';
+    const routes = registryPages.filter(r => r.mode === mode).filter(r => canSeePage(r.pageKey));
+
+    if (mode === 'member') {
+      const items: NavItem[] = routes.map(r => ({
+        path: r.exact ? base : `${base}/${r.path}`,
+        label: r.label, icon: r.icon, exact: r.exact, pageKey: r.pageKey,
+        badge: badgeFor(r.pageKey),
+      }));
+      return items.length ? [{ items }] : [];
+    }
+
+    // admin: group by `section`, preserving registry sort order
+    const sectionOrder: (string | null)[] = [];
+    routes.forEach(r => { if (!sectionOrder.includes(r.section)) sectionOrder.push(r.section); });
+
+    return sectionOrder
+      .map(title => ({
+        title: title || undefined,
+        items: routes
+          .filter(r => r.section === title)
+          .map(r => ({
+            path: r.exact ? base : `${base}/${r.path}`,
+            label: r.label, icon: r.icon, exact: r.exact, pageKey: r.pageKey,
+            badge: badgeFor(r.pageKey),
+          })),
+      }))
+      .filter(section => section.items.length > 0);
+  };
+
+  const adminNav = buildNav('admin');
+  const memberNav = buildNav('member');
   const navToUse = isAdminMode ? adminNav : memberNav;
 
   // Sneat design tokens, resolved per-render from actual theme state (no stray dark: classes)
