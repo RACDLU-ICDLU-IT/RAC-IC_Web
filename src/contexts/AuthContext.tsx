@@ -2,12 +2,18 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
 
-export type Role = 'member' | 'admin' | 'master_admin' | null;
+export interface RoleInfo {
+  id: string;
+  name: string;
+  label: string;
+  color: string;
+  is_system: boolean;
+}
 
 interface UserProfile {
   name: string;
   email: string;
-  role: Role;
+  role_id: string | null;
   status: 'pending' | 'active' | 'inactive';
   [key: string]: any;
 }
@@ -15,26 +21,48 @@ interface UserProfile {
 interface AuthContextValue {
   user: User | null;
   profile: UserProfile | null;
+  role: RoleInfo | null;
+  permissions: Record<string, { can_view: boolean; can_edit: boolean; can_delete: boolean }>;
+  isMasterAdmin: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
-  user: null, profile: null, loading: true, signOut: async () => {},
+  user: null, profile: null, role: null, permissions: {}, isMasterAdmin: false,
+  loading: true, signOut: async () => {}, refreshProfile: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser]       = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser]             = useState<User | null>(null);
+  const [profile, setProfile]       = useState<UserProfile | null>(null);
+  const [role, setRole]             = useState<RoleInfo | null>(null);
+  const [permissions, setPermissions] = useState<AuthContextValue['permissions']>({});
+  const [loading, setLoading]       = useState(true);
 
   const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single();
+    const { data } = await supabase.from('users').select('*').eq('id', userId).single();
     setProfile(data as UserProfile | null);
+
+    if (data?.role_id) {
+      const { data: roleData } = await supabase.from('roles').select('*').eq('id', data.role_id).single();
+      setRole(roleData as RoleInfo | null);
+
+      const { data: permData } = await supabase.from('role_permissions').select('*').eq('role_id', data.role_id);
+      const map: AuthContextValue['permissions'] = {};
+      (permData || []).forEach((p: any) => {
+        map[p.page_key] = { can_view: p.can_view, can_edit: p.can_edit, can_delete: p.can_delete };
+      });
+      setPermissions(map);
+    } else {
+      setRole(null);
+      setPermissions({});
+    }
+  };
+
+  const refreshProfile = async () => {
+    if (user) await fetchProfile(user.id);
   };
 
   const signOut = async () => {
@@ -43,15 +71,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // If user chose not to remember, clear session on fresh tab/browser open.
-    // sessionStorage is cleared when all tabs of the origin close.
     const noP = sessionStorage.getItem('lr_no_persist');
     const rem = localStorage.getItem('lr_remember');
     if (noP === '1' || rem !== '1') {
-      // Check if this is a fresh browser session (no sessionStorage continuity)
       const alive = sessionStorage.getItem('lr_tab_alive');
       if (!alive && rem !== '1') {
-        // Fresh browser open + not remembered → clear persisted Supabase session
         supabase.auth.signOut({ scope: 'local' }).catch(() => {});
         sessionStorage.setItem('lr_tab_alive', '1');
         setLoading(false);
@@ -75,14 +99,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         fetchProfile(session.user.id);
       } else {
         setProfile(null);
+        setRole(null);
+        setPermissions({});
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
+  const isMasterAdmin = role?.is_system === true;
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signOut }}>
+    <AuthContext.Provider value={{ user, profile, role, permissions, isMasterAdmin, loading, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
@@ -90,4 +118,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   return useContext(AuthContext);
+}
+
+/** Check page permission. Master admin always passes. */
+export function usePermission(pageKey: string, action: 'view' | 'edit' | 'delete' = 'view') {
+  const { permissions, isMasterAdmin } = useAuth();
+  if (isMasterAdmin) return true;
+  const p = permissions[pageKey];
+  if (!p) return false;
+  if (action === 'edit') return p.can_edit;
+  if (action === 'delete') return p.can_delete;
+  return p.can_view;
 }
