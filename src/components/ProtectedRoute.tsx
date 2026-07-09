@@ -25,13 +25,14 @@ export const ProtectedRoute = ({ requireAdmin = false, pageKey }: { requireAdmin
   }
 
   const hasPageAccess = pageKey ? (isMasterAdmin || permissions[pageKey]?.can_view) : true;
+  const hasAnyAdminAccess = isMasterAdmin || Object.keys(permissions).some(k => k.startsWith('admin_') && permissions[k]?.can_view);
 
-  if (requireAdmin && !isMasterAdmin && !hasPageAccess) {
+  if (requireAdmin && !hasAnyAdminAccess) {
     return <Navigate to="/dashboard" replace />;
   }
 
   if (pageKey && !hasPageAccess) {
-    return <Navigate to="/admin" replace />;
+    return <Navigate to={requireAdmin ? '/admin' : '/dashboard'} replace />;
   }
 
   // Cross-tenant protection for non-master-admin users
