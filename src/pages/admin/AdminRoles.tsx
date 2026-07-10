@@ -10,7 +10,7 @@ import { Shield, Plus, Pencil, Trash, Lock } from 'lucide-react';
 import { usePageRegistry } from '../../hooks/usePageRegistry';
 
 interface RoleRow { id: string; name: string; label: string; color: string; is_system: boolean; is_protected: boolean; }
-type PermMap = Record<string, { can_view: boolean; can_edit: boolean; can_delete: boolean }>;
+type PermMap = Record<string, { can_view: boolean; can_edit: boolean; can_delete: boolean; is_locked: boolean }>;
 
 export default function AdminRoles() {
   const { adminTenant: tenant } = useAdminTenant();
@@ -33,7 +33,8 @@ export default function AdminRoles() {
 
   const blankPerms = (): PermMap => {
     const blank: PermMap = {};
-    [...ADMIN_KEYS, ...MEMBER_KEYS].forEach(p => { blank[p.key] = { can_view: false, can_edit: false, can_delete: false }; });
+    [...ADMIN_KEYS, ...MEMBER_KEYS].forEach(p => { blank[p.key] = { can_view: false, can_edit: false, can_delete: false, is_locked: false }; });
+    if (blank['member_home']) blank['member_home'] = { can_view: true, can_edit: false, can_delete: false, is_locked: false };
     return blank;
   };
 
@@ -62,17 +63,20 @@ export default function AdminRoles() {
     const { data } = await supabase.from('role_permissions').select('*').eq('role_id', r.id);
     const map = blankPerms();
     (data || []).forEach((row: any) => {
-      map[row.page_key] = { can_view: row.can_view, can_edit: row.can_edit, can_delete: row.can_delete };
+      map[row.page_key] = { can_view: row.can_view, can_edit: row.can_edit, can_delete: row.can_delete, is_locked: row.is_locked || false };
     });
+    if (map['member_home']) map['member_home'] = { can_view: true, can_edit: false, can_delete: false, is_locked: false };
     setPerms(map);
     setActiveTab('admin');
     setIsFormOpen(true);
   };
 
-  const togglePerm = (pageKey: string, action: 'can_view' | 'can_edit' | 'can_delete') => {
+  const togglePerm = (pageKey: string, action: 'can_view' | 'can_edit' | 'can_delete' | 'is_locked') => {
+    if (pageKey === 'member_home') return; // mandatory, always view + unlocked
     setPerms(prev => {
-      const cur = prev[pageKey] || { can_view: false, can_edit: false, can_delete: false };
+      const cur = prev[pageKey] || { can_view: false, can_edit: false, can_delete: false, is_locked: false };
       const next = { ...cur, [action]: !cur[action] };
+      if (action === 'is_locked') return { ...prev, [pageKey]: next };
       if ((action === 'can_edit' || action === 'can_delete') && next[action]) next.can_view = true;
       if (action === 'can_view' && !next.can_view) { next.can_edit = false; next.can_delete = false; }
       return { ...prev, [pageKey]: next };
@@ -96,13 +100,17 @@ export default function AdminRoles() {
       }
 
       const allKeys = [...ADMIN_KEYS, ...MEMBER_KEYS];
-      const rows = allKeys.map(p => ({
-        role_id: roleId,
-        page_key: p.key,
-        can_view: perms[p.key]?.can_view || false,
-        can_edit: perms[p.key]?.can_edit || false,
-        can_delete: perms[p.key]?.can_delete || false,
-      }));
+      const rows = allKeys.map(p => {
+        const isHome = p.key === 'member_home';
+        return {
+          role_id: roleId,
+          page_key: p.key,
+          can_view: isHome ? true : (perms[p.key]?.can_view || false),
+          can_edit: isHome ? false : (perms[p.key]?.can_edit || false),
+          can_delete: isHome ? false : (perms[p.key]?.can_delete || false),
+          is_locked: isHome ? false : (perms[p.key]?.is_locked || false),
+        };
+      });
       await supabase.from('role_permissions').upsert(rows, { onConflict: 'role_id,page_key' });
 
       addToast('Role saved', 'success');
@@ -210,23 +218,39 @@ export default function AdminRoles() {
                     <th className="px-3 py-2 font-medium text-gray-500">View</th>
                     <th className="px-3 py-2 font-medium text-gray-500">Edit</th>
                     <th className="px-3 py-2 font-medium text-gray-500">Delete</th>
+                    <th className="px-3 py-2 font-medium text-gray-500">Locked</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {activeKeys.map(p => (
-                    <tr key={p.key} className="border-t border-gray-100">
-                      <td className="px-3 py-2 text-gray-700">{p.label}</td>
-                      {(['can_view', 'can_edit', 'can_delete'] as const).map(a => (
-                        <td key={a} className="px-3 py-2 text-center">
+                  {activeKeys.map(p => {
+                    const isHome = p.key === 'member_home';
+                    return (
+                      <tr key={p.key} className={`border-t border-gray-100 ${isHome ? 'bg-gray-50' : ''}`}>
+                        <td className="px-3 py-2 text-gray-700">
+                          {p.label}
+                          {isHome && <span className="ml-2 text-[10px] uppercase text-gray-400 font-bold">Mandatory</span>}
+                        </td>
+                        {(['can_view', 'can_edit', 'can_delete'] as const).map(a => (
+                          <td key={a} className="px-3 py-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isHome ? a === 'can_view' : (perms[p.key]?.[a] || false)}
+                              onChange={() => togglePerm(p.key, a)}
+                              disabled={isHome}
+                            />
+                          </td>
+                        ))}
+                        <td className="px-3 py-2 text-center">
                           <input
                             type="checkbox"
-                            checked={perms[p.key]?.[a] || false}
-                            onChange={() => togglePerm(p.key, a)}
+                            checked={isHome ? false : (perms[p.key]?.is_locked || false)}
+                            onChange={() => togglePerm(p.key, 'is_locked')}
+                            disabled={isHome}
                           />
                         </td>
-                      ))}
-                    </tr>
-                  ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
