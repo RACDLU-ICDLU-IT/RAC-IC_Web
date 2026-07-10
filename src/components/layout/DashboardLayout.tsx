@@ -5,7 +5,7 @@ import { useTenant } from '../../hooks/useTenant';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../supabase';
-import { LogOut, Menu, ChevronLeft } from 'lucide-react';
+import { LogOut, Menu, ChevronLeft, Lock, LayoutDashboard, ShieldCheck } from 'lucide-react';
 import ThemeToggle from '../common/ThemeToggle';
 import { usePageRegistry } from '../../hooks/usePageRegistry';
 
@@ -48,13 +48,18 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
   const handleSignOut = async () => { await signOut(); navigate('/'); };
   const closeMobile = () => setMobileOpen(false);
 
-  type NavItem = { path: string; label: string; icon: any; exact?: boolean; badge?: number; pageKey?: string };
+  type NavItem = { path: string; label: string; icon: any; exact?: boolean; badge?: number; pageKey?: string; isLocked?: boolean };
   type NavSection = { title?: string; items: NavItem[] };
 
   const canSeePage = (pageKey?: string) => {
     if (!pageKey) return true;
     if (isMasterAdmin) return true;
     return !!permissions[pageKey]?.can_view;
+  };
+
+  const isPageLocked = (pageKey?: string) => {
+    if (!pageKey || isMasterAdmin) return false;
+    return !!permissions[pageKey]?.is_locked;
   };
 
   const { pages: registryPages } = usePageRegistry(isAdminMode ? adminTenant.id : profile?.tenant_id);
@@ -70,7 +75,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       const items: NavItem[] = routes.map(r => ({
         path: r.exact ? base : `${base}/${r.path}`,
         label: r.label, icon: r.icon, exact: r.exact, pageKey: r.pageKey,
-        badge: badgeFor(r.pageKey),
+        badge: badgeFor(r.pageKey), isLocked: isPageLocked(r.pageKey),
       }));
       return items.length ? [{ items }] : [];
     }
@@ -87,7 +92,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           .map(r => ({
             path: r.exact ? base : `${base}/${r.path}`,
             label: r.label, icon: r.icon, exact: r.exact, pageKey: r.pageKey,
-            badge: badgeFor(r.pageKey),
+            badge: badgeFor(r.pageKey), isLocked: isPageLocked(r.pageKey),
           })),
       }))
       .filter(section => section.items.length > 0);
@@ -96,6 +101,11 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
   const adminNav = buildNav('admin');
   const memberNav = buildNav('member');
   const navToUse = isAdminMode ? adminNav : memberNav;
+
+  // Can this user access /admin at all? At least one non-locked admin_* page with view access, or master admin.
+  const canAccessAdminArea = isMasterAdmin || Object.keys(permissions).some(
+    k => k.startsWith('admin_') && permissions[k]?.can_view && !permissions[k]?.is_locked
+  );
 
   // Sneat design tokens, resolved per-render from actual theme state (no stray dark: classes)
   const c = {
@@ -200,6 +210,19 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           </div>
         )}
 
+        {!collapsed && canAccessAdminArea && (
+          <div className="mx-4 mb-2 p-1 rounded-lg flex gap-1 shrink-0" style={{ background: c.tenantSwitchBg }}>
+            <button type="button" onClick={() => navigate('/dashboard')}
+              className="flex-1 py-1.5 px-2 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
+              style={!isAdminMode ? { background: c.accent, color: '#fff' } : { color: c.sectionLabel }}
+            ><LayoutDashboard size={13} /> Dashboard</button>
+            <button type="button" onClick={() => navigate('/admin')}
+              className="flex-1 py-1.5 px-2 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
+              style={isAdminMode ? { background: c.accent, color: '#fff' } : { color: c.sectionLabel }}
+            ><ShieldCheck size={13} /> Admin</button>
+          </div>
+        )}
+
         {isAdminMode && isMasterAdmin && !collapsed && (
           <div className="mx-4 mb-2 p-1 rounded-lg flex gap-1 shrink-0" style={{ background: c.tenantSwitchBg }}>
             <button type="button" onClick={() => setAdminTenant('icdlu')}
@@ -223,8 +246,8 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
               )}
               <div className="flex flex-col gap-0.5">
                 {section.items.map((item, i) => (
-                  <NavLink key={item.path} to={item.path} end={item.exact} onClick={closeMobile} title={collapsed ? item.label : undefined}
-                    style={{ animation: `navItemIn 0.3s ease-out ${i * 0.02}s both` }}
+                  <NavLink key={item.path} to={item.path} end={item.exact} onClick={closeMobile} title={collapsed ? item.label : item.isLocked ? `${item.label} (locked)` : undefined}
+                    style={{ animation: `navItemIn 0.3s ease-out ${i * 0.02}s both`, opacity: item.isLocked ? 0.5 : 1 }}
                     className={`relative flex items-center gap-3 rounded-md transition-all duration-150 hover:scale-[1.02] active:scale-[0.98] text-[13.5px] ${collapsed ? 'justify-center px-0' : 'px-2'} py-2`}
                   >
                     {({ isActive }) => (
@@ -242,7 +265,10 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
                             {item.label}
                           </span>
                         )}
-                        {!collapsed && item.badge !== undefined && item.badge > 0 && (
+                        {!collapsed && item.isLocked && (
+                          <Lock size={13} className="shrink-0" style={{ color: c.navIcon }} />
+                        )}
+                        {!collapsed && !item.isLocked && item.badge !== undefined && item.badge > 0 && (
                           <span className="min-w-[20px] h-5 px-1 rounded-full text-white flex items-center justify-center text-[10px] font-bold shrink-0" style={{ background: c.danger }}>
                             {item.badge}
                           </span>
