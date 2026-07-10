@@ -392,7 +392,7 @@ export default function AdminMembers() {
           <div>
             <label className={labelClass}>Role</label>
             <select value={formData.role_id || ''} onChange={e => setFormData({...formData, role_id: e.target.value || null})} className={inputClass} disabled={!canSetRole}>
-              <option value="">Member (no role)</option>
+              <option value="" disabled>Select a role</option>
               {roles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
             </select>
             {!canSetRole && <p className="text-xs text-gray-400 mt-1">Only Master Admin can assign roles.</p>}
