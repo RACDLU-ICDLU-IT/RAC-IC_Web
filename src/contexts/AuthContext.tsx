@@ -23,7 +23,7 @@ interface AuthContextValue {
   user: User | null;
   profile: UserProfile | null;
   role: RoleInfo | null;
-  permissions: Record<string, { can_view: boolean; can_edit: boolean; can_delete: boolean }>;
+  permissions: Record<string, { can_view: boolean; can_edit: boolean; can_delete: boolean; is_locked: boolean }>;
   isMasterAdmin: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: permData } = await supabase.from('role_permissions').select('*').eq('role_id', data.role_id);
       const map: AuthContextValue['permissions'] = {};
       (permData || []).forEach((p: any) => {
-        map[p.page_key] = { can_view: p.can_view, can_edit: p.can_edit, can_delete: p.can_delete };
+        map[p.page_key] = { can_view: p.can_view, can_edit: p.can_edit, can_delete: p.can_delete, is_locked: p.is_locked || false };
       });
       setPermissions(map);
     } else {
@@ -126,7 +126,7 @@ export function usePermission(pageKey: string, action: 'view' | 'edit' | 'delete
   const { permissions, isMasterAdmin } = useAuth();
   if (isMasterAdmin) return true;
   const p = permissions[pageKey];
-  if (!p) return false;
+  if (!p || p.is_locked) return false;
   if (action === 'edit') return p.can_edit;
   if (action === 'delete') return p.can_delete;
   return p.can_view;
