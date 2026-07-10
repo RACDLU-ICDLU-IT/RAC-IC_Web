@@ -24,8 +24,8 @@ export const ProtectedRoute = ({ requireAdmin = false, pageKey }: { requireAdmin
     return <Navigate to="/join" replace />;
   }
 
-  const hasPageAccess = pageKey ? (isMasterAdmin || permissions[pageKey]?.can_view) : true;
-  const hasAnyAdminAccess = isMasterAdmin || Object.keys(permissions).some(k => k.startsWith('admin_') && permissions[k]?.can_view);
+  const hasPageAccess = pageKey ? (isMasterAdmin || (permissions[pageKey]?.can_view && !permissions[pageKey]?.is_locked)) : true;
+  const hasAnyAdminAccess = isMasterAdmin || Object.keys(permissions).some(k => k.startsWith('admin_') && permissions[k]?.can_view && !permissions[k]?.is_locked);
 
   if (requireAdmin && !hasAnyAdminAccess) {
     return <Navigate to="/dashboard" replace />;
