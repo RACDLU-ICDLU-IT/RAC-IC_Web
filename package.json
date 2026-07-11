@@ -39,11 +39,13 @@
     "vite": "^6.2.0",
     "xlsx": "^0.18.5",
     "zod": "^4.3.6",
-    "axios": "^1.7.2"
+    "axios": "^1.7.2",
+    "papaparse": "^5.5.4"
   },
   "devDependencies": {
     "@types/dompurify": "^3.0.5",
     "@types/node": "^22.14.0",
+    "@types/papaparse": "^5.5.2",
     "@vercel/node": "^5.7.15",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.28.0",
