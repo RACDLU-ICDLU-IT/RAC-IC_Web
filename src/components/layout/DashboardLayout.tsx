@@ -11,7 +11,7 @@ import { usePageRegistry } from '../../hooks/usePageRegistry';
 
 export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?: boolean }) {
   const { profile, signOut, role, isMasterAdmin, permissions } = useAuth();
-  const { settings, theme } = useTenant();
+  const { settings, theme, tenant } = useTenant();
   const { adminTenant, setAdminTenant } = useAdminTenant();
   const { resolvedTheme } = useTheme();
   const navigate = useNavigate();
@@ -107,26 +107,46 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
     k => k.startsWith('admin_') && permissions[k]?.can_view && !permissions[k]?.is_locked
   );
 
-  // Sneat design tokens, resolved per-render from actual theme state (no stray dark: classes)
+  /**
+   * ------------------------------------------------------------------
+   * Tenant-color system — matches DashboardHome.tsx's PALETTE exactly.
+   * RACDLU (Rotaract) → pink #d85283, ICDLU (Interact) → blue #52b3d8.
+   * This REPLACES the old Sneat indigo default (#696cff / rgba(105,108,255,…))
+   * everywhere it appeared: active nav bg, hover bg, collapse-button bg,
+   * avatar-ring, tenant-switch pill, "Need help" card, active-indicator bar.
+   * `isAdminMode` used to special-case a DIFFERENT accent (adminTenant-based
+   * hex) from the member-mode accent (theme.accent) — that split is gone;
+   * one club-based accent now drives both modes, consistent with the fact
+   * that DashboardHome never had two separate accent systems to begin with.
+   * ------------------------------------------------------------------
+   */
+  const activeTenantId = isAdminMode ? adminTenant.id : tenant.id;
+  const clubAccent = activeTenantId === 'racdlu'
+    ? { base: '#d85283', deep: '#270612', soft: 'rgba(216,82,131,0.14)', softHover: 'rgba(216,82,131,0.08)' }
+    : { base: '#52b3d8', deep: '#0d1b20', soft: 'rgba(82,179,216,0.14)', softHover: 'rgba(82,179,216,0.08)' };
+
+  // Sneat glass structure kept as-is (blur, translucency, radii, shadows);
+  // only the accent + a few text/bg tokens now come from clubAccent /
+  // DashboardHome's own dark palette instead of the old indigo/Sneat set.
   const c = {
-    pageBg: dark ? '#25293c' : '#f5f5f9',
-    sidebarBg: dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.7)',
-    headerBg: dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.65)',
-    sidebarBorder: dark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.6)',
+    pageBg: dark ? '#0a0a0a' : '#f5f5f9',
+    sidebarBg: dark ? 'rgba(22,22,22,0.55)' : 'rgba(255,255,255,0.7)',
+    headerBg: dark ? 'rgba(22,22,22,0.5)' : 'rgba(255,255,255,0.65)',
+    sidebarBorder: dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)',
     border: dark ? 'rgba(255,255,255,0.1)' : '#eceef1',
-    brandText: dark ? '#ffffff' : '#566a7f',
-    sectionLabel: dark ? 'rgba(255,255,255,0.3)' : '#a1acb8',
-    navText: dark ? 'rgba(255,255,255,0.85)' : '#42526b',
-    navIcon: dark ? 'rgba(255,255,255,0.55)' : '#697a8d',
-    navHoverBg: dark ? 'rgba(255,255,255,0.05)' : 'rgba(105,108,255,0.06)',
-    activeBg: dark ? 'rgba(105,108,255,0.16)' : 'rgba(105,108,255,0.1)',
-    accent: isAdminMode ? (adminTenant.id === 'racdlu' ? '#D41367' : '#0A2540') : (theme.accent || '#696cff'),
+    brandText: dark ? '#f2eff0' : '#161616',
+    sectionLabel: dark ? 'rgba(255,255,255,0.3)' : '#8a8f89',
+    navText: dark ? 'rgba(255,255,255,0.85)' : '#4f4a4c',
+    navIcon: dark ? 'rgba(255,255,255,0.55)' : '#7c6c72',
+    navHoverBg: dark ? clubAccent.softHover : clubAccent.softHover,
+    activeBg: clubAccent.soft,
+    accent: clubAccent.base,
     danger: '#ff3e1d',
     tenantSwitchBg: dark ? 'rgba(255,255,255,0.05)' : '#f5f5f9',
   };
 
   return (
-    <div className="flex min-h-screen h-[100dvh]" style={{ background: dark ? '#000000' : 'linear-gradient(160deg,#eef0fb,#f7f8fd)' }}>
+    <div className="flex min-h-screen h-[100dvh]" style={{ background: dark ? '#000000' : 'linear-gradient(160deg,#f3eef0,#f7f8fd)' }}>
       <style>{`
         @keyframes slideIn { from { opacity:0; transform: translateX(-8px); } to { opacity:1; transform: translateX(0); } }
         @keyframes navItemIn { from { opacity:0; transform: translateX(-6px); } to { opacity:1; transform: translateX(0); } }
@@ -139,7 +159,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
         className={`fixed lg:relative flex flex-col h-full z-50 transition-transform lg:transition-[width] duration-300 [transition-timing-function:cubic-bezier(0.4,0,0.2,1)] will-change-transform backdrop-blur-2xl backdrop-saturate-150 border-r
         ${collapsed ? 'w-[84px]' : 'w-[260px]'}
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
-        style={{ background: c.sidebarBg, borderColor: c.sidebarBorder, boxShadow: dark ? '0 8px 32px rgba(0,0,0,0.3)' : '0 8px 32px rgba(31,45,61,0.1)' }}
+        style={{ background: c.sidebarBg, borderColor: c.sidebarBorder, boxShadow: dark ? '0 8px 32px rgba(0,0,0,0.4)' : '0 8px 32px rgba(31,45,61,0.1)' }}
       >
         <button
           type="button"
@@ -158,7 +178,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
                 className={`object-contain ${collapsed ? 'h-10 w-10' : 'h-14 w-full max-w-[200px]'}`}
                 style={{
                   display: 'inline-block',
-                  backgroundColor: dark ? '#ffffff' : (adminTenant.id === 'racdlu' ? '#D41367' : '#0A2540'),
+                  backgroundColor: dark ? '#ffffff' : c.accent,
                   WebkitMaskImage: `url(${settings.logoUrl})`,
                   maskImage: `url(${settings.logoUrl})`,
                   WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
@@ -227,11 +247,11 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           <div className="mx-4 mb-2 p-1 rounded-lg flex gap-1 shrink-0" style={{ background: c.tenantSwitchBg }}>
             <button type="button" onClick={() => setAdminTenant('icdlu')}
               className="flex-1 py-1.5 px-3 rounded-md text-xs font-semibold transition-all"
-              style={adminTenant.id === 'icdlu' ? { background: c.accent, color: '#fff' } : { color: c.sectionLabel }}
+              style={adminTenant.id === 'icdlu' ? { background: '#52b3d8', color: '#fff' } : { color: c.sectionLabel }}
             >ICDLU</button>
             <button type="button" onClick={() => setAdminTenant('racdlu')}
               className="flex-1 py-1.5 px-3 rounded-md text-xs font-semibold transition-all"
-              style={adminTenant.id === 'racdlu' ? { background: c.accent, color: '#fff' } : { color: c.sectionLabel }}
+              style={adminTenant.id === 'racdlu' ? { background: '#d85283', color: '#fff' } : { color: c.sectionLabel }}
             >RACDLU</button>
           </div>
         )}
@@ -308,15 +328,33 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
-        <header className="h-[64px] shrink-0 flex items-center justify-between px-4 lg:px-6 backdrop-blur-2xl border-b"
-          style={{ background: c.headerBg, borderColor: c.sidebarBorder }}>
-          <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-1 rounded" style={{ color: c.brandText }}>
-            <Menu size={22} />
-          </button>
-          <span className="hidden lg:block font-heading font-semibold" style={{ color: c.brandText }}>
-            {isAdminMode ? 'Admin Panel' : 'Dashboard'}
-          </span>
-          <div className="w-6 lg:hidden" />
+        <header
+          className="h-[64px] shrink-0 flex items-center justify-between px-4 lg:px-6 backdrop-blur-2xl border-b"
+          style={{ background: c.headerBg, borderColor: c.sidebarBorder }}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-1 rounded shrink-0" style={{ color: c.brandText }}>
+              <Menu size={22} />
+            </button>
+            <span
+              className="hidden lg:flex items-center gap-2 font-semibold text-[15px] tracking-[-.2px]"
+              style={{ color: c.brandText, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: c.accent }} />
+              {isAdminMode ? 'Admin Panel' : 'Dashboard'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-full text-[11px] font-semibold px-3 py-1"
+              style={{ background: c.tenantSwitchBg, color: c.accent, border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : c.border}` }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.accent }} />
+              {activeTenantId === 'racdlu' ? 'Rotaract' : 'Interact'}
+            </span>
+            <div className="w-6 lg:hidden" />
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 md:p-8 w-full relative">
