@@ -13,6 +13,15 @@ import { FeeTemplateForm } from '../../components/dues/FeeTemplateForm';
 import { BulkMarkPaidModal } from '../../components/dues/BulkMarkPaidModal';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 
+function fmtDateTime(d?: string | null) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function formatAmount(amount: number, currency = 'BDT') {
+  return new Intl.NumberFormat('en-BD', { style: 'currency', currency, minimumFractionDigits: 2 }).format(amount);
+}
+
 export default function AdminDues() {
   const { adminTenant: tenant } = useAdminTenant();
   const { user } = useAuth();
@@ -32,6 +41,8 @@ export default function AdminDues() {
     bulkMarkPaid,
     markAsWaived,
     sendReminder,
+    verifyPayment,
+    rejectPayment,
   } = useDues();
 
   const [stats, setStats] = useState<DuesStats | null>(null);
@@ -54,6 +65,14 @@ export default function AdminDues() {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [memberSearch, setMemberSearch] = useState('');
 
+  // Verification Tab State
+  const [reviewEntry, setReviewEntry] = useState<LedgerEntry | null>(null);
+  const [reviewAction, setReviewAction] = useState<'verify' | 'reject' | null>(null);
+  const [clubPrefix, setClubPrefix] = useState('CLUB');
+  const [rejectReason, setRejectReason] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+
   useEffect(() => {
     // silently mark overdue fees
     markOverdueFees().catch(console.error);
@@ -72,6 +91,8 @@ export default function AdminDues() {
   };
 
   const selectedEntries = ledger.filter(l => selectedIds.includes(l.id));
+
+  const pendingEntries = ledger.filter(l => l.status === 'pending_verification');
 
   const handleExportSelected = async () => {
     if (!selectedEntries.length) return;
@@ -104,6 +125,66 @@ export default function AdminDues() {
 
   const selectedMemberData = membersWithLedgers.find(m => m.user.id === selectedMemberId);
 
+  // ---------------- verification handlers ----------------
+
+  const openReview = (entry: LedgerEntry, action: 'verify' | 'reject') => {
+    setReviewEntry(entry);
+    setReviewAction(action);
+    setRejectReason('');
+    setReviewError(null);
+  };
+
+  const closeReview = () => {
+    if (reviewSubmitting) return;
+    setReviewEntry(null);
+    setReviewAction(null);
+  };
+
+  const handleVerify = async () => {
+    if (!reviewEntry) return;
+    if (!clubPrefix.trim()) {
+      setReviewError('Club prefix is required to generate a receipt number.');
+      return;
+    }
+    setReviewSubmitting(true);
+    setReviewError(null);
+    try {
+      await verifyPayment(reviewEntry.id, clubPrefix.trim());
+      await Promise.all([
+        awardDuePoints(reviewEntry.member_id, reviewEntry.template_id, reviewEntry.id).catch(console.error),
+      ]);
+      addToast(`Verified payment for ${reviewEntry.users?.name || 'member'}`, 'success');
+      closeReview();
+      loadAllData();
+    } catch (err: any) {
+      console.error(err);
+      setReviewError(err?.message || "Couldn't verify — try again.");
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!reviewEntry) return;
+    if (!rejectReason.trim()) {
+      setReviewError('A rejection reason is required so the member knows what to fix.');
+      return;
+    }
+    setReviewSubmitting(true);
+    setReviewError(null);
+    try {
+      await rejectPayment(reviewEntry.id, rejectReason.trim());
+      addToast(`Rejected payment for ${reviewEntry.users?.name || 'member'}`, 'success');
+      closeReview();
+      loadAllData();
+    } catch (err: any) {
+      console.error(err);
+      setReviewError(err?.message || "Couldn't reject — try again.");
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
@@ -123,6 +204,14 @@ export default function AdminDues() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="templates">Fee Templates</TabsTrigger>
           <TabsTrigger value="ledger">Ledger</TabsTrigger>
+          <TabsTrigger value="verification">
+            Verification
+            {pendingEntries.length > 0 && (
+              <span className="ml-1.5 bg-purple-100 text-purple-800 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {pendingEntries.length}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="member">Per Member</TabsTrigger>
         </TabsList>
 
@@ -157,6 +246,15 @@ export default function AdminDues() {
                 ledger.forEach(e => { if (e.users) membersMap.set(e.member_id, e.users); });
                 await exportSelectedMembers(Array.from(membersMap.values()), ledger);
              }}>Export All Data</Button>
+             {pendingEntries.length > 0 && (
+               <Button
+                 variant="outline"
+                 className="border-purple-200 text-purple-700 hover:bg-purple-50 font-bold"
+                 onClick={() => setActiveTab('verification')}
+               >
+                 Review {pendingEntries.length} Pending Payment{pendingEntries.length === 1 ? '' : 's'}
+               </Button>
+             )}
           </div>
         </TabsContent>
 
@@ -251,6 +349,91 @@ export default function AdminDues() {
               loadAllData();
             }}
           />
+        </TabsContent>
+
+        <TabsContent value="verification">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-medium text-gray-900">Pending Verification</h2>
+              <p className="text-sm text-gray-500">Members' bKash submissions waiting on a treasurer's review.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Receipt Prefix</label>
+              <input
+                type="text"
+                value={clubPrefix}
+                onChange={(e) => setClubPrefix(e.target.value.toUpperCase())}
+                placeholder="CLUB"
+                className="w-28 px-2.5 py-1.5 border rounded-md text-sm font-mono"
+              />
+            </div>
+          </div>
+
+          {pendingEntries.length === 0 ? (
+            <div className="bg-white p-12 text-center rounded-lg border border-gray-200">
+              <span className="text-gray-400 font-medium">No payments waiting on verification.</span>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+              <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3">Member</th>
+                    <th className="px-4 py-3">Fee</th>
+                    <th className="px-4 py-3 text-right">Amount</th>
+                    <th className="px-4 py-3">Transaction ID</th>
+                    <th className="px-4 py-3">Sender bKash</th>
+                    <th className="px-4 py-3">Submitted</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {pendingEntries.map(e => (
+                    <tr key={e.id}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden shrink-0">
+                            {e.users?.photo ? (
+                              <img src={e.users.photo} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-gray-500 font-bold text-xs">
+                                {(e.users?.name || '?').substring(0, 2)}
+                              </div>
+                            )}
+                          </div>
+                          <span className="font-medium">{e.users?.name || 'Unknown'}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">{e.label}</td>
+                      <td className="px-4 py-3 text-right font-semibold">{formatAmount(e.amount, e.currency)}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{e.transaction_id || '—'}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{e.sender_bkash_number || '—'}</td>
+                      <td className="px-4 py-3 text-gray-500">{fmtDateTime(e.submitted_at)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                            onClick={() => openReview(e, 'verify')}
+                          >
+                            Verify
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-red-200 text-red-600 hover:bg-red-50 font-bold"
+                            onClick={() => openReview(e, 'reject')}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="member">
@@ -501,6 +684,97 @@ export default function AdminDues() {
                 setGenAmount('');
                 loadAllData();
               }}>Generate Now</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ---------------- verify / reject review modal ---------------- */}
+      {reviewEntry && reviewAction && (
+        <Modal
+          isOpen={true}
+          onClose={closeReview}
+          title={reviewAction === 'verify' ? 'Verify Payment' : 'Reject Payment'}
+        >
+          <div className="space-y-4">
+            <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Member</span>
+                <span className="font-semibold">{reviewEntry.users?.name || 'Unknown'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Fee</span>
+                <span className="font-semibold">{reviewEntry.label}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Amount</span>
+                <span className="font-semibold">{formatAmount(reviewEntry.amount, reviewEntry.currency)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Transaction ID</span>
+                <span className="font-mono">{reviewEntry.transaction_id || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Sender bKash Number</span>
+                <span className="font-mono">{reviewEntry.sender_bkash_number || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Submitted</span>
+                <span>{fmtDateTime(reviewEntry.submitted_at)}</span>
+              </div>
+            </div>
+
+            {reviewAction === 'verify' ? (
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Receipt Prefix</label>
+                <input
+                  type="text"
+                  value={clubPrefix}
+                  onChange={(e) => setClubPrefix(e.target.value.toUpperCase())}
+                  placeholder="e.g. RACDLU"
+                  className="w-full px-3 py-2 border rounded font-mono text-sm"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Receipt number will be generated as {clubPrefix || 'PREFIX'}/RCPT/{reviewEntry.rotary_year || 'YYYY-YY'}/###
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Rejection Reason</label>
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="e.g. Transaction ID doesn't match any received payment"
+                  rows={3}
+                  className="w-full px-3 py-2 border rounded text-sm"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  This entry will revert to Unpaid and the member can resubmit.
+                </p>
+              </div>
+            )}
+
+            {reviewError && <div className="text-sm text-red-600">{reviewError}</div>}
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" onClick={closeReview} disabled={reviewSubmitting}>Cancel</Button>
+              {reviewAction === 'verify' ? (
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                  onClick={handleVerify}
+                  disabled={reviewSubmitting}
+                >
+                  {reviewSubmitting ? 'Verifying…' : 'Confirm Verification'}
+                </Button>
+              ) : (
+                <Button
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold"
+                  onClick={handleReject}
+                  disabled={reviewSubmitting}
+                >
+                  {reviewSubmitting ? 'Rejecting…' : 'Confirm Rejection'}
+                </Button>
+              )}
             </div>
           </div>
         </Modal>
