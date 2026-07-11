@@ -2,6 +2,70 @@ import { supabase } from '../../supabase';
 import React, { useState, useEffect } from 'react';
 import { FolderOpen, FileText, Download, ExternalLink } from 'lucide-react';
 import { useTenant } from '../../hooks/useTenant';
+import { useTheme } from '../../contexts/ThemeContext';
+
+/* ------------------------------- font loader -------------------------------
+ * Same pattern as DashboardHome.tsx — page opts out of tenant font system,
+ * loads Inter directly, link injected once and left in place. */
+const INTER_FONT_URL = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
+const INTER_LINK_ID = 'rac-dashboard-inter-font';
+
+function useInterFont() {
+  useEffect(() => {
+    if (document.getElementById(INTER_LINK_ID)) return;
+    const link = document.createElement('link');
+    link.id = INTER_LINK_ID;
+    link.rel = 'stylesheet';
+    link.href = INTER_FONT_URL;
+    document.head.appendChild(link);
+  }, []);
+}
+
+/* ------------------------------- palette -------------------------------
+ * Identical token set to DashboardHome.tsx's PALETTE so this page shares
+ * the exact same visual identity, tenant-detected, theme-aware. */
+const PALETTE = {
+  rotaract: {
+    light: {
+      bg: '#dcd3d6', navLink: '#4f4a4c', navActive: '#121011', ptxt: '#161616', pmut: '#8a8f89',
+      dark: '#211c1e', tl: '#eee', lightCard: '#ead9df', td: '#161616', mut: '#7c6c72',
+      border: '#292929', pillBorder: '#3a3a3a', bar: 'rgba(255,255,255,.92)', dots: '#7a7a7a', tmid: '#9a9a9a',
+      tsub: '#8f8f8f', tblBg: '#292929', tblText: '#c9c9c9', weekBg: '#262626', weekText: '#cfcfcf',
+      green: '#d85283', greenDeep: '#270612', av2: '#db618e', gcA: '#3d0a1c', gcB: '#140309', gcBd: '#3f1223',
+      recBd: '#3d1322', recTx: '#b5617f', ilA: '#691634', ilB: '#8d1743', ilC: '#380b1b', ilD: '#b4295c',
+      tdH: '#beb4b8', tlC: '#cac0c4',
+    },
+    dark: {
+      bg: '#0a0a0a', navLink: '#a09a9c', navActive: '#f2eff0', ptxt: '#f2eff0', pmut: '#897e82',
+      dark: '#161616', tl: '#eee', lightCard: '#22181c', td: '#e9dfe3', mut: '#95888d',
+      border: '#262626', pillBorder: '#333', bar: 'rgba(255,255,255,.92)', dots: '#7a7a7a', tmid: '#9a9a9a',
+      tsub: '#8f8f8f', tblBg: '#292929', tblText: '#c9c9c9', weekBg: '#262626', weekText: '#cfcfcf',
+      green: '#d85283', greenDeep: '#270612', av2: '#db618e', gcA: '#3d0a1c', gcB: '#140309', gcBd: '#3f1223',
+      recBd: '#3d1322', recTx: '#b5617f', ilA: '#691634', ilB: '#8d1743', ilC: '#380b1b', ilD: '#b4295c',
+      tdH: '#beb4b8', tlC: '#cac0c4',
+    },
+  },
+  interact: {
+    light: {
+      bg: '#d3d9dc', navLink: '#4a4e4f', navActive: '#101212', ptxt: '#161616', pmut: '#8a8f89',
+      dark: '#1c2021', tl: '#eee', lightCard: '#d9e5ea', td: '#161616', mut: '#6c787c',
+      border: '#292929', pillBorder: '#3a3a3a', bar: 'rgba(255,255,255,.92)', dots: '#7a7a7a', tmid: '#9a9a9a',
+      tsub: '#8f8f8f', tblBg: '#292929', tblText: '#c9c9c9', weekBg: '#262626', weekText: '#cfcfcf',
+      green: '#52b3d8', greenDeep: '#0d1b20', av2: '#61b9db', gcA: '#122b35', gcB: '#050f12', gcBd: '#17313b',
+      recBd: '#172f39', recTx: '#6999ac', ilA: '#224c5c', ilB: '#2b647a', ilC: '#0f2933', ilD: '#298db4',
+      tdH: '#b4bbbe', tlC: '#c0c7ca',
+    },
+    dark: {
+      bg: '#0a0a0a', navLink: '#9a9fa0', navActive: '#eff1f2', ptxt: '#eff1f2', pmut: '#7e8689',
+      dark: '#161616', tl: '#eee', lightCard: '#181f22', td: '#dfe6e9', mut: '#889195',
+      border: '#262626', pillBorder: '#333', bar: 'rgba(255,255,255,.92)', dots: '#7a7a7a', tmid: '#9a9a9a',
+      tsub: '#8f8f8f', tblBg: '#292929', tblText: '#c9c9c9', weekBg: '#262626', weekText: '#cfcfcf',
+      green: '#52b3d8', greenDeep: '#0d1b20', av2: '#61b9db', gcA: '#122b35', gcB: '#050f12', gcBd: '#17313b',
+      recBd: '#172f39', recTx: '#6999ac', ilA: '#224c5c', ilB: '#2b647a', ilC: '#0f2933', ilD: '#298db4',
+      tdH: '#b4bbbe', tlC: '#c0c7ca',
+    },
+  },
+};
 
 export default function DashboardResources() {
   const { tenant } = useTenant();
@@ -9,87 +73,195 @@ export default function DashboardResources() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('All');
 
+  const club = tenant.id === 'racdlu' ? 'rotaract' : 'interact';
+  useInterFont();
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
+  const p = PALETTE[club][dark ? 'dark' : 'light'];
+
   useEffect(() => {
-    supabase.from('resources').select('*').eq('tenant_id', tenant.id).order('createdAt', { ascending: false })
-      .then(({ data: snap }) => {
-        setResources(snap || []);
-        setLoading(false);
-      }, err => {
-        console.error(err);
-        setLoading(false);
-      });
+    supabase
+      .from('resources')
+      .select('*')
+      .eq('tenant_id', tenant.id)
+      .order('createdAt', { ascending: false })
+      .then(
+        ({ data: snap }) => {
+          setResources(snap || []);
+          setLoading(false);
+        },
+        (err) => {
+          console.error(err);
+          setLoading(false);
+        }
+      );
   }, [tenant.id]);
 
-  const categories = ['All', ...Array.from(new Set(resources.map(r => r.category).filter(Boolean)))];
-
-  const filtered = filter === 'All' 
-    ? resources 
-    : resources.filter(r => r.category === filter);
+  const categories = ['All', ...Array.from(new Set(resources.map((r) => r.category).filter(Boolean)))];
+  const filtered = filter === 'All' ? resources : resources.filter((r) => r.category === filter);
 
   if (loading) {
-    return <div className="p-12 flex justify-center"><div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin" /></div>;
+    return (
+      <div
+        role="status"
+        aria-busy="true"
+        aria-label="Loading resources"
+        style={{ background: p.bg, padding: 18, borderRadius: 20 }}
+        className="p-4 md:p-8 -m-4 md:-m-8"
+      >
+        <div style={{ maxWidth: 960, margin: '0 auto' }}>
+          <div
+            style={{ height: 96, borderRadius: 20, marginBottom: 12, background: p.dark, border: `1px solid ${p.border}`, opacity: 0.5 }}
+            className="animate-pulse"
+          />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }} className="!grid-cols-1 sm:!grid-cols-2 lg:!grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} style={{ height: 190, borderRadius: 20, background: p.dark, border: `1px solid ${p.border}`, opacity: 0.5 }} className="animate-pulse" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="animate-fade-in-up max-w-6xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-heading font-bold text-gray-900 flex items-center gap-3">
-          <FolderOpen className="text-accent" /> Club Resources
-        </h1>
-        <p className="text-gray-500 mt-1 text-sm">Access important documents, templates, and guidelines.</p>
-      </div>
-
-      <div className="flex flex-wrap gap-2 mb-8 border-b border-gray-200 pb-4">
-        {categories.map((cat: any) => (
-          <button
-            key={cat}
-            onClick={() => setFilter(cat)}
-            className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-200 ${
-              filter === cat 
-                ? 'bg-primary text-white shadow' 
-                : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'
-            }`}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filtered.map(resource => {
-          const isLink = resource.url?.startsWith('http') && !resource.url.includes('cloudinary');
-          
-          return (
-            <div key={resource.id} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col group hover:border-accent/40 transition-colors">
-              <div className="w-12 h-12 rounded-xl bg-primary/5 text-primary flex items-center justify-center mb-4 group-hover:bg-accent group-hover:text-white transition-colors">
-                <FileText size={24} />
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">{resource.category}</span>
-              <h3 className="font-bold text-gray-900 mb-2">{resource.title}</h3>
-              <p className="text-sm text-gray-500 mb-6 flex-1 line-clamp-2">{resource.description}</p>
-              
-              <a 
-                href={resource.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-auto block text-center py-2.5 bg-gray-50 hover:bg-primary hover:text-white text-gray-700 font-bold text-sm rounded-xl transition-colors flex items-center justify-center gap-2"
-              >
-                {isLink ? (
-                  <><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg> Open Link</>
-                ) : (
-                  <><Download size={16} /> Download File</>
-                )}
-              </a>
-            </div>
-          );
-        })}
-
-        {filtered.length === 0 && (
-          <div className="col-span-full py-20 text-center text-gray-500 bg-white rounded-3xl border border-gray-100">
-            <FolderOpen size={48} className="mx-auto mb-4 text-gray-200" />
-            <h3 className="text-xl font-heading font-bold text-gray-400 mb-2">No resources found.</h3>
+    <div className="rac-resources-page">
+      <style>{`
+        .rac-resources-page, .rac-resources-page * {
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+        }
+        .rac-resources-page ::-webkit-scrollbar { display: none; }
+        .rac-resources-cats { scrollbar-width: none; }
+      `}</style>
+      <div style={{ background: p.bg, padding: 18, transition: 'background .25s', borderRadius: 20 }} className="p-4 md:p-8 -m-4 md:-m-8">
+        <div style={{ maxWidth: 960, margin: '0 auto' }}>
+          {/* ---------------- page-top ---------------- */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12, padding: '0 2px', gap: 12 }}>
+            <span style={{ fontSize: 19, fontWeight: 600, color: p.ptxt, letterSpacing: '-.2px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <FolderOpen size={18} color={p.green} /> Club Resources
+            </span>
+            <span style={{ fontSize: 11, color: p.pmut, fontWeight: 500 }}>{tenant.settings?.clubName || (club === 'rotaract' ? 'RACDLU' : 'ICDLU')}</span>
           </div>
-        )}
+
+          {/* ---------------- category filter ---------------- */}
+          <div
+            className="rac-resources-cats"
+            style={{ display: 'flex', gap: 8, marginBottom: 12, overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: 2 }}
+          >
+            {categories.map((cat: any) => (
+              <button
+                key={cat}
+                onClick={() => setFilter(cat)}
+                type="button"
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: 20,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  whiteSpace: 'nowrap',
+                  cursor: 'pointer',
+                  border: filter === cat ? 'none' : `1px solid ${p.pillBorder}`,
+                  background: filter === cat ? p.green : 'transparent',
+                  color: filter === cat ? '#fff' : p.tmid,
+                  transition: 'all .15s',
+                }}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* ---------------- resource grid ---------------- */}
+          {filtered.length === 0 ? (
+            <div style={{ borderRadius: 20, padding: '48px 16px', textAlign: 'center', background: p.dark, border: `1px solid ${p.border}` }}>
+              <FolderOpen size={32} color={p.tmid} style={{ opacity: 0.35, margin: '0 auto 12px' }} />
+              <div style={{ fontSize: 13, fontWeight: 600, color: p.tl }}>No resources found</div>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }} className="!grid-cols-1 sm:!grid-cols-2 lg:!grid-cols-3">
+              {filtered.map((resource) => {
+                const isLink = resource.url?.startsWith('http') && !resource.url.includes('cloudinary');
+                return (
+                  <div
+                    key={resource.id}
+                    style={{
+                      borderRadius: 20,
+                      padding: 16,
+                      background: p.dark,
+                      color: p.tl,
+                      border: `1px solid ${p.border}`,
+                      display: 'flex',
+                      flexDirection: 'column',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 12,
+                        background: p.greenDeep,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginBottom: 12,
+                      }}
+                    >
+                      <FileText size={19} color={p.av2} />
+                    </div>
+                    <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: p.tsub, marginBottom: 6 }}>
+                      {resource.category}
+                    </span>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, letterSpacing: '-.1px', marginBottom: 6 }}>{resource.title}</div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: p.tsub,
+                        marginBottom: 16,
+                        flex: 1,
+                        lineHeight: 1.5,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {resource.description}
+                    </div>
+                    <a
+                      href={resource.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        marginTop: 'auto',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 7,
+                        padding: '10px 0',
+                        borderRadius: 12,
+                        background: p.lightCard,
+                        color: p.td,
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        textDecoration: 'none',
+                      }}
+                    >
+                      {isLink ? (
+                        <>
+                          <ExternalLink size={13} /> Open Link
+                        </>
+                      ) : (
+                        <>
+                          <Download size={13} /> Download File
+                        </>
+                      )}
+                    </a>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
