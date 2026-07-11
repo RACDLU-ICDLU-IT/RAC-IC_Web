@@ -128,11 +128,17 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
   // Sneat glass structure kept as-is (blur, translucency, radii, shadows);
   // only the accent + a few text/bg tokens now come from clubAccent /
   // DashboardHome's own dark palette instead of the old indigo/Sneat set.
+  //
+  // sidebarBg/headerBg pushed to near-solid (0.94/0.92 light, 0.9/0.88 dark)
+  // — previously 0.7/0.65 opacity let DashboardHome's busy dark cards bleed
+  // through and wash out nav text/icon contrast (confirmed via screenshot).
+  // Blur is kept (still frosted at the edges/scroll boundary) but the base
+  // fill is now high enough that legibility doesn't depend on what's behind it.
   const c = {
     pageBg: dark ? '#0a0a0a' : '#f5f5f9',
-    sidebarBg: dark ? 'rgba(22,22,22,0.55)' : 'rgba(255,255,255,0.7)',
-    headerBg: dark ? 'rgba(22,22,22,0.5)' : 'rgba(255,255,255,0.65)',
-    sidebarBorder: dark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)',
+    sidebarBg: dark ? 'rgba(20,20,20,0.9)' : 'rgba(255,255,255,0.94)',
+    headerBg: dark ? 'rgba(20,20,20,0.88)' : 'rgba(255,255,255,0.92)',
+    sidebarBorder: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
     border: dark ? 'rgba(255,255,255,0.1)' : '#eceef1',
     brandText: dark ? '#f2eff0' : '#161616',
     sectionLabel: dark ? 'rgba(255,255,255,0.3)' : '#8a8f89',
@@ -332,12 +338,15 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           className="h-[64px] shrink-0 flex items-center justify-between px-4 lg:px-6 backdrop-blur-2xl border-b"
           style={{ background: c.headerBg, borderColor: c.sidebarBorder }}
         >
-          <div className="flex items-center gap-3 min-w-0">
-            <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-1 rounded shrink-0" style={{ color: c.brandText }}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-1 -ml-1 rounded shrink-0" style={{ color: c.brandText }}>
               <Menu size={22} />
             </button>
+            {/* Was `hidden lg:flex` — invisible on mobile, which is why the
+                header looked completely empty on phone screenshots. Now
+                always visible; only the font size steps down on small screens. */}
             <span
-              className="hidden lg:flex items-center gap-2 font-semibold text-[15px] tracking-[-.2px]"
+              className="flex items-center gap-2 font-semibold text-[14px] lg:text-[15px] tracking-[-.2px] truncate"
               style={{ color: c.brandText, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" }}
             >
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: c.accent }} />
@@ -345,15 +354,16 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
+            {/* Was `hidden sm:inline-flex` — also invisible on mobile.
+                Now always visible; padding/gap tighten on small screens. */}
             <span
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-full text-[11px] font-semibold px-3 py-1"
+              className="inline-flex items-center gap-1.5 rounded-full text-[10px] lg:text-[11px] font-semibold px-2.5 lg:px-3 py-1"
               style={{ background: c.tenantSwitchBg, color: c.accent, border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : c.border}` }}
             >
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.accent }} />
               {activeTenantId === 'racdlu' ? 'Rotaract' : 'Interact'}
             </span>
-            <div className="w-6 lg:hidden" />
           </div>
         </header>
 
