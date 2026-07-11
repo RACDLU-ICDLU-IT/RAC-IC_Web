@@ -28,15 +28,26 @@ export interface LedgerEntry {
   member_id: string;
   template_id: string;
   label: string;
+  category?: string | null;
   amount: number;
   currency: string;
   due_date: string;
   paid_at?: string;
   paid_amount?: number;
-  status: 'unpaid' | 'paid' | 'waived' | 'overdue';
+  status: 'unpaid' | 'pending_verification' | 'paid' | 'overdue' | 'waived' | 'rejected';
   notes?: string;
   reminder_sent_at?: string;
   reminder_count: number;
+  rotary_year?: string | null;
+  // bKash payment verification fields
+  bkash_number?: string | null;
+  sender_bkash_number?: string | null;
+  transaction_id?: string | null;
+  submitted_at?: string | null;
+  verified_at?: string | null;
+  verified_by?: string | null;
+  rejection_reason?: string | null;
+  receipt_no?: string | null;
   created_at: string;
   users?: {
     id: string;
@@ -75,6 +86,18 @@ export interface LedgerFilters {
 }
 
 export type CreateTemplateInput = Omit<FeeTemplate, 'id' | 'created_at'>;
+
+// Rotary year runs July -> June. Shared by the hook and by callers that
+// need to derive a year label before an entry has been persisted.
+export function getRotaryYear(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const y = d.getFullYear();
+  const m = d.getMonth(); // 0-indexed, so July = 6
+  if (m >= 6) {
+    return `${y}-${String((y + 1) % 100).padStart(2, '0')}`;
+  }
+  return `${y - 1}-${String(y % 100).padStart(2, '0')}`;
+}
 
 export function useDues() {
   const { tenant } = useTenant();
@@ -579,6 +602,209 @@ export function useDues() {
     }
   }, [user, tenant.id]);
 
+  // ----------------------------------------------------------------
+  // bKash payment submission + verification flow
+  // ----------------------------------------------------------------
+
+  /**
+   * Member submits a transaction ID against their own unpaid entry.
+   * Moves status to pending_verification, stamps submitted_at.
+   * Does NOT verify — an admin does that separately via verifyPayment.
+   */
+  const submitPayment = useCallback(async (
+    entryId: string,
+    transactionId: string,
+    senderBkashNumber: string
+  ): Promise<LedgerEntry | null> => {
+    if (!user) {
+      addToast('You must be signed in to submit a payment', 'error');
+      return null;
+    }
+    if (!transactionId.trim() || !senderBkashNumber.trim()) {
+      addToast('Transaction ID and sender bKash number are required', 'error');
+      return null;
+    }
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('fee_ledger')
+        .update({
+          status: 'pending_verification',
+          transaction_id: transactionId.trim(),
+          sender_bkash_number: senderBkashNumber.trim(),
+          submitted_at: new Date().toISOString(),
+        })
+        .eq('id', entryId)
+        .eq('member_id', user.id) // guard: members can only submit against their own entries
+        .eq('status', 'unpaid') // guard: only unpaid entries can be submitted against
+        .eq('tenant_id', tenant.id)
+        .select()
+        .single();
+
+      if (error) handleSupabaseError(error);
+      addToast('Payment submitted for verification', 'success');
+      return data as LedgerEntry;
+    } catch (err) {
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [user, addToast, tenant.id]);
+
+  /**
+   * Fetches receipt data for a single paid entry, joined with member name.
+   * Used by the in-app receipt view. Accessible by the owning member or an admin.
+   */
+  const fetchReceipt = useCallback(async (
+    entryId: string
+  ): Promise<(LedgerEntry & { users: { name: string } }) | null> => {
+    if (!user) {
+      throw new Error('Unauthorized');
+    }
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('fee_ledger')
+        .select('*, users!member_id(name)')
+        .eq('id', entryId)
+        .eq('status', 'paid')
+        .eq('tenant_id', tenant.id)
+        .single();
+
+      if (error) handleSupabaseError(error);
+
+      const isAdmin = profile && ['admin', 'master_admin'].includes(profile.role ?? '');
+      if (!isAdmin && data?.member_id !== user.id) {
+        throw new Error('Unauthorized');
+      }
+
+      return data as LedgerEntry & { users: { name: string } };
+    } catch (err) {
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [user, profile, tenant.id]);
+
+  /**
+   * Fetches the current tenant's default receiving bKash number, falling back
+   * gracefully if the dues_settings row doesn't exist yet.
+   */
+  const fetchDefaultBkashNumber = useCallback(async (): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('dues_settings')
+        .select('default_bkash_number')
+        .eq('tenant_id', tenant.id)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('[dues] Could not fetch default bKash number:', error);
+        return null;
+      }
+      return data?.default_bkash_number ?? null;
+    } catch (err) {
+      console.warn('[dues] Could not fetch default bKash number:', err);
+      return null;
+    }
+  }, [tenant.id]);
+
+  /**
+   * Admin verifies a pending_verification entry. Atomically assigns receipt_no
+   * via the next_receipt_seq() RPC, so two simultaneous verifications never
+   * collide on sequence number. Also stamps paid_at so the entry is picked up
+   * correctly by fetchDuesStats' "paid this month" calculation.
+   */
+  const verifyPayment = useCallback(async (
+    entryId: string,
+    clubPrefix: string
+  ): Promise<LedgerEntry | null> => {
+    requireAdmin();
+    setLoading(true);
+    try {
+      const { data: entry, error: fetchErr } = await supabase
+        .from('fee_ledger')
+        .select('rotary_year, amount, paid_amount')
+        .eq('id', entryId)
+        .eq('tenant_id', tenant.id)
+        .single();
+      if (fetchErr) handleSupabaseError(fetchErr);
+      if (!entry) return null;
+
+      const rotaryYear = entry.rotary_year || getRotaryYear(new Date());
+
+      const { data: seqData, error: seqErr } = await supabase.rpc('next_receipt_seq', {
+        p_tenant_id: tenant.id,
+        p_rotary_year: rotaryYear,
+      });
+      if (seqErr) handleSupabaseError(seqErr);
+
+      const receiptNo = `${clubPrefix}/RCPT/${rotaryYear}/${String(seqData).padStart(3, '0')}`;
+
+      const { data, error } = await supabase
+        .from('fee_ledger')
+        .update({
+          status: 'paid',
+          paid_amount: entry.amount,
+          paid_at: new Date().toISOString(),
+          verified_at: new Date().toISOString(),
+          verified_by: user?.id ?? null,
+          receipt_no: receiptNo,
+        })
+        .eq('id', entryId)
+        .eq('tenant_id', tenant.id)
+        .select()
+        .single();
+
+      if (error) handleSupabaseError(error);
+      addToast('Payment verified', 'success');
+      return data as LedgerEntry;
+    } catch (err) {
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [user, addToast, tenant.id]);
+
+  /**
+   * Admin rejects a pending_verification entry, reverting it to unpaid
+   * so the member can resubmit.
+   */
+  const rejectPayment = useCallback(async (
+    entryId: string,
+    reason: string
+  ): Promise<LedgerEntry | null> => {
+    requireAdmin();
+    if (!reason.trim()) {
+      addToast('A rejection reason is required', 'error');
+      return null;
+    }
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('fee_ledger')
+        .update({
+          status: 'unpaid',
+          rejection_reason: reason.trim(),
+          transaction_id: null,
+          sender_bkash_number: null,
+          submitted_at: null,
+        })
+        .eq('id', entryId)
+        .eq('tenant_id', tenant.id)
+        .select()
+        .single();
+
+      if (error) handleSupabaseError(error);
+      addToast('Payment rejected', 'success');
+      return data as LedgerEntry;
+    } catch (err) {
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [user, addToast, tenant.id]);
+
   return {
     loading,
     fetchTemplates,
@@ -596,6 +822,11 @@ export function useDues() {
     sendReminder,
     bulkSendReminders,
     fetchDuesStats,
-    markOverdueFees
+    markOverdueFees,
+    submitPayment,
+    fetchReceipt,
+    fetchDefaultBkashNumber,
+    verifyPayment,
+    rejectPayment,
   };
 }
