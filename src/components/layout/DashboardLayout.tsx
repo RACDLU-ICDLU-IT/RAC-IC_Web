@@ -8,6 +8,19 @@ import { supabase } from '../../supabase';
 import { LogOut, Menu, ChevronLeft, Lock, LayoutDashboard, ShieldCheck } from 'lucide-react';
 import ThemeToggle from '../common/ThemeToggle';
 import { usePageRegistry } from '../../hooks/usePageRegistry';
+import { getClubPalette } from '../../theme/racPalette';
+
+/** Converts a #rrggbb hex string + alpha (0–1) into an rgba() string.
+ * Used once, for headerBg in light mode, to blend p.bg (an opaque hex
+ * from theme/racPalette.ts) down to a translucent header fill instead
+ * of hardcoding a second, disconnected near-white value. */
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.substring(0, 2), 16);
+  const g = parseInt(clean.substring(2, 4), 16);
+  const b = parseInt(clean.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?: boolean }) {
   const { profile, signOut, role, isMasterAdmin, permissions } = useAuth();
@@ -109,44 +122,50 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
 
   /**
    * ------------------------------------------------------------------
-   * Tenant-color system — matches DashboardHome.tsx's PALETTE exactly.
-   * RACDLU (Rotaract) → pink #d85283, ICDLU (Interact) → blue #52b3d8.
-   * This REPLACES the old Sneat indigo default (#696cff / rgba(105,108,255,…))
-   * everywhere it appeared: active nav bg, hover bg, collapse-button bg,
-   * avatar-ring, tenant-switch pill, "Need help" card, active-indicator bar.
+   * Tenant-color system — imports the SAME palette DashboardHome.tsx
+   * uses (theme/racPalette.ts), not a separately-maintained approximation.
+   * This is the actual fix for the header/sidebar-vs-page mismatch you
+   * saw: previously this file had its own `clubAccent` object that only
+   * coincidentally shared the two `green` hex values with DashboardHome's
+   * PALETTE — header background, title text color, and border tones were
+   * never actually linked to DashboardHome's numbers, so they could (and
+   * did) drift out of sync. Now every token below reads from `p`, the
+   * same palette object DashboardHome computes for the same tenant+theme,
+   * so the header visually continues the page instead of sitting on top
+   * of it as a separate surface.
+   *
    * `isAdminMode` used to special-case a DIFFERENT accent (adminTenant-based
-   * hex) from the member-mode accent (theme.accent) — that split is gone;
-   * one club-based accent now drives both modes, consistent with the fact
-   * that DashboardHome never had two separate accent systems to begin with.
+   * hex) from member-mode (theme.accent) — that split is gone; one
+   * club-based accent drives both modes, matching DashboardHome, which
+   * never had two separate accent systems to begin with.
    * ------------------------------------------------------------------
    */
   const activeTenantId = isAdminMode ? adminTenant.id : tenant.id;
-  const clubAccent = activeTenantId === 'racdlu'
-    ? { base: '#d85283', deep: '#270612', soft: 'rgba(216,82,131,0.14)', softHover: 'rgba(216,82,131,0.08)' }
-    : { base: '#52b3d8', deep: '#0d1b20', soft: 'rgba(82,179,216,0.14)', softHover: 'rgba(82,179,216,0.08)' };
+  const p = getClubPalette(activeTenantId, dark ? 'dark' : 'light');
 
   // Sneat glass structure kept as-is (blur, translucency, radii, shadows);
-  // only the accent + a few text/bg tokens now come from clubAccent /
-  // DashboardHome's own dark palette instead of the old indigo/Sneat set.
+  // every color value now comes directly from `p` (theme/racPalette.ts)
+  // instead of a separately-maintained approximation.
   //
   // sidebarBg/headerBg pushed to near-solid (0.94/0.92 light, 0.9/0.88 dark)
   // — previously 0.7/0.65 opacity let DashboardHome's busy dark cards bleed
   // through and wash out nav text/icon contrast (confirmed via screenshot).
   // Blur is kept (still frosted at the edges/scroll boundary) but the base
-  // fill is now high enough that legibility doesn't depend on what's behind it.
+  // fill is now high enough that legibility doesn't depend on what's behind it,
+  // and the base color itself (p.bg) matches the page below pixel-for-pixel.
   const c = {
-    pageBg: dark ? '#0a0a0a' : '#f5f5f9',
+    pageBg: p.bg,
     sidebarBg: dark ? 'rgba(20,20,20,0.9)' : 'rgba(255,255,255,0.94)',
-    headerBg: dark ? 'rgba(20,20,20,0.88)' : 'rgba(255,255,255,0.92)',
+    headerBg: hexToRgba(p.bg, dark ? 0.88 : 0.92),
     sidebarBorder: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-    border: dark ? 'rgba(255,255,255,0.1)' : '#eceef1',
-    brandText: dark ? '#f2eff0' : '#161616',
-    sectionLabel: dark ? 'rgba(255,255,255,0.3)' : '#8a8f89',
-    navText: dark ? 'rgba(255,255,255,0.85)' : '#4f4a4c',
-    navIcon: dark ? 'rgba(255,255,255,0.55)' : '#7c6c72',
-    navHoverBg: dark ? clubAccent.softHover : clubAccent.softHover,
-    activeBg: clubAccent.soft,
-    accent: clubAccent.base,
+    border: p.border,
+    brandText: p.ptxt,
+    sectionLabel: p.tsub,
+    navText: p.navLink,
+    navIcon: p.mut,
+    navHoverBg: dark ? `${p.green}14` : `${p.green}14`,
+    activeBg: `${p.green}24`,
+    accent: p.green,
     danger: '#ff3e1d',
     tenantSwitchBg: dark ? 'rgba(255,255,255,0.05)' : '#f5f5f9',
   };
