@@ -72,6 +72,7 @@ export default function DashboardResources() {
   const [resources, setResources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('All');
+  const [search, setSearch] = useState('');
 
   const club = tenant.id === 'racdlu' ? 'rotaract' : 'interact';
   useInterFont();
@@ -98,7 +99,10 @@ export default function DashboardResources() {
   }, [tenant.id]);
 
   const categories = ['All', ...Array.from(new Set(resources.map((r) => r.category).filter(Boolean)))];
-  const filtered = filter === 'All' ? resources : resources.filter((r) => r.category === filter);
+  const q = search.trim().toLowerCase();
+  const filtered = resources
+    .filter((r) => filter === 'All' || r.category === filter)
+    .filter((r) => !q || r.title?.toLowerCase().includes(q) || r.description?.toLowerCase().includes(q) || r.category?.toLowerCase().includes(q));
 
   if (loading) {
     return (
@@ -140,7 +144,51 @@ export default function DashboardResources() {
             <span style={{ fontSize: 19, fontWeight: 600, color: p.ptxt, letterSpacing: '-.2px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
               <FolderOpen size={18} color={p.green} /> Club Resources
             </span>
-            <span style={{ fontSize: 11, color: p.pmut, fontWeight: 500 }}>{tenant.settings?.clubName || (club === 'rotaract' ? 'RACDLU' : 'ICDLU')}</span>
+            <span style={{ fontSize: 11, color: p.pmut, fontWeight: 500 }}>
+              {filtered.length} {filtered.length === 1 ? 'file' : 'files'}
+            </span>
+          </div>
+
+          {/* ---------------- search ---------------- */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 9,
+              padding: '11px 14px',
+              borderRadius: 14,
+              background: p.dark,
+              border: `1px solid ${p.border}`,
+              marginBottom: 10,
+            }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={p.tmid} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search resources..."
+              style={{
+                flex: 1,
+                background: 'none',
+                border: 'none',
+                outline: 'none',
+                fontSize: 12.5,
+                color: p.tl,
+              }}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                style={{ background: 'none', border: 'none', color: p.tmid, cursor: 'pointer', fontSize: 12, padding: 0 }}
+                aria-label="Clear search"
+              >
+                ✕
+              </button>
+            )}
           </div>
 
           {/* ---------------- category filter ---------------- */}
@@ -175,7 +223,12 @@ export default function DashboardResources() {
           {filtered.length === 0 ? (
             <div style={{ borderRadius: 20, padding: '48px 16px', textAlign: 'center', background: p.dark, border: `1px solid ${p.border}` }}>
               <FolderOpen size={32} color={p.tmid} style={{ opacity: 0.35, margin: '0 auto 12px' }} />
-              <div style={{ fontSize: 13, fontWeight: 600, color: p.tl }}>No resources found</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: p.tl }}>
+                {q || filter !== 'All' ? 'No matching resources' : 'No resources yet'}
+              </div>
+              {(q || filter !== 'All') && (
+                <div style={{ fontSize: 11, color: p.tsub, marginTop: 6 }}>Try a different search or category.</div>
+              )}
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }} className="!grid-cols-1 sm:!grid-cols-2 lg:!grid-cols-3">
