@@ -1,6 +1,6 @@
 import { supabase } from '../../supabase';
-import React, { useState, useEffect } from 'react';
-import { FolderOpen, FileText, Download, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { FolderOpen, FileText, Download, ExternalLink, X } from 'lucide-react';
 import { useTenant } from '../../hooks/useTenant';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -73,6 +73,8 @@ export default function DashboardResources() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
+  const [selectedResource, setSelectedResource] = useState<any | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
 
   const club = tenant.id === 'racdlu' ? 'rotaract' : 'interact';
   useInterFont();
@@ -97,6 +99,23 @@ export default function DashboardResources() {
         }
       );
   }, [tenant.id]);
+
+  // Detail modal: lock background scroll while open, move focus into it,
+  // and let Escape close it — standard dialog behavior.
+  useEffect(() => {
+    if (!selectedResource) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    modalRef.current?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedResource(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [selectedResource]);
 
   const categories = ['All', ...Array.from(new Set(resources.map((r) => r.category).filter(Boolean)))];
   const q = search.trim().toLowerCase();
@@ -190,6 +209,44 @@ export default function DashboardResources() {
         .rac-resources-page input:focus-visible {
           outline: 2px solid ${p.green};
           outline-offset: 2px;
+        }
+        .rac-modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,.6);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          z-index: 200;
+          animation: rac-modal-fade .15s ease;
+        }
+        .rac-modal {
+          width: 100%;
+          max-width: 440px;
+          max-height: 80vh;
+          overflow-y: auto;
+          animation: rac-modal-pop .18s ease;
+        }
+        @keyframes rac-modal-fade {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes rac-modal-pop {
+          from { opacity: 0; transform: translateY(12px) scale(.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .rac-modal-close {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 30px;
+          height: 30px;
+          border-radius: 8px;
+          transition: background .15s;
+        }
+        .rac-modal-close:hover {
+          background: ${p.border};
         }
       `}</style>
       <div
@@ -297,14 +354,16 @@ export default function DashboardResources() {
               {filtered.map((resource) => {
                 const isLink = resource.url?.startsWith('http') && !resource.url.includes('cloudinary');
                 return (
-                  <a
+                  <button
                     key={resource.id}
-                    href={resource.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={resource.title || 'Resource'}
+                    type="button"
+                    onClick={() => setSelectedResource(resource)}
+                    aria-label={`View details for ${resource.title || 'resource'}`}
                     className="rac-resource-card"
                     style={{
+                      textAlign: 'left',
+                      width: '100%',
+                      cursor: 'pointer',
                       borderRadius: 20,
                       padding: 16,
                       background: p.dark,
@@ -372,13 +431,98 @@ export default function DashboardResources() {
                         </>
                       )}
                     </div>
-                  </a>
+                  </button>
                 );
               })}
             </div>
           )}
         </div>
       </div>
+
+      {selectedResource && (
+        <div className="rac-modal-overlay" onClick={() => setSelectedResource(null)}>
+          <div
+            ref={modalRef}
+            tabIndex={-1}
+            className="rac-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rac-resource-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: p.dark,
+              border: `1px solid ${p.border}`,
+              borderRadius: 20,
+              padding: 20,
+              color: p.tl,
+              outline: 'none',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, gap: 12 }}>
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  background: p.greenDeep,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <FileText size={19} color={p.av2} />
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedResource(null)}
+                className="rac-modal-close"
+                aria-label="Close"
+                style={{ background: 'none', border: 'none', color: p.tmid, cursor: 'pointer', flexShrink: 0 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: p.tsub, display: 'block', marginBottom: 6 }}>
+              {selectedResource.category}
+            </span>
+            <div id="rac-resource-modal-title" style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-.2px', marginBottom: 12 }}>
+              {selectedResource.title}
+            </div>
+            <div style={{ fontSize: 13, color: p.tsub, lineHeight: 1.6, marginBottom: 20, whiteSpace: 'pre-wrap' }}>
+              {selectedResource.description}
+            </div>
+            <a
+              href={selectedResource.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 7,
+                padding: '12px 0',
+                borderRadius: 12,
+                background: p.lightCard,
+                color: p.td,
+                fontSize: 12.5,
+                fontWeight: 700,
+                textDecoration: 'none',
+              }}
+            >
+              {selectedResource.url?.startsWith('http') && !selectedResource.url.includes('cloudinary') ? (
+                <>
+                  <ExternalLink size={14} /> Open Link
+                </>
+              ) : (
+                <>
+                  <Download size={14} /> Download File
+                </>
+              )}
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
