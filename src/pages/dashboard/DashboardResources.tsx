@@ -110,7 +110,7 @@ export default function DashboardResources() {
         role="status"
         aria-busy="true"
         aria-label="Loading resources"
-        style={{ background: p.bg, padding: 18, borderRadius: 20 }}
+        style={{ background: p.bg, padding: 18, minHeight: '100vh' }}
         className="p-4 md:p-8 -m-4 md:-m-8"
       >
         <div style={{ maxWidth: 960, margin: '0 auto' }}>
@@ -136,8 +136,66 @@ export default function DashboardResources() {
         }
         .rac-resources-page ::-webkit-scrollbar { display: none; }
         .rac-resources-cats { scrollbar-width: none; }
+        .rac-resources-shell {
+          min-height: 100vh;
+        }
+        @supports (min-height: 100dvh) {
+          .rac-resources-shell {
+            min-height: 100dvh;
+          }
+        }
+        .rac-search-bar {
+          transition: border-color .15s;
+        }
+        .rac-search-bar:focus-within {
+          border-color: ${p.green};
+        }
+        .rac-clear-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 26px;
+          height: 26px;
+          border-radius: 8px;
+          transition: background .15s;
+        }
+        .rac-clear-btn:hover {
+          background: ${p.border};
+        }
+        .rac-cat-pill {
+          transition: border-color .15s, color .15s, transform .1s;
+        }
+        .rac-cat-pill:hover {
+          border-color: ${p.green};
+          color: ${p.tl};
+        }
+        .rac-cat-pill:active {
+          transform: scale(.96);
+        }
+        .rac-resource-card {
+          transition: border-color .15s, transform .15s, box-shadow .15s;
+          text-decoration: none;
+        }
+        .rac-resource-card:hover {
+          border-color: ${p.green};
+          transform: translateY(-2px);
+          box-shadow: 0 8px 20px rgba(0,0,0,.25);
+        }
+        .rac-resource-card:active {
+          transform: translateY(0);
+          box-shadow: none;
+        }
+        .rac-resources-page a:focus-visible,
+        .rac-resources-page button:focus-visible,
+        .rac-resources-page input:focus-visible {
+          outline: 2px solid ${p.green};
+          outline-offset: 2px;
+        }
       `}</style>
-      <div style={{ background: p.bg, padding: 18, transition: 'background .25s', borderRadius: 20 }} className="p-4 md:p-8 -m-4 md:-m-8">
+      <div
+        style={{ background: p.bg, padding: 18, transition: 'background .25s' }}
+        className="rac-resources-shell p-4 md:p-8 -m-4 md:-m-8"
+      >
         <div style={{ maxWidth: 960, margin: '0 auto' }}>
           {/* ---------------- page-top ---------------- */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12, padding: '0 2px', gap: 12 }}>
@@ -151,6 +209,7 @@ export default function DashboardResources() {
 
           {/* ---------------- search ---------------- */}
           <div
+            className="rac-search-bar"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -170,6 +229,7 @@ export default function DashboardResources() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search resources..."
+              aria-label="Search resources"
               style={{
                 flex: 1,
                 background: 'none',
@@ -183,7 +243,8 @@ export default function DashboardResources() {
               <button
                 type="button"
                 onClick={() => setSearch('')}
-                style={{ background: 'none', border: 'none', color: p.tmid, cursor: 'pointer', fontSize: 12, padding: 0 }}
+                className="rac-clear-btn"
+                style={{ background: 'none', border: 'none', color: p.tmid, cursor: 'pointer', fontSize: 12, flexShrink: 0 }}
                 aria-label="Clear search"
               >
                 ✕
@@ -201,6 +262,8 @@ export default function DashboardResources() {
                 key={cat}
                 onClick={() => setFilter(cat)}
                 type="button"
+                className="rac-cat-pill"
+                aria-pressed={filter === cat}
                 style={{
                   padding: '7px 14px',
                   borderRadius: 20,
@@ -211,7 +274,6 @@ export default function DashboardResources() {
                   border: filter === cat ? 'none' : `1px solid ${p.pillBorder}`,
                   background: filter === cat ? p.green : 'transparent',
                   color: filter === cat ? '#fff' : p.tmid,
-                  transition: 'all .15s',
                 }}
               >
                 {cat}
@@ -235,8 +297,13 @@ export default function DashboardResources() {
               {filtered.map((resource) => {
                 const isLink = resource.url?.startsWith('http') && !resource.url.includes('cloudinary');
                 return (
-                  <div
+                  <a
                     key={resource.id}
+                    href={resource.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={resource.title || 'Resource'}
+                    className="rac-resource-card"
                     style={{
                       borderRadius: 20,
                       padding: 16,
@@ -280,10 +347,7 @@ export default function DashboardResources() {
                     >
                       {resource.description}
                     </div>
-                    <a
-                      href={resource.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <div
                       style={{
                         marginTop: 'auto',
                         display: 'flex',
@@ -296,7 +360,6 @@ export default function DashboardResources() {
                         color: p.td,
                         fontSize: 11.5,
                         fontWeight: 700,
-                        textDecoration: 'none',
                       }}
                     >
                       {isLink ? (
@@ -308,8 +371,8 @@ export default function DashboardResources() {
                           <Download size={13} /> Download File
                         </>
                       )}
-                    </a>
-                  </div>
+                    </div>
+                  </a>
                 );
               })}
             </div>
