@@ -40,6 +40,15 @@ import AdminFormResponses from './pages/admin/AdminFormResponses';
 import PublicForm from './pages/public/PublicForm';
 import { AdminTenantProvider } from './contexts/AdminTenantContext';
 
+// Statically imported (unlike the rest of the dashboard pages, which load
+// dynamically via page_registry's p.element) specifically so the /dashboard
+// fallback index route below has a guaranteed component to render even if
+// the registry returns zero rows, or no row marked exact:true, for this
+// tenant. Every other dashboard page continues to be registry-driven —
+// this import exists only to back the safety-net route, not to replace
+// that system.
+import DashboardHome from './pages/dashboard/DashboardHome';
+
 /** Renders dashboard/admin routes built from page_registry (DB), resolved to real components. */
 function DynamicDashboardRoutes() {
   const { tenant } = useTenant();
@@ -75,6 +84,24 @@ function DynamicDashboardRoutes() {
           </Route>
         </Route>
       ))}
+
+      {/* Fallback index for /dashboard — belongs AFTER the memberPages.map
+          above, not before. If page_registry has a row with exact:true,
+          that Route already renders <Route index .../> and this one never
+          matches (React Router picks the first match in declaration
+          order, so this being last means a real registry entry always
+          wins). This only fires when the registry has no exact:true row
+          for member pages — which is exactly the "/dashboard shows
+          nothing" symptom: DashboardLayout's shell renders, but its
+          <Outlet /> has no index child to fill it. Wrapped in the same
+          ProtectedRoute every other member route uses — without that,
+          an unauthenticated visit to /dashboard would render a real
+          dashboard page instead of redirecting to login. */}
+      <Route element={<ProtectedRoute />}>
+        <Route path="/dashboard" element={<DashboardLayout />}>
+          <Route index element={<DashboardHome />} />
+        </Route>
+      </Route>
 
       {/* Fixed sub-routes for the built-in Forms page (dynamic :id params can't live in the registry) */}
       <Route element={<AdminTenantProvider><ProtectedRoute requireAdmin pageKey="admin_forms" /></AdminTenantProvider>}>
