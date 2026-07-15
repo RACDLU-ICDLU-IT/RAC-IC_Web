@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { UploadCloud, X, Loader2 } from 'lucide-react';
 import { useToast } from '../hooks/useToast';
 import { supabase } from '../supabase';
@@ -14,6 +14,38 @@ interface CloudinaryUploadProps {
   multiple?: boolean;
 }
 
+/**
+ * ------------------------------------------------------------------
+ * No longer uses Cloudinary's hosted upload widget (the popup modal
+ * with drag-and-drop, source tabs, and a crop screen) — that required
+ * loading an external script (upload-widget.cloudinary.com) and its
+ * modal UI couldn't be restyled to match the rest of the app.
+ *
+ * STORAGE IS UNCHANGED: files still upload to the same Cloudinary
+ * account, same cloud name, same unsigned preset, same secure_url /
+ * public_id shape returned to callers. Only the *selection UI* is
+ * different — this component now triggers a plain hidden
+ * <input type="file">, then POSTs directly to Cloudinary's public
+ * unsigned-upload REST endpoint
+ * (https://api.cloudinary.com/v1_1/{cloud}/image/upload) instead of
+ * letting the widget's own JS make that same call from inside its
+ * modal. The delete flow (/api/delete-image) is untouched — it never
+ * depended on the widget.
+ *
+ * DROPPED, not silently — the old widget included a built-in crop
+ * step (cropping/croppingAspectRatio/showSkipCropButton). A plain
+ * file input has no equivalent; this component no longer offers
+ * cropping before upload. If cropping needs to come back, that's a
+ * separate feature (e.g. a crop step rendered in-app before the fetch
+ * fires), not a config flag on this component anymore.
+ *
+ * The OS-level "choose a file source" picker (My Files / Drive /
+ * Dropbox / etc.) is unavoidable either way — it's rendered by the
+ * browser/OS the instant any <input type="file"> is triggered, widget
+ * or not. Removing the Cloudinary modal doesn't remove that screen;
+ * it removes everything Cloudinary used to draw before and after it.
+ * ------------------------------------------------------------------
+ */
 export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
   onUpload,
   onMultiUpload,
@@ -27,8 +59,44 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
   const displayLabel = buttonText || label || 'Upload Image';
   const [isUploading, setIsUploading] = useState(false);
   const { addToast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleOpenWidget = () => {
+  const uploadOne = async (file: File, cloudName: string, uploadPreset: string): Promise<{ url: string; publicId: string }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', uploadPreset);
+
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!res.ok) {
+      // Cloudinary's error responses are JSON with an `error.message` field —
+      // same message shape the old widget callback surfaced, so the existing
+      // "Check your Cloudinary preset is set to Unsigned" guidance still applies.
+      let message = 'Upload failed. Check your Cloudinary preset is set to Unsigned.';
+      try {
+        const errBody = await res.json();
+        if (errBody?.error?.message) message = errBody.error.message;
+      } catch {
+        // response wasn't JSON — fall back to the generic message above
+      }
+      throw new Error(message);
+    }
+
+    const data = await res.json();
+    return { url: data.secure_url, publicId: data.public_id };
+  };
+
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    // Reset the input immediately so selecting the same file twice in a row
+    // still fires this handler (browsers don't fire onChange for an
+    // unchanged value otherwise).
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (!files || files.length === 0) return;
+
     const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
     const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
@@ -37,58 +105,36 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
       return;
     }
 
-    if (typeof window === 'undefined' || !(window as any).cloudinary) {
-      addToast('Cloudinary widget not loaded', 'error');
-      return;
-    }
-
     setIsUploading(true);
-
-    // Collect all uploaded URLs when multiple mode is on
-    const batchUrls: string[] = [];
-
-    const widget = (window as any).cloudinary.createUploadWidget(
-      {
-        cloudName: cloudName,
-        uploadPreset: uploadPreset,
-        multiple: multiple,
-        maxFiles: multiple ? 20 : 1,
-        cropping: !multiple, // disable cropping in multi-upload for smoother batch experience
-        croppingAspectRatio: aspectRatio === 'square' ? 1 : aspectRatio === 'landscape' ? 16/9 : 3/4,
-        showSkipCropButton: true,
-      },
-      (error: any, result: any) => {
-        if (error) {
-          addToast(error.message || 'Upload failed. Check your Cloudinary preset is set to Unsigned.', 'error');
-          setIsUploading(false);
-          return;
-        }
-
-        if (result?.event === 'success') {
-          const url = result.info.secure_url;
-          const publicId = result.info.public_id;
-          if (multiple && onMultiUpload) {
-            // Collect — don't close yet; flush when widget closes
-            batchUrls.push(url);
-          } else {
-            // Single-image mode: fire immediately
-            onUpload(url, publicId);
-            setIsUploading(false);
-          }
-        }
-
-        if (result?.event === 'close') {
-          setIsUploading(false);
-          // Flush all collected multi-upload URLs at once when widget closes
-          if (multiple && onMultiUpload && batchUrls.length > 0) {
-            onMultiUpload([...batchUrls]);
-          }
-        }
+    try {
+      if (multiple && onMultiUpload) {
+        const uploads = await Promise.all(Array.from(files).map((f) => uploadOne(f, cloudName, uploadPreset)));
+        onMultiUpload(uploads.map((u) => u.url));
+      } else {
+        const { url, publicId } = await uploadOne(files[0], cloudName, uploadPreset);
+        onUpload(url, publicId);
       }
-    );
-
-    widget.open();
+    } catch (err: any) {
+      addToast(err?.message || 'Upload failed. Check your Cloudinary preset is set to Unsigned.', 'error');
+    } finally {
+      setIsUploading(false);
+    }
   };
+
+  const triggerPicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const hiddenInput = (
+    <input
+      ref={fileInputRef}
+      type="file"
+      accept="image/*"
+      multiple={multiple}
+      onChange={handleFilesSelected}
+      className="hidden"
+    />
+  );
 
   const ratioClass = {
     square: 'aspect-square',
@@ -98,20 +144,24 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
 
   if (multiple) {
     return (
-      <button
-        type="button"
-        onClick={handleOpenWidget}
-        disabled={isUploading}
-        className="w-full flex items-center justify-center gap-2 py-3 px-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
-      >
-        {isUploading ? <Loader2 className="animate-spin" size={20} /> : <UploadCloud size={20} />}
-        <span className="font-medium">{isUploading ? 'Uploading...' : displayLabel}</span>
-      </button>
+      <>
+        {hiddenInput}
+        <button
+          type="button"
+          onClick={triggerPicker}
+          disabled={isUploading}
+          className="w-full flex items-center justify-center gap-2 py-3 px-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
+        >
+          {isUploading ? <Loader2 className="animate-spin" size={20} /> : <UploadCloud size={20} />}
+          <span className="font-medium">{isUploading ? 'Uploading...' : displayLabel}</span>
+        </button>
+      </>
     );
   }
 
   return (
     <div className="flex flex-col gap-2 w-full">
+      {hiddenInput}
       {currentUrl ? (
         <div className={`relative w-full ${ratioClass} bg-gray-100 rounded-lg overflow-hidden border border-gray-200 group`}>
           <img src={currentUrl} alt="Preview" className="w-full h-full object-cover" />
@@ -153,7 +203,7 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
       ) : (
         <button
           type="button"
-          onClick={handleOpenWidget}
+          onClick={triggerPicker}
           disabled={isUploading}
           className={`w-full ${ratioClass} flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-accent hover:text-accent hover:bg-accent/5 transition-colors disabled:opacity-50`}
         >
