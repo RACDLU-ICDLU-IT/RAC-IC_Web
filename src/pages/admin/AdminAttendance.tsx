@@ -1,199 +1,215 @@
 import { supabase } from '../../supabase';
-import React, { useEffect, useState } from 'react';
-import { Button } from '../../components/ui/Button';
-import { useToast } from '../../hooks/useToast';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Download, CalendarPlus, Search, List, CalendarDays } from 'lucide-react';
+import { useToast } from '../../hooks/useToast';
 import { useSearchParams } from 'react-router-dom';
-import { Modal } from '../../components/ui/Modal';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
+import { useTheme } from '../../contexts/ThemeContext';
 import { usePoints } from '../../hooks/usePoints';
+import { getClubPalette } from '../../theme/racPalette';
+import {
+  Download, CalendarPlus, CalendarDays, X, Pencil, Copy, BarChart3,
+  Users, TrendingUp, ChevronDown,
+} from 'lucide-react';
+
+/* ---- font loader: same pattern/id as DashboardHome.tsx, idempotent ---- */
+const INTER_FONT_URL = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
+const INTER_LINK_ID = 'rac-dashboard-inter-font';
+function useInterFont() {
+  useEffect(() => {
+    if (document.getElementById(INTER_LINK_ID)) return;
+    const link = document.createElement('link');
+    link.id = INTER_LINK_ID;
+    link.rel = 'stylesheet';
+    link.href = INTER_FONT_URL;
+    document.head.appendChild(link);
+  }, []);
+}
+
+/* ---- event taxonomy ---- */
+const EVENT_TYPES = ['Meeting', 'Event', 'Project', 'Workshop'] as const;
+type EventType = typeof EVENT_TYPES[number];
+const SUB_TYPES: Record<EventType, string[]> = {
+  Meeting: ['General', 'Special', 'Board Meeting'],
+  Event: ['Ceremony', 'Installation', 'Assembly', 'Other'],
+  Project: ['Community Service', 'Fund Raising', 'Skill Based'],
+  Workshop: ['Personal skills', 'TRF', 'Other'],
+};
+
+/* ---- status: canonical value is the full word (matches DB + member views).
+   Letter is a display-only badge, never stored. ---- */
+type Status = 'present' | 'late' | 'excused' | 'absent';
+const STATUS_ORDER: Status[] = ['present', 'late', 'excused', 'absent'];
+const STATUS_META: Record<Status, { letter: string; label: string }> = {
+  present: { letter: 'P', label: 'Present' },
+  late: { letter: 'L', label: 'Late' },
+  excused: { letter: 'E', label: 'Excused' },
+  absent: { letter: 'A', label: 'Absent' },
+};
+
+type XPRewards = { xp_present: number; xp_late: number; xp_excused: number; xp_absent: number };
+const xpForStatus = (ev: any, status: Status) =>
+  Number(ev?.[`xp_${status}`] ?? 0);
+
+/* ---- utils ---- */
+const uid = () => (crypto as any).randomUUID();
+function toCSV(rows: string[][]) {
+  return rows.map((r) => r.map((c) => `"${(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+}
+function downloadCSV(filename: string, rows: string[][]) {
+  const blob = new Blob([toCSV(rows)], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
 export default function AdminAttendance() {
   const { adminTenant: tenant } = useAdminTenant();
   const { user } = useAuth();
-  const [mode, setMode] = useState<'mark'|'history'|'member'>('mark');
   const { awardAttendancePoints } = usePoints();
-  const [events, setEvents] = useState<any[]>([]);
-  const [activeMembers, setActiveMembers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
+  const { addToast } = useToast();
   const [searchParams] = useSearchParams();
   const targetMemberId = searchParams.get('memberId');
 
+  useInterFont();
+  const { resolvedTheme } = useTheme();
+  const dark = resolvedTheme === 'dark';
+  const p = getClubPalette(tenant.id, dark ? 'dark' : 'light');
+
+  const [mode, setMode] = useState<'mark' | 'history' | 'member' | 'analytics'>('mark');
+  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState<any[]>([]);
+  const [activeMembers, setActiveMembers] = useState<any[]>([]);
+  const [allAttendance, setAllAttendance] = useState<any[]>([]);
+
+  /* mark mode */
+  const [selectedEventId, setSelectedEventId] = useState('');
+  const [sheet, setSheet] = useState<Record<string, Status | ''>>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
+  const [copyFromEventId, setCopyFromEventId] = useState('');
+
+  /* history mode */
+  const [historyEventId, setHistoryEventId] = useState('');
+  const [historyRecords, setHistoryRecords] = useState<any[]>([]);
+
+  /* member mode */
   const [memberHistoryRecords, setMemberHistoryRecords] = useState<any[]>([]);
   const [memberHistoryLoading, setMemberHistoryLoading] = useState(false);
   const [targetMember, setTargetMember] = useState<any>(null);
-  
-  // Mark Attendance state
-  const [selectedEventId, setSelectedEventId] = useState('');
-  const [attendanceSheet, setAttendanceSheet] = useState<Record<string, string>>({}); // userId -> status
-  const [isSaving, setIsSaving] = useState(false);
-  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
-  const [quickEventTitle, setQuickEventTitle] = useState('');
-  const [quickEventDate, setQuickEventDate] = useState('');
 
-  // View History state
-  const [historyEventId, setHistoryEventId] = useState('');
-  const [historyRecords, setHistoryRecords] = useState<any[]>([]);
-  const [isEditingHistory, setIsEditingHistory] = useState(false);
-  
-  const { addToast } = useToast();
+  /* add/edit event modal */
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    title: '', date: '', type: 'Meeting' as EventType, sub_type: SUB_TYPES.Meeting[0],
+    xp_present: 0, xp_late: 0, xp_excused: 0, xp_absent: 0,
+  });
 
   const loadBaseData = async () => {
     setLoading(true);
     try {
-      const { data: eSnap } = await supabase.from('events').select('*').eq('tenant_id', tenant.id).order('date', { ascending: false });
+      const [{ data: eSnap }, { data: mSnap }, { data: aSnap }] = await Promise.all([
+        supabase.from('events').select('*').eq('tenant_id', tenant.id).order('date', { ascending: false }),
+        supabase.from('users').select('*').eq('tenant_id', tenant.id).eq('status', 'active'),
+        supabase.from('attendance').select('*').eq('tenant_id', tenant.id),
+      ]);
       setEvents(eSnap || []);
-      
-      const { data: mSnap } = await supabase.from('users').select('*').eq('tenant_id', tenant.id).eq('status', 'active');
       setActiveMembers(mSnap || []);
-    } catch(err) {
+      setAllAttendance(aSnap || []);
+    } catch (err) {
       console.error(err);
       addToast('Failed to load data', 'error');
     } finally {
       setLoading(false);
     }
   };
+  useEffect(() => { loadBaseData(); }, [tenant.id]);
 
-  useEffect(() => {
-    loadBaseData();
-  }, [tenant.id]);
-
-  const loadEventAttendance = async (eventId: string, setSheet: boolean = true) => {
-    if (!eventId) {
-      if (setSheet) setAttendanceSheet({});
-      return [];
+  const loadEventAttendance = async (eventId: string, applyToSheet = true) => {
+    if (!eventId) { if (applyToSheet) setSheet({}); return []; }
+    const { data } = await supabase.from('attendance').select('*').eq('tenant_id', tenant.id).eq('eventId', eventId);
+    const records = data || [];
+    if (applyToSheet) {
+      const s: Record<string, Status | ''> = {};
+      records.forEach((r: any) => { s[r.userId] = r.status; });
+      setSheet(s);
     }
-    try {
-      const { data: snap } = await supabase.from('attendance').select('*').eq('tenant_id', tenant.id).eq('eventId', eventId);
-      const records = snap || [];
-      
-      if (setSheet) {
-        const sheet: Record<string, string> = {};
-        records.forEach(r => sheet[r.userId] = r.status);
-        setAttendanceSheet(sheet);
-      }
-      return records;
-    } catch(err) {
-      console.error(err);
-      addToast('Failed to load attendance records', 'error');
-      return [];
-    }
+    return records;
   };
 
   useEffect(() => {
-    if (mode === 'mark') {
-      loadEventAttendance(selectedEventId, true);
-    }
-  }, [selectedEventId, mode, tenant.id]);
+    if (mode === 'mark') { loadEventAttendance(selectedEventId, true); setSelectedMemberIds(new Set()); }
+  }, [selectedEventId, mode]);
 
   useEffect(() => {
     if (mode === 'history' && historyEventId) {
-      loadEventAttendance(historyEventId, false).then(recs => setHistoryRecords(recs));
+      loadEventAttendance(historyEventId, false).then(setHistoryRecords);
     }
-  }, [historyEventId, mode, tenant.id]);
+  }, [historyEventId, mode]);
 
   const fetchMemberHistory = async (memberId: string) => {
     setMemberHistoryLoading(true);
     try {
-      const { data: snap } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('userId', memberId)
-        .eq('tenant_id', tenant.id);
-
-      const records = snap || [];
-
-      // Enrich with event data from already-loaded events state
-      const enriched = records.map((r: any) => ({
-        ...r,
-        eventTitle:
-          events.find((e: any) => e.id === r.eventId)?.title ||
-          r.eventTitle ||
-          'Unknown Event',
-        eventDate:
-          events.find((e: any) => e.id === r.eventId)?.date ||
-          r.eventDate ||
-          '',
-        eventType:
-          events.find((e: any) => e.id === r.eventId)?.type ||
-          r.eventType ||
-          '',
-      }));
-
-      // Sort by date descending (most recent first)
-      enriched.sort((a: any, b: any) =>
-        b.eventDate > a.eventDate ? 1 : b.eventDate < a.eventDate ? -1 : 0
-      );
-
+      const { data } = await supabase.from('attendance').select('*').eq('userId', memberId).eq('tenant_id', tenant.id);
+      const enriched = (data || []).map((r: any) => {
+        const ev = events.find((e) => e.id === r.eventId);
+        return { ...r, eventTitle: ev?.title || r.eventTitle || 'Unknown Event', eventDate: ev?.date || r.eventDate || '', eventType: ev?.type || '', eventSubType: ev?.sub_type || '' };
+      });
+      enriched.sort((a: any, b: any) => (b.eventDate > a.eventDate ? 1 : b.eventDate < a.eventDate ? -1 : 0));
       setMemberHistoryRecords(enriched);
     } catch (err) {
-      console.error('fetchMemberHistory error:', err);
+      console.error(err);
       addToast('Failed to load member attendance history', 'error');
     } finally {
       setMemberHistoryLoading(false);
     }
   };
 
-  // Auto-switch to member history view when memberId URL param is present
   useEffect(() => {
     if (!targetMemberId || loading) return;
-    
-    // Find or set a placeholder for the member
-    const found = activeMembers.find((m: any) => m.id === targetMemberId);
-    if (found) {
-      setTargetMember(found);
-    } else {
-      // Member might be inactive; try a direct lookup
-      supabase
-        .from('users')
-        .select('*')
-        .eq('id', targetMemberId)
-        .eq('tenant_id', tenant.id)
-        .single()
-        .then(({ data }) => {
-          if (data) setTargetMember(data);
-        });
-    }
-    
+    const found = activeMembers.find((m) => m.id === targetMemberId);
+    if (found) setTargetMember(found);
+    else supabase.from('users').select('*').eq('id', targetMemberId).eq('tenant_id', tenant.id).single()
+      .then(({ data }) => { if (data) setTargetMember(data); });
     setMode('member');
     fetchMemberHistory(targetMemberId);
   }, [targetMemberId, loading, activeMembers.length]);
 
+  /* ---- mark: save + award XP ---- */
   const handleSaveAttendance = async () => {
     if (!selectedEventId) return;
     setIsSaving(true);
     try {
+      const ev = events.find((e) => e.id === selectedEventId);
       const batch: any[] = [];
-      const eventDetails = events.find(e => e.id === selectedEventId);
-      Object.entries(attendanceSheet).forEach(([userId, status]) => {
+      const awards: Promise<any>[] = [];
+      Object.entries(sheet).forEach(([userId, status]) => {
         if (!status) return;
-        const recordId = `${selectedEventId}_${userId}`;
-        batch.push(supabase.from('attendance').upsert({
-          id: recordId,
-          tenant_id: tenant.id,
-          userId,
-          eventId: selectedEventId,
-          eventTitle: eventDetails?.title || 'Unknown Event',
-          eventDate: eventDetails?.date || '',
-          eventType: eventDetails?.type || '',
-          status,
-          markedAt: new Date().toISOString(),
-          markedBy: user?.id
-        }, { onConflict: 'id, tenant_id' }));
+        batch.push(
+          supabase.from('attendance').upsert(
+            {
+              id: `${selectedEventId}_${userId}`, tenant_id: tenant.id, userId, eventId: selectedEventId,
+              eventTitle: ev?.title || 'Unknown Event', eventDate: ev?.date || '', eventType: ev?.type || '',
+              status, markedAt: new Date().toISOString(), markedBy: user?.id,
+            },
+            { onConflict: 'id, tenant_id' }
+          )
+        );
+        const amount = xpForStatus(ev, status as Status);
+        // Assumes awardAttendancePoints(userId, eventId, amount) — if the hook's
+        // current signature doesn't accept an amount, it needs a matching update
+        // so per-event/per-status XP config actually takes effect.
+        if (amount !== 0) awards.push(awardAttendancePoints(userId, selectedEventId, amount).catch(console.error));
       });
       await Promise.all(batch);
-      // Award attendance points for present/late members
-      const presentUserIds = Object.entries(attendanceSheet)
-        .filter(([_, status]) => status === 'P' || status === 'L')
-        .map(([userId]) => userId);
-      await Promise.all(presentUserIds.map(uid => awardAttendancePoints(uid, selectedEventId).catch(console.error)));
+      await Promise.all(awards);
       addToast('Attendance saved', 'success');
-      
-      // Update local state instantly so everything is in sync across tabs!
-      const updatedRecs = await loadEventAttendance(selectedEventId, true);
-      setHistoryRecords(updatedRecs);
+      const updated = await loadEventAttendance(selectedEventId, true);
+      setHistoryRecords(updated);
+      setAllAttendance((prev) => [...prev.filter((r) => r.eventId !== selectedEventId), ...updated]);
     } catch (err) {
       console.error(err);
       addToast('Failed to save attendance', 'error');
@@ -202,442 +218,556 @@ export default function AdminAttendance() {
     }
   };
 
-  const setAll = (status: string|null) => {
-    const newSheet: Record<string, string> = {};
-    if (status) {
-      activeMembers.forEach(m => newSheet[m.id] = status);
-    }
-    setAttendanceSheet(newSheet);
+  const setAll = (status: Status | null) => {
+    const s: Record<string, Status | ''> = {};
+    if (status) activeMembers.forEach((m) => { s[m.id] = status; });
+    setSheet(s);
+  };
+  const applyToSelected = (status: Status) => {
+    setSheet((prev) => {
+      const next = { ...prev };
+      selectedMemberIds.forEach((id) => { next[id] = status; });
+      return next;
+    });
+  };
+  const toggleMember = (id: string) => {
+    setSelectedMemberIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+  const applyCopyFromEvent = async () => {
+    if (!copyFromEventId) return;
+    const records = await loadEventAttendance(copyFromEventId, false);
+    setSheet((prev) => {
+      const next = { ...prev };
+      records.forEach((r: any) => { if (!next[r.userId]) next[r.userId] = r.status; });
+      return next;
+    });
+    addToast('Copied unmarked members from selected event', 'success');
   };
 
   const exportCurrentEvent = () => {
     if (!selectedEventId) return;
-    const ev = events.find(e => e.id === selectedEventId);
-    let csv = 'Member Name,School,Status\n';
-    activeMembers.forEach(m => {
-       const status = attendanceSheet[m.id] || 'Not Marked';
-       csv += `"${m.name || ''}","${m.school || ''}",${status}\n`;
+    const ev = events.find((e) => e.id === selectedEventId);
+    const rows = [['Member Name', 'School', 'Status']];
+    activeMembers.forEach((m) => rows.push([m.name || '', m.school || '', sheet[m.id] ? STATUS_META[sheet[m.id] as Status].label : 'Not Marked']));
+    downloadCSV(`Attendance_${(ev?.title || 'event').replace(/\s+/g, '_')}.csv`, rows);
+  };
+
+  const exportSummary = () => {
+    const totals: Record<string, Record<Status, number>> = {};
+    const markedEvents = new Set(allAttendance.map((r) => r.eventId));
+    allAttendance.forEach((r) => {
+      if (!totals[r.userId]) totals[r.userId] = { present: 0, late: 0, excused: 0, absent: 0 };
+      if (STATUS_ORDER.includes(r.status)) totals[r.userId][r.status as Status]++;
     });
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Attendance_${ev?.title?.replace(/\s+/g, '_')}.csv`;
-    a.click();
+    const rows = [['Member Name', 'Role', 'School', 'Present', 'Late', 'Absent', 'Excused', 'Total Marked Events', 'Attendance Rate %']];
+    activeMembers.forEach((m) => {
+      const t = totals[m.id] || { present: 0, late: 0, excused: 0, absent: 0 };
+      const attended = t.present + t.late;
+      const rate = markedEvents.size > 0 ? Math.round((attended / markedEvents.size) * 100) : 0;
+      rows.push([m.name || '', m.role || '', m.school || '', String(t.present), String(t.late), String(t.absent), String(t.excused), String(markedEvents.size), `${rate}%`]);
+    });
+    downloadCSV(`Attendance_Summary_${new Date().toISOString().split('T')[0]}.csv`, rows);
   };
 
-  const handleQuickAddEvent = async () => {
-    if (!quickEventTitle || !quickEventDate) return;
+  /* ---- event modal ---- */
+  const openAddEvent = () => {
+    setEditingEventId(null);
+    setForm({ title: '', date: '', type: 'Meeting', sub_type: SUB_TYPES.Meeting[0], xp_present: 0, xp_late: 0, xp_excused: 0, xp_absent: 0 });
+    setIsEventModalOpen(true);
+  };
+  const openEditEvent = (ev: any) => {
+    setEditingEventId(ev.id);
+    setForm({
+      title: ev.title || '', date: ev.date || '', type: (ev.type as EventType) || 'Meeting', sub_type: ev.sub_type || SUB_TYPES[(ev.type as EventType) || 'Meeting'][0],
+      xp_present: ev.xp_present || 0, xp_late: ev.xp_late || 0, xp_excused: ev.xp_excused || 0, xp_absent: ev.xp_absent || 0,
+    });
+    setIsEventModalOpen(true);
+  };
+  const saveEvent = async () => {
+    if (!form.title || !form.date) { addToast('Title and date are required', 'error'); return; }
     try {
-      const pDoc = { table: 'events', id: crypto.randomUUID() };
-      await supabase.from(pDoc.table).upsert({ id: pDoc.id, tenant_id: tenant.id, ...{
-        title: quickEventTitle,
-        date: quickEventDate,
-        type: 'Meeting',
-        isPublic: false,
-        createdAt: new Date().toISOString()
-      } }, { onConflict: 'id' });
-      addToast('Event created quickly', 'success');
-      
+      const id = editingEventId || uid();
+      await supabase.from('events').upsert(
+        {
+          id, tenant_id: tenant.id, title: form.title, date: form.date, type: form.type, sub_type: form.sub_type,
+          xp_present: form.xp_present, xp_late: form.xp_late, xp_excused: form.xp_excused, xp_absent: form.xp_absent,
+          isPublic: false, createdAt: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+      addToast(editingEventId ? 'Event updated' : 'Event created', 'success');
       await loadBaseData();
-      setSelectedEventId(pDoc.id);
-      setIsQuickAddOpen(false);
-      setQuickEventTitle('');
-      setQuickEventDate('');
-    } catch(err) { addToast('Failed', 'error'); }
-  };
-
-  const exportSummary = async () => {
-    try {
-       const { data: snap } = await supabase.from('attendance').select('*').eq('tenant_id', tenant.id);
-       const allRecs = snap || [];
-       
-       const userTotals: Record<string, { present: number, late: number, absent: number, excused: number }> = {};
-       
-       // Calculate the exact set of events that actually have attendance records
-       const markedEventsSet = new Set<string>();
-       allRecs.forEach(r => {
-         markedEventsSet.add(r.eventId);
-       });
-       const totalMarkedEvents = markedEventsSet.size;
-
-       allRecs.forEach(r => {
-         if (!userTotals[r.userId]) {
-           userTotals[r.userId] = { present: 0, late: 0, absent: 0, excused: 0 };
-         }
-         const stats = userTotals[r.userId];
-         if (r.status === 'P') stats.present++;
-         else if (r.status === 'L') stats.late++;
-         else if (r.status === 'A') stats.absent++;
-         else if (r.status === 'E') stats.excused++;
-       });
-
-       let csv = 'Member Name,Role,School,Present,Late,Absent,Excused,Total Marked Events,Attendance Rate %\n';
-       activeMembers.forEach(m => {
-          const u = userTotals[m.id] || { present: 0, late: 0, absent: 0, excused: 0 };
-          const attended = u.present + u.late;
-          const rate = totalMarkedEvents > 0 ? Math.round((attended / totalMarkedEvents) * 100) : 0;
-          csv += `"${m.name || ''}","${m.role || ''}","${m.school || ''}",${u.present},${u.late},${u.absent},${u.excused},${totalMarkedEvents},${rate}%\n`;
-       });
-       
-       const blob = new Blob([csv], { type: 'text/csv' });
-       const a = document.createElement('a');
-       a.href = URL.createObjectURL(blob);
-       a.download = `Attendance_Summary_${new Date().toISOString().split('T')[0]}.csv`;
-       a.click();
-    } catch(err) {
-      addToast('Export failed', 'error');
+      if (!editingEventId) setSelectedEventId(id);
+      setIsEventModalOpen(false);
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to save event', 'error');
     }
   };
 
-  const getStatusColor = (s: string) => {
-    if (s==='P') return 'bg-green-500 text-white border-green-600';
-    if (s==='A') return 'bg-red-500 text-white border-red-600';
-    if (s==='E') return 'bg-amber-500 text-white border-amber-600';
-    if (s==='L') return 'bg-blue-500 text-white border-blue-600';
-    return 'bg-gray-100 text-gray-400 border-gray-200';
-  };
+  /* ---- analytics ---- */
+  const analytics = useMemo(() => {
+    const byType: Record<string, { present: number; total: number }> = {};
+    events.forEach((ev) => {
+      const t = ev.type || 'Other';
+      if (!byType[t]) byType[t] = { present: 0, total: 0 };
+    });
+    allAttendance.forEach((r) => {
+      const ev = events.find((e) => e.id === r.eventId);
+      const t = ev?.type || 'Other';
+      if (!byType[t]) byType[t] = { present: 0, total: 0 };
+      byType[t].total++;
+      if (r.status === 'present' || r.status === 'late') byType[t].present++;
+    });
+    const memberRates = activeMembers.map((m) => {
+      const recs = allAttendance.filter((r) => r.userId === m.id);
+      const present = recs.filter((r) => r.status === 'present' || r.status === 'late').length;
+      const rate = recs.length > 0 ? Math.round((present / recs.length) * 100) : null;
+      return { member: m, rate, total: recs.length };
+    }).filter((m) => m.total > 0).sort((a, b) => (b.rate ?? 0) - (a.rate ?? 0));
+
+    const overallPresent = allAttendance.filter((r) => r.status === 'present' || r.status === 'late').length;
+    const overallRate = allAttendance.length > 0 ? Math.round((overallPresent / allAttendance.length) * 100) : 0;
+    const totalXP = allAttendance.reduce((sum, r) => {
+      const ev = events.find((e) => e.id === r.eventId);
+      return sum + (ev && STATUS_ORDER.includes(r.status) ? xpForStatus(ev, r.status as Status) : 0);
+    }, 0);
+
+    return { byType, memberRates, overallRate, totalXP, eventsMarked: new Set(allAttendance.map((r) => r.eventId)).size };
+  }, [events, allAttendance, activeMembers]);
+
+  /* ---- style tokens (reused across cards) ---- */
+  const card: React.CSSProperties = { borderRadius: 20, padding: 16, background: p.dark, color: p.tl, border: `1px solid ${p.border}` };
+  const lightCard: React.CSSProperties = { borderRadius: 20, padding: 16, background: p.lightCard, color: p.td };
+  const pillBtn: React.CSSProperties = { border: `1px solid ${p.pillBorder}`, borderRadius: 20, fontSize: 10, padding: '6px 12px', color: p.tmid, background: 'none', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 };
+  const solidBtn: React.CSSProperties = { background: p.green, color: '#1b0c12', borderRadius: 20, fontSize: 11, fontWeight: 700, padding: '8px 16px', border: 'none', cursor: 'pointer' };
+  const input: React.CSSProperties = { width: '100%', background: p.lightCard, color: p.td, border: `1px solid ${p.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontWeight: 500, outline: 'none' };
+
+  if (loading) {
+    return (
+      <div style={{ background: p.bg, padding: 18 }} className="p-4 md:p-8 -m-4 md:-m-8">
+        <div style={{ maxWidth: 960, margin: '0 auto' }}>
+          <div style={{ height: 96, borderRadius: 20, marginBottom: 12, background: p.dark, border: `1px solid ${p.border}`, opacity: 0.5 }} className="animate-pulse" />
+          <div style={{ height: 300, borderRadius: 20, background: p.dark, border: `1px solid ${p.border}`, opacity: 0.5 }} className="animate-pulse" />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-8 pb-32">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-heading font-bold text-gray-900">Attendance</h1>
-            <span className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full font-bold border border-gray-200 uppercase tracking-wider">
-              {tenant.id}
-            </span>
-          </div>
-          <p className="text-gray-500 text-sm mt-1">Track member participation</p>
-        </div>
-      </div>
-
-      <div className="flex gap-0 border-b border-gray-200">
-        {[
-          { id: 'mark', label: 'Mark Attendance' },
-          { id: 'history', label: 'Event History' },
-          ...(targetMemberId
-            ? [{
-                id: 'member',
-                label: targetMember?.name
-                  ? `${targetMember.name}'s History`
-                  : 'Member History',
-              }]
-            : []),
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => {
-              setMode(t.id as any);
-              if (t.id === 'member' && targetMemberId) {
-                fetchMemberHistory(targetMemberId);
-              }
-            }}
-            className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${
-              mode === t.id
-                ? 'border-primary text-primary'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {mode === 'mark' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-6">
-          <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
-             <div className="w-full sm:max-w-md">
-                <label className="block text-sm font-bold text-gray-700 mb-2">Select Event</label>
-                <select value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:border-accent bg-gray-50">
-                   <option value="">-- Choose an event --</option>
-                   {events.map(e => <option key={e.id} value={e.id}>{e.date} — {e.title} ({e.type})</option>)}
-                </select>
-             </div>
-             <button onClick={() => setIsQuickAddOpen(true)} className="text-primary font-medium text-sm flex items-center gap-1 hover:underline whitespace-nowrap mt-4 sm:mt-0 pt-6">
-                <CalendarPlus size={16} /> Quick Add Event
-             </button>
+    <div className="rac-admin-attendance">
+      <style>{`
+        .rac-admin-attendance, .rac-admin-attendance * {
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+        }
+        .rac-admin-attendance ::-webkit-scrollbar { display: none; }
+        .rac-admin-attendance select { color-scheme: ${dark ? 'dark' : 'light'}; }
+      `}</style>
+      <div style={{ background: p.bg, padding: 18, transition: 'background .25s' }} className="p-4 md:p-8 -m-4 md:-m-8">
+        <div style={{ maxWidth: 960, margin: '0 auto' }}>
+          {/* page-top */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12, padding: '0 2px', gap: 12 }}>
+            <span style={{ fontSize: 19, fontWeight: 600, color: p.ptxt, letterSpacing: '-.2px' }}>Attendance</span>
+            <span style={{ fontSize: 11, color: p.pmut, fontWeight: 500 }}>{tenant.id}</span>
           </div>
 
-          {selectedEventId && (
-            <div className="pt-6 border-t border-gray-100 space-y-4">
-               <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50 p-4 rounded-lg">
-                  <div className="flex gap-2 flex-wrap">
-                    <Button variant="outline" size="sm" onClick={() => setAll('P')}>Mark All Present</Button>
-                    <Button variant="outline" size="sm" onClick={() => setAll('A')}>Mark All Absent</Button>
-                    <Button variant="outline" size="sm" onClick={() => setAll(null)}>Clear All</Button>
-                  </div>
-                  <div className="text-sm font-bold text-gray-500">
-                    <span className="text-primary">{Object.values(attendanceSheet).filter(Boolean).length}</span> / {activeMembers.length} marked
-                  </div>
-               </div>
+          {/* mode tabs */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            {[
+              { id: 'mark', label: 'Mark Attendance' },
+              { id: 'history', label: 'Event History' },
+              ...(targetMemberId ? [{ id: 'member', label: targetMember?.name ? `${targetMember.name}'s History` : 'Member History' }] : []),
+              { id: 'analytics', label: 'Analytics' },
+            ].map((t) => (
+              <button
+                key={t.id}
+                onClick={() => { setMode(t.id as any); if (t.id === 'member' && targetMemberId) fetchMemberHistory(targetMemberId); }}
+                style={{
+                  ...pillBtn,
+                  background: mode === t.id ? p.green : 'none',
+                  color: mode === t.id ? '#1b0c12' : p.tmid,
+                  border: mode === t.id ? 'none' : `1px solid ${p.pillBorder}`,
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
 
-               <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
-                 {activeMembers.map(m => {
-                   const s = attendanceSheet[m.id];
-                   return (
-                     <div key={m.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:border-accent/30 transition-colors">
-                       <div className="flex items-center gap-3 w-1/2">
-                          {m.avatar ? <img src={m.avatar} className="w-8 h-8 rounded-full" /> : <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">{m.name?.substring(0,2)}</div>}
-                          <div className="min-w-0">
-                            <p className="font-bold text-gray-900 truncate">{m.name}</p>
-                            <p className="text-[10px] text-gray-500 truncate">{m.school}</p>
+          {/* ---------------- MARK ---------------- */}
+          {mode === 'mark' && (
+            <div style={card}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 14 }}>
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div style={{ fontSize: 10, color: p.tsub, fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.05em' }}>Select Event</div>
+                  <select value={selectedEventId} onChange={(e) => setSelectedEventId(e.target.value)} style={input}>
+                    <option value="">-- Choose an event --</option>
+                    {events.map((e) => (
+                      <option key={e.id} value={e.id}>{e.date} — {e.title} ({e.type}{e.sub_type ? ` · ${e.sub_type}` : ''})</option>
+                    ))}
+                  </select>
+                </div>
+                <button onClick={openAddEvent} style={{ ...solidBtn, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CalendarPlus size={14} /> Add Event
+                </button>
+              </div>
+
+              {selectedEventId && (() => {
+                const ev = events.find((e) => e.id === selectedEventId);
+                return (
+                  <div style={{ borderTop: `1px solid ${p.border}`, paddingTop: 14 }}>
+                    {/* XP reward summary for this event */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                      {STATUS_ORDER.map((s) => (
+                        <div key={s} style={{ fontSize: 10, color: p.tsub, background: p.lightCard, borderRadius: 20, padding: '4px 10px', fontWeight: 600 }}>
+                          {STATUS_META[s].label}: <span style={{ color: p.tl }}>{xpForStatus(ev, s)} XP</span>
+                        </div>
+                      ))}
+                      <button onClick={() => openEditEvent(ev)} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Pencil size={11} /> Edit Event
+                      </button>
+                    </div>
+
+                    {/* bulk actions */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', background: p.lightCard, borderRadius: 14, padding: 12, marginBottom: 12 }}>
+                      {STATUS_ORDER.map((s) => (
+                        <button key={s} onClick={() => setAll(s)} style={{ ...pillBtn, borderColor: p.pillBorder, color: p.tmid, background: 'transparent' }}>
+                          Mark All {STATUS_META[s].label}
+                        </button>
+                      ))}
+                      <button onClick={() => setAll(null)} style={pillBtn}>Clear All</button>
+                      <div style={{ flex: 1 }} />
+                      <div style={{ fontSize: 11, fontWeight: 700, color: p.tsub }}>
+                        <span style={{ color: p.green }}>{Object.values(sheet).filter(Boolean).length}</span> / {activeMembers.length} marked
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                      <select value={copyFromEventId} onChange={(e) => setCopyFromEventId(e.target.value)} style={{ ...input, width: 'auto', flex: 1, minWidth: 200 }}>
+                        <option value="">Copy unmarked from another event…</option>
+                        {events.filter((e) => e.id !== selectedEventId).map((e) => (
+                          <option key={e.id} value={e.id}>{e.date} — {e.title}</option>
+                        ))}
+                      </select>
+                      <button onClick={applyCopyFromEvent} disabled={!copyFromEventId} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 4, opacity: copyFromEventId ? 1 : 0.5 }}>
+                        <Copy size={11} /> Apply
+                      </button>
+                    </div>
+
+                    {selectedMemberIds.size > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', background: p.greenDeep, borderRadius: 14, padding: 10, marginBottom: 12 }}>
+                        <span style={{ fontSize: 11, color: p.recTx, fontWeight: 600 }}>{selectedMemberIds.size} selected —</span>
+                        {STATUS_ORDER.map((s) => (
+                          <button key={s} onClick={() => applyToSelected(s)} style={{ ...pillBtn, borderColor: p.recBd }}>{STATUS_META[s].label}</button>
+                        ))}
+                        <button onClick={() => setSelectedMemberIds(new Set())} style={{ ...pillBtn, marginLeft: 'auto' }}>Deselect</button>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 480, overflowY: 'auto', paddingRight: 4 }}>
+                      {activeMembers.map((m) => {
+                        const s = sheet[m.id];
+                        const checked = selectedMemberIds.has(m.id);
+                        return (
+                          <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 10px', borderRadius: 12, background: checked ? p.greenDeep : 'transparent', border: `1px solid ${p.border}` }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                              <input type="checkbox" checked={checked} onChange={() => toggleMember(m.id)} style={{ flexShrink: 0, accentColor: p.green }} />
+                              {m.avatar ? (
+                                <img src={m.avatar} style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0 }} />
+                              ) : (
+                                <div style={{ width: 30, height: 30, borderRadius: '50%', background: p.greenDeep, color: p.av2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 11, flexShrink: 0 }}>
+                                  {m.name?.substring(0, 2)}
+                                </div>
+                              )}
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 600, fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</div>
+                                <div style={{ fontSize: 9.5, color: p.tsub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.school}</div>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: 4, background: p.bg === '#0a0a0a' ? '#1a1a1a' : p.lightCard, padding: 3, borderRadius: 10, flexShrink: 0 }}>
+                              {STATUS_ORDER.map((st) => (
+                                <button
+                                  key={st}
+                                  onClick={() => setSheet({ ...sheet, [m.id]: st })}
+                                  title={STATUS_META[st].label}
+                                  style={{
+                                    width: 28, height: 28, borderRadius: 8, fontWeight: 700, fontSize: 11.5, border: 'none', cursor: 'pointer',
+                                    background: s === st ? p.green : 'transparent', color: s === st ? '#1b0c12' : p.tmid,
+                                  }}
+                                >
+                                  {STATUS_META[st].letter}
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                       </div>
-                       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg shrink-0">
-                         {['P','A','E','L'].map(st => (
-                           <button 
-                             key={st}
-                             onClick={() => setAttendanceSheet({...attendanceSheet, [m.id]: st})}
-                             className={`w-8 h-8 rounded-md font-bold text-sm border flex items-center justify-center transition-colors ${s === st ? getStatusColor(st) : 'bg-transparent text-gray-500 border-transparent hover:bg-gray-200'}`}
-                             title={st==='P'?'Present':st==='A'?'Absent':st==='E'?'Excused':'Late'}
-                           >
-                             {st}
-                           </button>
-                         ))}
-                       </div>
-                     </div>
-                   );
-                 })}
-               </div>
+                        );
+                      })}
+                    </div>
 
-               <div className="pt-6 border-t border-gray-100 flex justify-between items-center sticky bottom-0 bg-white p-4 -mx-6 -mb-6 border-t shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] rounded-b-xl z-10">
-                  <Button variant="outline" onClick={exportCurrentEvent}><Download size={16} className="mr-2"/> Export CSV</Button>
-                  <Button onClick={handleSaveAttendance} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Attendance'}</Button>
-               </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 14, borderTop: `1px solid ${p.border}` }}>
+                      <button onClick={exportCurrentEvent} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 5 }}><Download size={12} /> Export CSV</button>
+                      <button onClick={handleSaveAttendance} disabled={isSaving} style={{ ...solidBtn, opacity: isSaving ? 0.6 : 1 }}>{isSaving ? 'Saving…' : 'Save Attendance'}</button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
-        </div>
-      )}
 
-      {mode === 'history' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-1 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col max-h-[600px]">
-             <div className="p-4 border-b border-gray-100 bg-gray-50 font-bold text-gray-700 flex justify-between items-center">
-               Past Events
-               <button onClick={exportSummary} className="text-primary hover:underline text-xs flex items-center gap-1"><Download size={12}/> Summary</button>
-             </div>
-             <div className="overflow-y-auto flex-1 p-2 space-y-1">
-               {events.map(e => (
-                 <button 
-                   key={e.id}
-                   onClick={() => setHistoryEventId(e.id)}
-                   className={`w-full text-left p-3 rounded-lg border transition-colors ${historyEventId === e.id ? 'border-primary bg-primary/5' : 'border-transparent hover:bg-gray-50'}`}
-                 >
-                   <div className="font-bold text-gray-900 truncate">{e.title}</div>
-                   <div className="text-xs text-gray-500 mt-1">{e.date} • {e.type}</div>
-                 </button>
-               ))}
-             </div>
-          </div>
-          
-          <div className="md:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-6 min-h-[400px]">
-             {!historyEventId ? (
-               <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                  <CalendarDays size={48} className="mb-4 text-gray-300" />
-                  <p>Select an event to view attendance.</p>
-               </div>
-             ) : (
-               <div className="space-y-6">
-                 {/* Summary stats */}
-                 <div className="flex gap-4 p-4 bg-gray-50 rounded-lg">
-                   {['P','A','E','L'].map(s => (
-                     <div key={s} className="flex items-center gap-2">
-                       <span className={`w-3 h-3 rounded-full ${getStatusColor(s).split(' ')[0]}`}></span>
-                       <span className="font-bold text-gray-700">{historyRecords.filter(r => r.status === s).length}</span>
-                     </div>
-                   ))}
-                   <div className="ml-auto text-sm text-gray-500">Unmarked: {activeMembers.length - historyRecords.length}</div>
-                 </div>
-
-                 <div className="max-h-[450px] overflow-y-auto pr-2 divide-y divide-gray-100">
-                   {historyRecords.map((r, i) => {
-                     const m = activeMembers.find(x => x.id === r.userId);
-                     return (
-                       <div key={i} className="py-3 flex justify-between items-center">
-                         <div>
-                           <p className="font-bold text-sm text-gray-900">{m?.name || 'Unknown'}</p>
-                           <p className="text-xs text-gray-400">{m?.school || '...'}</p>
-                         </div>
-                         <div className={`px-3 py-1 rounded text-xs font-bold ${getStatusColor(r.status).replace('border-', '')}`}>
-                           {r.status === 'P' ? 'Present' : r.status==='A'?'Absent':r.status==='E'?'Excused':'Late'}
-                         </div>
-                       </div>
-                     )
-                   })}
-                   {historyRecords.length === 0 && <p className="text-center text-gray-400 py-8">No records for this event.</p>}
-                 </div>
-               </div>
-             )}
-          </div>
-        </div>
-      )}
-
-      {mode === 'member' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          {/* Member Header */}
-          <div className="p-6 border-b border-gray-100 flex items-center gap-4">
-            {targetMember?.photo ? (
-              <img
-                src={targetMember.photo}
-                alt={targetMember?.name}
-                className="w-14 h-14 rounded-full object-cover border-2 border-gray-200 shrink-0"
-              />
-            ) : (
-              <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg shrink-0">
-                {targetMember?.name?.substring(0, 2)?.toUpperCase() || '??'}
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-bold text-gray-900 truncate">
-                {targetMember?.name || 'Loading member...'}
-              </h2>
-              <p className="text-sm text-gray-500 truncate">{targetMember?.email || ''}</p>
-              {(targetMember?.school || targetMember?.grade) && (
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {targetMember.school}{targetMember.grade ? ` · Grade ${targetMember.grade}` : ''}
-                </p>
-              )}
-            </div>
-            <a
-              href="/admin/members"
-              className="text-sm text-primary hover:text-primary/80 font-medium whitespace-nowrap flex items-center gap-1 shrink-0"
-            >
-              ← Members
-            </a>
-          </div>
-
-          <div className="p-6">
-            {memberHistoryLoading ? (
-              <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin mb-3" />
-                <p className="text-sm">Loading attendance history...</p>
-              </div>
-            ) : (
-              <>
-                {/* Stats Row */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                  {[
-                    {
-                      label: 'Total Events',
-                      value: memberHistoryRecords.length,
-                      color: 'text-gray-800',
-                      bg: 'bg-gray-50',
-                    },
-                    {
-                      label: 'Present',
-                      value: memberHistoryRecords.filter((r: any) => r.status === 'P' || r.status === 'L').length,
-                      color: 'text-green-600',
-                      bg: 'bg-green-50',
-                    },
-                    {
-                      label: 'Absent',
-                      value: memberHistoryRecords.filter((r: any) => r.status === 'A').length,
-                      color: 'text-red-500',
-                      bg: 'bg-red-50',
-                    },
-                    {
-                      label: 'Attendance Rate',
-                      value: memberHistoryRecords.length > 0
-                        ? `${Math.round(
-                            (memberHistoryRecords.filter((r: any) => r.status === 'P' || r.status === 'L').length /
-                              memberHistoryRecords.length) *
-                              100
-                          )}%`
-                        : 'N/A',
-                      color: 'text-blue-600',
-                      bg: 'bg-blue-50',
-                    },
-                  ].map(stat => (
-                    <div key={stat.label} className={`${stat.bg} rounded-xl p-4 text-center border border-gray-100`}>
-                      <p className={`text-3xl font-bold font-heading ${stat.color}`}>{stat.value}</p>
-                      <p className="text-xs text-gray-400 uppercase tracking-wide mt-1">{stat.label}</p>
-                    </div>
+          {/* ---------------- HISTORY ---------------- */}
+          {mode === 'history' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 12 }} className="!grid-cols-1">
+              <div style={{ ...card, padding: 0, display: 'flex', flexDirection: 'column', maxHeight: 600 }}>
+                <div style={{ padding: '12px 14px', borderBottom: `1px solid ${p.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>Past Events</span>
+                  <button onClick={exportSummary} style={{ ...pillBtn, padding: '4px 9px', display: 'flex', alignItems: 'center', gap: 4 }}><Download size={11} /> Summary</button>
+                </div>
+                <div style={{ overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {events.map((e) => (
+                    <button key={e.id} onClick={() => setHistoryEventId(e.id)} style={{ textAlign: 'left', padding: 10, borderRadius: 12, border: `1px solid ${historyEventId === e.id ? p.green : 'transparent'}`, background: historyEventId === e.id ? p.greenDeep : 'transparent', cursor: 'pointer', color: p.tl }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.title}</div>
+                      <div style={{ fontSize: 10, color: p.tsub, marginTop: 3 }}>{e.date} · {e.type}{e.sub_type ? ` · ${e.sub_type}` : ''}</div>
+                    </button>
                   ))}
                 </div>
+              </div>
 
-                {/* Export + Records */}
-                {memberHistoryRecords.length > 0 && (
-                  <div className="flex justify-end mb-4">
-                    <Button
-                      variant="outline-dark"
-                      size="sm"
-                      onClick={() => {
-                        let csv = 'Event Title,Date,Type,Status\n';
-                        memberHistoryRecords.forEach((r: any) => {
-                          const statusLabel =
-                            r.status === 'P' ? 'Present' :
-                            r.status === 'A' ? 'Absent' :
-                            r.status === 'E' ? 'Excused' : 'Late';
-                          csv += `"${r.eventTitle || ''}","${r.eventDate || ''}","${r.eventType || ''}","${statusLabel}"\n`;
-                        });
-                        const blob = new Blob([csv], { type: 'text/csv' });
-                        const a = document.createElement('a');
-                        a.href = URL.createObjectURL(blob);
-                        a.download = `Attendance_${(targetMember?.name || 'member').replace(/\s+/g, '_')}.csv`;
-                        a.click();
-                      }}
-                    >
-                      <Download size={14} className="mr-1.5" /> Export CSV
-                    </Button>
+              <div style={{ ...card, minHeight: 400 }}>
+                {!historyEventId ? (
+                  <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: p.tsub, padding: '60px 0' }}>
+                    <CalendarDays size={40} style={{ opacity: 0.3, marginBottom: 10 }} />
+                    <p style={{ fontSize: 12 }}>Select an event to view attendance.</p>
+                  </div>
+                ) : (() => {
+                  const ev = events.find((e) => e.id === historyEventId);
+                  return (
+                    <>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14, alignItems: 'center' }}>
+                        {STATUS_ORDER.map((s) => (
+                          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6, background: p.lightCard, borderRadius: 20, padding: '5px 10px' }}>
+                            <span style={{ fontWeight: 700, fontSize: 11, color: p.td }}>{historyRecords.filter((r) => r.status === s).length}</span>
+                            <span style={{ fontSize: 9.5, color: p.mut }}>{STATUS_META[s].label}</span>
+                          </div>
+                        ))}
+                        <span style={{ fontSize: 10.5, color: p.tsub, marginLeft: 'auto' }}>Unmarked: {activeMembers.length - historyRecords.length}</span>
+                        <button onClick={() => openEditEvent(ev)} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 4 }}><Pencil size={11} /> Edit</button>
+                      </div>
+                      <div style={{ maxHeight: 440, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {historyRecords.map((r, i) => {
+                          const m = activeMembers.find((x) => x.id === r.userId);
+                          const st = r.status as Status;
+                          return (
+                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 4px', borderTop: i === 0 ? 'none' : `1px solid ${p.border}` }}>
+                              <div>
+                                <div style={{ fontWeight: 600, fontSize: 12 }}>{m?.name || 'Unknown'}</div>
+                                <div style={{ fontSize: 10, color: p.tsub }}>{m?.school || '…'}</div>
+                              </div>
+                              <span style={{ fontSize: 10, fontWeight: 700, background: p.lightCard, color: p.td, padding: '4px 10px', borderRadius: 20 }}>{STATUS_META[st]?.label || r.status}</span>
+                            </div>
+                          );
+                        })}
+                        {historyRecords.length === 0 && <p style={{ textAlign: 'center', color: p.tsub, padding: '30px 0', fontSize: 12 }}>No records for this event.</p>}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* ---------------- MEMBER ---------------- */}
+          {mode === 'member' && (
+            <div style={card}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, paddingBottom: 14, borderBottom: `1px solid ${p.border}` }}>
+                {targetMember?.photo ? (
+                  <img src={targetMember.photo} style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }} />
+                ) : (
+                  <div style={{ width: 48, height: 48, borderRadius: '50%', background: p.greenDeep, color: p.av2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+                    {targetMember?.name?.substring(0, 2)?.toUpperCase() || '??'}
                   </div>
                 )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{targetMember?.name || 'Loading…'}</div>
+                  <div style={{ fontSize: 11, color: p.tsub }}>{targetMember?.email}</div>
+                </div>
+                <a href="/admin/members" style={{ fontSize: 11, color: p.green, fontWeight: 600, textDecoration: 'none' }}>← Members</a>
+              </div>
 
-                {/* Records List */}
-                {memberHistoryRecords.length === 0 ? (
-                  <div className="text-center py-14 text-gray-400">
-                    <CalendarDays size={44} className="mx-auto mb-3 opacity-25" />
-                    <p className="font-medium">No attendance records found for this member.</p>
-                    <p className="text-sm mt-1 text-gray-400">Records appear here after an admin marks attendance for an event.</p>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-gray-50 max-h-[520px] overflow-y-auto">
-                    {memberHistoryRecords.map((r: any, i: number) => (
-                      <div key={i} className="py-3.5 flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-bold text-sm text-gray-900 truncate">{r.eventTitle}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            {r.eventDate
-                              ? new Date(r.eventDate + 'T00:00:00').toLocaleDateString('en-US', {
-                                  weekday: 'short',
-                                  year: 'numeric',
-                                  month: 'short',
-                                  day: 'numeric',
-                                })
-                              : 'Date not recorded'}
-                            {r.eventType ? ` · ${r.eventType}` : ''}
-                          </p>
-                        </div>
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-bold uppercase border shrink-0 ${getStatusColor(r.status)}`}
-                        >
-                          {r.status === 'P'
-                            ? 'Present'
-                            : r.status === 'A'
-                            ? 'Absent'
-                            : r.status === 'E'
-                            ? 'Excused'
-                            : 'Late'}
-                        </span>
+              {memberHistoryLoading ? (
+                <div style={{ padding: '40px 0', textAlign: 'center', color: p.tsub, fontSize: 12 }}>Loading…</div>
+              ) : (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }} className="!grid-cols-2">
+                    {[
+                      { label: 'Total Events', value: memberHistoryRecords.length },
+                      { label: 'Present', value: memberHistoryRecords.filter((r) => r.status === 'present' || r.status === 'late').length },
+                      { label: 'Absent', value: memberHistoryRecords.filter((r) => r.status === 'absent').length },
+                      { label: 'Rate', value: memberHistoryRecords.length ? `${Math.round((memberHistoryRecords.filter((r) => r.status === 'present' || r.status === 'late').length / memberHistoryRecords.length) * 100)}%` : 'N/A' },
+                    ].map((s) => (
+                      <div key={s.label} style={{ ...lightCard, textAlign: 'center', padding: 12 }}>
+                        <div style={{ fontSize: 22, fontWeight: 700 }}>{s.value}</div>
+                        <div style={{ fontSize: 9, color: p.mut, textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 3 }}>{s.label}</div>
                       </div>
                     ))}
                   </div>
-                )}
-              </>
-            )}
+                  {memberHistoryRecords.length === 0 ? (
+                    <p style={{ textAlign: 'center', color: p.tsub, padding: '30px 0', fontSize: 12 }}>No attendance records for this member.</p>
+                  ) : (
+                    <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+                      {memberHistoryRecords.map((r, i) => (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 2px', borderTop: i === 0 ? 'none' : `1px solid ${p.border}` }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 12 }}>{r.eventTitle}</div>
+                            <div style={{ fontSize: 10, color: p.tsub }}>{r.eventDate} {r.eventType ? `· ${r.eventType}` : ''}</div>
+                          </div>
+                          <span style={{ fontSize: 10, fontWeight: 700, background: p.lightCard, color: p.td, padding: '4px 10px', borderRadius: 20 }}>{STATUS_META[r.status as Status]?.label || r.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ---------------- ANALYTICS ---------------- */}
+          {mode === 'analytics' && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }} className="!grid-cols-2">
+                {[
+                  { label: 'Events Marked', value: analytics.eventsMarked, icon: CalendarDays },
+                  { label: 'Overall Rate', value: `${analytics.overallRate}%`, icon: TrendingUp },
+                  { label: 'Active Members', value: activeMembers.length, icon: Users },
+                  { label: 'XP Awarded', value: analytics.totalXP.toLocaleString(), icon: BarChart3 },
+                ].map((s) => (
+                  <div key={s.label} style={card}>
+                    <s.icon size={16} color={p.av2} style={{ marginBottom: 8 }} />
+                    <div style={{ fontSize: 21, fontWeight: 700 }}>{s.value}</div>
+                    <div style={{ fontSize: 9.5, color: p.tsub, marginTop: 2 }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ ...card, marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Attendance rate by event type</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {EVENT_TYPES.map((t) => {
+                    const d = analytics.byType[t] || { present: 0, total: 0 };
+                    const rate = d.total > 0 ? Math.round((d.present / d.total) * 100) : 0;
+                    return (
+                      <div key={t}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 5 }}>
+                          <span style={{ color: p.tl, fontWeight: 600 }}>{t}</span>
+                          <span style={{ color: p.tsub }}>{d.total > 0 ? `${rate}% · ${d.present}/${d.total}` : 'No data'}</span>
+                        </div>
+                        <div style={{ height: 6, background: p.border, borderRadius: 6, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${rate}%`, background: p.green, borderRadius: 6, transition: 'width .6s ease' }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }} className="!grid-cols-1">
+                <div style={card}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Top attendance</div>
+                  {analytics.memberRates.slice(0, 5).map((m) => (
+                    <div key={m.member.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderTop: `1px solid ${p.border}` }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 600 }}>{m.member.name}</span>
+                      <span style={{ fontSize: 11.5, color: p.green, fontWeight: 700 }}>{m.rate}%</span>
+                    </div>
+                  ))}
+                  {analytics.memberRates.length === 0 && <p style={{ fontSize: 11, color: p.tsub }}>No data yet.</p>}
+                </div>
+                <div style={card}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Needs follow-up</div>
+                  {analytics.memberRates.slice(-5).reverse().map((m) => (
+                    <div key={m.member.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderTop: `1px solid ${p.border}` }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 600 }}>{m.member.name}</span>
+                      <span style={{ fontSize: 11.5, color: '#e0726a', fontWeight: 700 }}>{m.rate}%</span>
+                    </div>
+                  ))}
+                  {analytics.memberRates.length === 0 && <p style={{ fontSize: 11, color: p.tsub }}>No data yet.</p>}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ---------------- ADD / EDIT EVENT MODAL ---------------- */}
+      {isEventModalOpen && (
+        <div
+          onClick={() => setIsEventModalOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>{editingEventId ? 'Edit Event' : 'Add Event'}</span>
+              <button onClick={() => setIsEventModalOpen(false)} style={{ background: 'none', border: 'none', color: p.tsub, cursor: 'pointer' }}><X size={18} /></button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 10, color: p.tsub, fontWeight: 600, display: 'block', marginBottom: 5 }}>Title</label>
+                <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} style={input} placeholder="e.g. Weekly Meeting" />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: p.tsub, fontWeight: 600, display: 'block', marginBottom: 5 }}>Date</label>
+                <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={input} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 10, color: p.tsub, fontWeight: 600, display: 'block', marginBottom: 5 }}>Type</label>
+                  <select
+                    value={form.type}
+                    onChange={(e) => {
+                      const type = e.target.value as EventType;
+                      setForm({ ...form, type, sub_type: SUB_TYPES[type][0] });
+                    }}
+                    style={input}
+                  >
+                    {EVENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, color: p.tsub, fontWeight: 600, display: 'block', marginBottom: 5 }}>Sub-type</label>
+                  <select value={form.sub_type} onChange={(e) => setForm({ ...form, sub_type: e.target.value })} style={input}>
+                    {SUB_TYPES[form.type].map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ borderTop: `1px solid ${p.border}`, paddingTop: 12, marginTop: 4 }}>
+                <label style={{ fontSize: 10, color: p.tsub, fontWeight: 600, display: 'block', marginBottom: 8 }}>Rewarded XP for Attendance</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {STATUS_ORDER.map((s) => (
+                    <div key={s}>
+                      <label style={{ fontSize: 9.5, color: p.tsub, display: 'block', marginBottom: 4 }}>{STATUS_META[s].letter} · {STATUS_META[s].label}</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={form[`xp_${s}` as keyof typeof form] as number}
+                        onChange={(e) => setForm({ ...form, [`xp_${s}`]: Number(e.target.value) })}
+                        style={input}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <button onClick={saveEvent} style={{ ...solidBtn, width: '100%', marginTop: 6, padding: '11px 0' }}>
+                {editingEventId ? 'Save Changes' : 'Create Event'}
+              </button>
+            </div>
           </div>
         </div>
       )}
-
-      {/* Quick Add Event Modal */}
-      <Modal isOpen={isQuickAddOpen} onClose={() => setIsQuickAddOpen(false)} title="Quick Add Event" size="sm">
-         <div className="space-y-4 mb-6">
-            <div><label className="block text-sm font-medium mb-1">Title</label><input value={quickEventTitle} onChange={e=>setQuickEventTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg" placeholder="e.g. Weekly Meeting" /></div>
-            <div><label className="block text-sm font-medium mb-1">Date</label><input type="date" value={quickEventDate} onChange={e=>setQuickEventDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
-         </div>
-         <Button onClick={handleQuickAddEvent} className="w-full">Create Event</Button>
-      </Modal>
-
     </div>
   );
 }
