@@ -224,8 +224,12 @@ export default function AdminMembers() {
 
     try {
       if (isNew) {
-        if (!data.email || !data.password) {
-          addToast('Email and password required for new members', 'error');
+        if (!data.email || !data.password || !data.name) {
+          addToast('Name, email, and password are required for new members', 'error');
+          return;
+        }
+        if (!data.role_id) {
+          addToast('Role is required for new members', 'error');
           return;
         }
         if (!data.joiningDate) {
@@ -249,7 +253,20 @@ export default function AdminMembers() {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + session?.access_token
           },
-          body: JSON.stringify({...dataToPersist, tenant_id: tenant.id})
+          // The create-member Edge Function validates a field literally
+          // named `role` (not `role_id`) — confirmed to expect the same
+          // UUID value as role_id, just under a different key. The rest
+          // of this app (filters, roleById lookups, the `users` table
+          // upsert below) all keys off `role_id`, so we send BOTH:
+          // `role` to satisfy the function's own validation, and
+          // `role_id` preserved for whatever the function does with the
+          // full payload afterward. Do not remove `role_id` from this
+          // body — only add `role` alongside it.
+          body: JSON.stringify({
+            ...dataToPersist,
+            tenant_id: tenant.id,
+            role: dataToPersist.role_id,
+          })
         });
 
         const resData = await res.json();
