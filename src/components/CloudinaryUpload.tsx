@@ -44,6 +44,13 @@ interface CloudinaryUploadProps {
  * browser/OS the instant any <input type="file"> is triggered, widget
  * or not. Removing the Cloudinary modal doesn't remove that screen;
  * it removes everything Cloudinary used to draw before and after it.
+ *
+ * LOCAL PREVIEW: single-image mode reads the picked file into a data
+ * URL via FileReader and shows it immediately, before the Cloudinary
+ * upload starts — no network round-trip needed to see what was picked.
+ * Multi-image mode does NOT have this yet (it would need an array of
+ * per-file thumbnails rather than one image swap, a bigger change);
+ * it still uploads directly with no local-preview step.
  * ------------------------------------------------------------------
  */
 export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
@@ -58,6 +65,7 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
 }) => {
   const displayLabel = buttonText || label || 'Upload Image';
   const [isUploading, setIsUploading] = useState(false);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
   const { addToast } = useToast();
 
   const uploadOne = async (file: File, cloudName: string, uploadPreset: string): Promise<{ url: string; publicId: string }> => {
@@ -88,6 +96,16 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
     return { url: data.secure_url, publicId: data.public_id };
   };
 
+  /** Reads a File into a data URL for instant local preview, independent of
+   * any network call. Wrapped in a Promise since FileReader is callback-based. */
+  const readAsDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     // Reset the input immediately so selecting the same file twice in a row
@@ -97,6 +115,22 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
     // than a .click()-triggering ref.
     e.target.value = '';
     if (!files || files.length === 0) return;
+
+    // LOCAL PREVIEW FIRST — shows the picked image immediately, entirely
+    // client-side, before any network call. This also means a visible
+    // preview is proof the change event fired and the file was actually
+    // received, independent of whether the Cloudinary upload that follows
+    // succeeds. Single-image mode only (see file-level note below for why
+    // multi-image mode isn't covered here).
+    if (!multiple) {
+      try {
+        const dataUrl = await readAsDataUrl(files[0]);
+        setLocalPreviewUrl(dataUrl);
+      } catch (err) {
+        console.error('Local preview read failed', err);
+        // Non-fatal — fall through and attempt the real upload anyway.
+      }
+    }
 
     const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
     const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
@@ -114,9 +148,17 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
       } else {
         const { url, publicId } = await uploadOne(files[0], cloudName, uploadPreset);
         onUpload(url, publicId);
+        // Real Cloudinary URL has taken over via the currentUrl prop on the
+        // next render — clear the local blob so it doesn't linger or fight
+        // with the real image.
+        setLocalPreviewUrl(null);
       }
     } catch (err: any) {
       addToast(err?.message || 'Upload failed. Check your Cloudinary preset is set to Unsigned.', 'error');
+      // Deliberately NOT clearing localPreviewUrl here — keeping the local
+      // preview visible after a failed upload lets the person see what they
+      // tried to upload while they retry, instead of snapping back to an
+      // empty state that looks like the selection itself was lost.
     } finally {
       setIsUploading(false);
     }
@@ -167,6 +209,12 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
     portrait: 'aspect-[3/4]',
   }[aspectRatio];
 
+  // Local preview takes priority while an upload is pending or just
+  // finished (before the parent's currentUrl prop has caught up); falls
+  // back to the real currentUrl once localPreviewUrl is cleared. Multi mode
+  // never sets this, so displayUrl there always resolves to currentUrl.
+  const displayUrl = localPreviewUrl || currentUrl;
+
   if (multiple) {
     return (
       <label
@@ -187,9 +235,14 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
 
   return (
     <div className="flex flex-col gap-2 w-full">
-      {currentUrl ? (
+      {displayUrl ? (
         <div className={`relative w-full ${ratioClass} bg-gray-100 rounded-lg overflow-hidden border border-gray-200 group`}>
-          <img src={currentUrl} alt="Preview" className="w-full h-full object-cover" />
+          <img src={displayUrl} alt="Preview" className="w-full h-full object-cover" />
+          {isUploading && (
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+              <Loader2 className="animate-spin text-white" size={28} />
+            </div>
+          )}
           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
             <button
               type="button"
@@ -216,6 +269,7 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
                   }
                 }
 
+                setLocalPreviewUrl(null);
                 onUpload('', '');
               }}
               className="p-2 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors shadow-lg"
