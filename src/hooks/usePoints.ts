@@ -68,6 +68,8 @@ export interface MemberPoints {
   level: number;
 }
 
+export type AttendanceStatus = 'present' | 'late' | 'excused' | 'absent';
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function usePoints() {
@@ -388,33 +390,72 @@ export function usePoints() {
   }, [adjustFundBalance, awardPoints, tenant.id]);
 
   // ── Award on Event Attendance ──────────────────────────────────────────────
+  // Reads per-status XP (event.xp_present/xp_late/xp_excused/xp_absent) rather
+  // than the old flat xp_reward/fp_reward — matches the rebuilt AdminAttendance
+  // event form ("Rewarded XP for Attendance" per P/L/E/A).
+  // Dedupes per (member, event, status) via source_id `${eventId}:${status}` —
+  // not per (member, event) — so correcting a mark (e.g. absent → present)
+  // awards/adjusts instead of silently no-op'ing against a stale ledger entry
+  // from the old status. If a prior award exists under a DIFFERENT status for
+  // the same event, that prior amount is reversed first so re-marking doesn't
+  // leave stale XP on the books.
 
   const awardAttendancePoints = useCallback(async (
     memberId: string,
-    eventId: string
+    eventId: string,
+    status: AttendanceStatus
   ): Promise<void> => {
     const { data: event } = await supabase
       .from('events')
-      .select('xp_reward, fp_reward')
+      .select('xp_present, xp_late, xp_excused, xp_absent')
       .eq('id', eventId)
       .single();
     if (!event) return;
 
-    const xp = event.xp_reward || 0;
-    const fp = event.fp_reward || 0;
-    if (xp === 0 && fp === 0) return;
+    const xpByStatus: Record<AttendanceStatus, number> = {
+      present: event.xp_present || 0,
+      late: event.xp_late || 0,
+      excused: event.xp_excused || 0,
+      absent: event.xp_absent || 0,
+    };
+    const xp = xpByStatus[status] || 0;
 
-    const { data: existing } = await supabase
+    const sourceId = `${eventId}:${status}`;
+
+    const { data: existingForStatus } = await supabase
       .from('point_ledger')
       .select('id')
       .eq('member_id', memberId)
       .eq('source_type', 'attendance')
-      .eq('source_id', eventId)
+      .eq('source_id', sourceId)
       .eq('tenant_id', tenant.id)
       .limit(1);
-    if (existing && existing.length > 0) return;
+    if (existingForStatus && existingForStatus.length > 0) return;
 
-    await awardPoints(memberId, xp, fp, 'attendance', eventId, 'Event attendance');
+    // Reverse any prior award for this member+event under a different status.
+    const { data: priorForEvent } = await supabase
+      .from('point_ledger')
+      .select('id, xp_delta, source_id')
+      .eq('member_id', memberId)
+      .eq('source_type', 'attendance')
+      .eq('tenant_id', tenant.id)
+      .like('source_id', `${eventId}:%`);
+
+    if (priorForEvent && priorForEvent.length > 0) {
+      for (const entry of priorForEvent) {
+        if (entry.xp_delta) {
+          await awardPoints(
+            memberId, -entry.xp_delta, 0, 'attendance',
+            `${entry.source_id}:reversed:${Date.now()}`,
+            'Attendance correction (reversal)'
+          );
+        }
+      }
+    }
+
+    if (xp !== 0) {
+      await awardPoints(memberId, xp, 0, 'attendance', sourceId, `Event attendance — ${status}`);
+    }
   }, [awardPoints, tenant.id]);
 
   return {
