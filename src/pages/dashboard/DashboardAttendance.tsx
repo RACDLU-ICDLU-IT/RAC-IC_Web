@@ -1,7 +1,10 @@
-// DASHBOARD_ATTENDANCE_VERSION = "v2-2026-07-17-1"
-// If this string isn't visible in your browser's page source / React DevTools
-// after saving, you're editing a file the router isn't rendering — check
-// the import path in whatever renders this route, not this file.
+// DASHBOARD_ATTENDANCE — member-facing, polished pass
+// Changes from v2: version tag removed from header; stats reflow to a
+// full-width rate bar above a 2×2 status grid (was 5 cramped columns —
+// screenshot showed "Rate" squeezed same-width as the other four when it
+// deserves visual priority as the headline number); filter bar restructured
+// from a wrapping row of unlabeled controls into a labeled two-row layout
+// with a real select-styled dropdown chevron and matched-height inputs.
 
 import { supabase } from '../../supabase';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -11,10 +14,8 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { getClubPalette } from '../../theme/racPalette';
 import {
   CheckCircle2, XCircle, Clock, MinusCircle, FileQuestion,
-  CalendarDays, List, ChevronLeft, ChevronRight, Search, X,
+  CalendarDays, List, ChevronLeft, ChevronRight, Search, X, ChevronDown,
 } from 'lucide-react';
-
-const ATTENDANCE_PAGE_VERSION = 'v2-2026-07-17-1';
 
 /* ---- font loader: identical pattern/id to DashboardHome.tsx, idempotent ---- */
 const INTER_FONT_URL = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
@@ -30,13 +31,9 @@ function useInterFont() {
   }, []);
 }
 
-/* ---- event taxonomy — duplicated from AdminAttendance.tsx (no shared
-   constants file exists yet in this codebase). ---- */
 const EVENT_TYPES = ['Meeting', 'Event', 'Project', 'Workshop'] as const;
 type EventType = typeof EVENT_TYPES[number];
 
-/* ---- status vocabulary: canonical full-word values, matching the unified
-   attendance.status column. ---- */
 type Status = 'present' | 'late' | 'excused' | 'absent';
 const STATUS_ORDER: Status[] = ['present', 'late', 'excused', 'absent'];
 const STATUS_ICON: Record<Status, React.ElementType> = {
@@ -127,10 +124,6 @@ export default function DashboardAttendance() {
   const dark = resolvedTheme === 'dark';
   const p = getClubPalette(tenant.id, dark ? 'dark' : 'light');
 
-  useEffect(() => {
-    console.log('[DashboardAttendance] version:', ATTENDANCE_PAGE_VERSION);
-  }, []);
-
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -204,14 +197,26 @@ export default function DashboardAttendance() {
   const darkCard: React.CSSProperties = { borderRadius: 20, padding: 16, background: p.dark, color: p.tl, border: `1px solid ${p.border}` };
   const lightCard: React.CSSProperties = { borderRadius: 20, padding: 16, background: p.lightCard, color: p.td };
   const pillBtn: React.CSSProperties = { border: `1px solid ${p.pillBorder}`, borderRadius: 20, fontSize: 10, padding: '6px 12px', color: p.tmid, background: 'none', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 };
-  const input: React.CSSProperties = { background: p.bg, color: p.tl, border: `1px solid ${p.border}`, borderRadius: 10, padding: '7px 10px', fontSize: 11.5, fontWeight: 500, outline: 'none' };
+
+  /* Filter-area tokens — a select needs its own wrapper (relative + custom
+     chevron overlay) since a plain <select> can't be given a right-aligned
+     icon without one; date inputs and the search box share `filterField`
+     directly since they don't need that wrapper. */
+  const filterField: React.CSSProperties = {
+    background: p.bg, color: p.tl, border: `1px solid ${p.border}`, borderRadius: 12,
+    padding: '10px 12px', fontSize: 12, fontWeight: 500, outline: 'none', height: 38, boxSizing: 'border-box',
+  };
+  const filterLabel: React.CSSProperties = {
+    fontSize: 9.5, color: p.tsub, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6, display: 'block',
+  };
 
   if (loading) {
     return (
       <div style={{ background: p.bg, padding: 18 }} className="p-4 md:p-8 -m-4 md:-m-8">
         <div style={{ maxWidth: 960, margin: '0 auto' }}>
           <div style={{ height: 96, borderRadius: 20, marginBottom: 12, background: p.dark, border: `1px solid ${p.border}`, opacity: 0.5 }} className="animate-pulse" />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 12 }} className="!grid-cols-2">
+          <div style={{ height: 90, borderRadius: 20, marginBottom: 12, background: p.dark, border: `1px solid ${p.border}`, opacity: 0.5 }} className="animate-pulse" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             {[0, 1, 2, 3].map((i) => (
               <div key={i} style={{ height: 90, borderRadius: 20, background: p.dark, border: `1px solid ${p.border}`, opacity: 0.5 }} className="animate-pulse" />
             ))}
@@ -230,12 +235,16 @@ export default function DashboardAttendance() {
         }
         .rac-member-attendance ::-webkit-scrollbar { display: none; }
         .rac-member-attendance input::placeholder { color: ${p.tsub}; }
+        .rac-attendance-select {
+          appearance: none; -webkit-appearance: none; -moz-appearance: none;
+          padding-right: 30px !important; width: 100%;
+        }
+        .rac-attendance-select::-ms-expand { display: none; }
       `}</style>
       <div style={{ background: p.bg, padding: 18, transition: 'background .25s' }} className="p-4 md:p-8 -m-4 md:-m-8">
         <div style={{ maxWidth: 960, margin: '0 auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12, padding: '0 2px', gap: 12 }}>
+          <div style={{ marginBottom: 12, padding: '0 2px' }}>
             <span style={{ fontSize: 19, fontWeight: 600, color: p.ptxt, letterSpacing: '-.2px' }}>Attendance</span>
-            <span style={{ fontSize: 9, color: p.tmid, fontWeight: 500, fontFamily: 'monospace' }} title="Build version">{ATTENDANCE_PAGE_VERSION}</span>
           </div>
 
           {error && (
@@ -245,33 +254,42 @@ export default function DashboardAttendance() {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }} className="!grid-cols-2 sm:!grid-cols-3 lg:!grid-cols-5">
-            <div style={{ ...darkCard, textAlign: 'center' }}>
-              <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-.3px', color: p.green }}>{stats.rate}%</div>
-              <div style={{ fontSize: 9, color: p.tsub, textTransform: 'uppercase', letterSpacing: '.06em', marginTop: 3 }}>Rate</div>
+          {/* ---- rate: full-width headline card, own visual tier above the 2×2 grid ---- */}
+          <div style={{ ...darkCard, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 9.5, color: p.tsub, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Attendance Rate</div>
+              <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: '-.5px', color: p.green, lineHeight: 1 }}>{stats.rate}%</div>
             </div>
+            {stats.total > 0 && (
+              <div style={{ flex: 1, maxWidth: 220 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: p.tsub, marginBottom: 7 }}>
+                  <span>{stats.attended}/{stats.total} events</span>
+                </div>
+                <div style={{ height: 6, background: p.border, borderRadius: 6, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${stats.rate}%`, background: p.green, borderRadius: 6, transition: 'width .7s ease' }} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ---- 2×2 status grid ---- */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             {STATUS_ORDER.map((s) => {
               const c = statusColor(p, s);
+              const Icon = STATUS_ICON[s];
               return (
-                <div key={s} style={{ ...lightCard, textAlign: 'center' }}>
-                  <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-.3px', color: c.fg }}>{stats[s]}</div>
-                  <div style={{ fontSize: 9, color: p.mut, textTransform: 'uppercase', letterSpacing: '.06em', marginTop: 3 }}>{STATUS_LABEL[s]}</div>
+                <div key={s} style={{ ...lightCard, display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: c.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Icon size={17} color={c.fg} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-.3px', color: c.fg, lineHeight: 1 }}>{stats[s]}</div>
+                    <div style={{ fontSize: 9.5, color: p.mut, textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 3 }}>{STATUS_LABEL[s]}</div>
+                  </div>
                 </div>
               );
             })}
           </div>
-
-          {stats.total > 0 && (
-            <div style={{ ...darkCard, marginBottom: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: p.tsub, marginBottom: 8 }}>
-                <span>Attendance progress</span>
-                <span>{stats.attended}/{stats.total} events</span>
-              </div>
-              <div style={{ height: 6, background: p.border, borderRadius: 6, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${stats.rate}%`, background: p.green, borderRadius: 6, transition: 'width .7s ease' }} />
-              </div>
-            </div>
-          )}
 
           {stats.total === 0 ? (
             <div style={{ ...darkCard, textAlign: 'center', padding: '48px 16px' }}>
@@ -281,23 +299,11 @@ export default function DashboardAttendance() {
             </div>
           ) : (
             <>
+              {/* ---- filter area: labeled two-row layout, matched-height fields ---- */}
               <div style={{ ...darkCard, marginBottom: 12 }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 160, background: p.bg, border: `1px solid ${p.border}`, borderRadius: 10, padding: '7px 10px' }}>
-                    <Search size={13} color={p.tsub} />
-                    <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search events…" style={{ border: 'none', background: 'none', outline: 'none', color: p.tl, fontSize: 11.5, width: '100%' }} />
-                  </div>
-                  <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)} style={input}>
-                    <option value="All">All types</option>
-                    {EVENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={input} />
-                  <span style={{ color: p.tsub, fontSize: 11 }}>–</span>
-                  <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={input} />
-                  {hasActiveFilters && (
-                    <button onClick={clearFilters} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 4 }}><X size={11} /> Clear</button>
-                  )}
-                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>Filter</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
                     <button onClick={() => setView('list')} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 5, background: view === 'list' ? p.green : 'none', color: view === 'list' ? '#1b0c12' : p.tmid, border: view === 'list' ? 'none' : `1px solid ${p.pillBorder}` }}>
                       <List size={12} /> List
                     </button>
@@ -306,11 +312,45 @@ export default function DashboardAttendance() {
                     </button>
                   </div>
                 </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <label style={filterLabel}>Search</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...filterField, padding: '0 12px' }}>
+                    <Search size={13} color={p.tsub} style={{ flexShrink: 0 }} />
+                    <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search events…" style={{ border: 'none', background: 'none', outline: 'none', color: p.tl, fontSize: 12, width: '100%', height: '100%' }} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }} className="sm:!grid-cols-3">
+                  <div>
+                    <label style={filterLabel}>Event type</label>
+                    <div style={{ position: 'relative' }}>
+                      <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)} style={filterField} className="rac-attendance-select">
+                        <option value="All">All types</option>
+                        {EVENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <ChevronDown size={14} color={p.tsub} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={filterLabel}>From</label>
+                    <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ ...filterField, width: '100%' }} />
+                  </div>
+                  <div>
+                    <label style={filterLabel}>To</label>
+                    <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ ...filterField, width: '100%' }} />
+                  </div>
+                </div>
+
                 {hasActiveFilters && (
-                  <div style={{ fontSize: 10, color: p.tsub, marginTop: 8 }}>{filtered.length} of {records.length} shown</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTop: `1px solid ${p.border}` }}>
+                    <span style={{ fontSize: 10, color: p.tsub }}>{filtered.length} of {records.length} shown</span>
+                    <button onClick={clearFilters} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 4 }}><X size={11} /> Clear filters</button>
+                  </div>
                 )}
               </div>
 
+              {/* ---------------- LIST VIEW ---------------- */}
               {view === 'list' && (
                 <div style={{ ...darkCard, padding: 0, overflow: 'hidden' }}>
                   {filtered.length === 0 ? (
@@ -349,6 +389,7 @@ export default function DashboardAttendance() {
                 </div>
               )}
 
+              {/* ---------------- CALENDAR VIEW ---------------- */}
               {view === 'calendar' && (
                 <div style={darkCard}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
