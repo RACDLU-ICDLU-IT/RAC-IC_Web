@@ -125,6 +125,12 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
     fileInputRef.current?.click();
   };
 
+  // NOT className="hidden" (display:none) on purpose — a display:none file
+  // input's onChange can silently fail to fire after a programmatic
+  // .click() on some mobile browsers/WebViews. This keeps the input
+  // technically present and interactive (required for the change event to
+  // reliably dispatch) while making it fully invisible and out of layout:
+  // 1px, clipped, absolutely positioned off-screen, zero opacity.
   const hiddenInput = (
     <input
       ref={fileInputRef}
@@ -132,7 +138,18 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
       accept="image/*"
       multiple={multiple}
       onChange={handleFilesSelected}
-      className="hidden"
+      style={{
+        position: 'absolute',
+        width: 1,
+        height: 1,
+        padding: 0,
+        margin: -1,
+        overflow: 'hidden',
+        clip: 'rect(0,0,0,0)',
+        whiteSpace: 'nowrap',
+        border: 0,
+        opacity: 0,
+      }}
     />
   );
 
