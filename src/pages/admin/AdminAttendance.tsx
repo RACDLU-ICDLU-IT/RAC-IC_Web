@@ -9,8 +9,10 @@ import { usePoints } from '../../hooks/usePoints';
 import { getClubPalette } from '../../theme/racPalette';
 import {
   Download, CalendarPlus, CalendarDays, X, Pencil, Copy, BarChart3,
-  Users, TrendingUp, ChevronDown,
+  Users, TrendingUp, Trash2, AlertTriangle,
 } from 'lucide-react';
+
+const ATTENDANCE_PAGE_VERSION = 'v3-2026-07-17-1';
 
 /* ---- font loader: same pattern/id as DashboardHome.tsx, idempotent ---- */
 const INTER_FONT_URL = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
@@ -47,11 +49,8 @@ const STATUS_META: Record<Status, { letter: string; label: string }> = {
   absent: { letter: 'A', label: 'Absent' },
 };
 
-type XPRewards = { xp_present: number; xp_late: number; xp_excused: number; xp_absent: number };
-const xpForStatus = (ev: any, status: Status) =>
-  Number(ev?.[`xp_${status}`] ?? 0);
+const xpForStatus = (ev: any, status: Status) => Number(ev?.[`xp_${status}`] ?? 0);
 
-/* ---- utils ---- */
 const uid = () => (crypto as any).randomUUID();
 function toCSV(rows: string[][]) {
   return rows.map((r) => r.map((c) => `"${(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -77,6 +76,10 @@ export default function AdminAttendance() {
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
   const p = getClubPalette(tenant.id, dark ? 'dark' : 'light');
+
+  useEffect(() => {
+    console.log('[AdminAttendance] version:', ATTENDANCE_PAGE_VERSION);
+  }, []);
 
   const [mode, setMode] = useState<'mark' | 'history' | 'member' | 'analytics'>('mark');
   const [loading, setLoading] = useState(true);
@@ -107,6 +110,11 @@ export default function AdminAttendance() {
     title: '', date: '', type: 'Meeting' as EventType, sub_type: SUB_TYPES.Meeting[0],
     xp_present: 0, xp_late: 0, xp_excused: 0, xp_absent: 0,
   });
+
+  /* delete event flow */
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   const loadBaseData = async () => {
     setLoading(true);
@@ -178,7 +186,12 @@ export default function AdminAttendance() {
     fetchMemberHistory(targetMemberId);
   }, [targetMemberId, loading, activeMembers.length]);
 
-  /* ---- mark: save + award XP ---- */
+  /* ---- mark: save + award XP ----
+     onConflict: 'id' — 'id' is deterministic (`${eventId}_${userId}`) and
+     already unique on its own; a compound 'id, tenant_id' target 400s unless
+     a matching compound unique constraint exists in Postgres, and even
+     whitespace-stripped ('id,tenant_id') it still requires that constraint
+     to exist. This was the bug behind the earlier save failures. */
   const handleSaveAttendance = async () => {
     if (!selectedEventId) return;
     setIsSaving(true);
@@ -195,14 +208,10 @@ export default function AdminAttendance() {
               eventTitle: ev?.title || 'Unknown Event', eventDate: ev?.date || '', eventType: ev?.type || '',
               status, markedAt: new Date().toISOString(), markedBy: user?.id,
             },
-            { onConflict: 'id, tenant_id' }
+            { onConflict: 'id' }
           )
         );
-        const amount = xpForStatus(ev, status as Status);
-        // Assumes awardAttendancePoints(userId, eventId, amount) — if the hook's
-        // current signature doesn't accept an amount, it needs a matching update
-        // so per-event/per-status XP config actually takes effect.
-        if (amount !== 0) awards.push(awardAttendancePoints(userId, selectedEventId, amount).catch(console.error));
+        awards.push(awardAttendancePoints(userId, selectedEventId, status as Status).catch(console.error));
       });
       await Promise.all(batch);
       await Promise.all(awards);
@@ -309,6 +318,95 @@ export default function AdminAttendance() {
     }
   };
 
+  /* ---- delete event ----
+     Order matters: reverse XP BEFORE deleting attendance rows, since the
+     reversal reads point_ledger by source_id (`${eventId}:${status}`) —
+     it doesn't need the attendance rows themselves, but doing this first
+     means a failure here still leaves attendance/event data intact to
+     retry against, rather than orphaning ledger entries with no event to
+     reference. awardPoints isn't exposed from usePoints for a direct XP
+     debit, so this writes the reversal ledger row directly via supabase
+     and updates users.xp inline — mirrors what awardPoints does internally,
+     scoped to XP only since attendance never touched FP. */
+  const requestDeleteEvent = (ev: any) => {
+    setDeleteTarget(ev);
+    setDeleteConfirmText('');
+  };
+
+  const confirmDeleteEvent = async () => {
+    if (!deleteTarget) return;
+    if (deleteConfirmText !== deleteTarget.title) {
+      addToast('Type the event title exactly to confirm', 'error');
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      const eventId = deleteTarget.id;
+
+      const { data: ledgerRows } = await supabase
+        .from('point_ledger')
+        .select('id, member_id, xp_delta, source_id')
+        .eq('tenant_id', tenant.id)
+        .eq('source_type', 'attendance')
+        .like('source_id', `${eventId}:%`);
+
+      const byMember = new Map<string, number>();
+      (ledgerRows || []).forEach((row: any) => {
+        if (!row.xp_delta) return;
+        byMember.set(row.member_id, (byMember.get(row.member_id) || 0) + row.xp_delta);
+      });
+
+      for (const [memberId, totalXp] of byMember.entries()) {
+        if (totalXp === 0) continue;
+        const { data: memberRow } = await supabase.from('users').select('xp').eq('id', memberId).single();
+        const currentXp = memberRow?.xp || 0;
+        const newXp = Math.max(0, currentXp - totalXp);
+
+        await supabase.from('point_ledger').insert({
+          id: uid(),
+          member_id: memberId,
+          tenant_id: tenant.id,
+          xp_delta: -totalXp,
+          fp_delta: 0,
+          source_type: 'attendance',
+          source_id: `${eventId}:deleted:${Date.now()}`,
+          note: `Event "${deleteTarget.title}" deleted — attendance XP reversed`,
+        });
+
+        const { data: levelData } = await supabase
+          .from('level_config')
+          .select('level, xp_required')
+          .eq('tenant_id', tenant.id)
+          .lte('xp_required', newXp)
+          .order('level', { ascending: false })
+          .limit(1);
+        const newLevel = levelData?.[0]?.level || 0;
+
+        await supabase.from('users').update({ xp: newXp, level: newLevel }).eq('id', memberId);
+      }
+
+      await supabase.from('attendance').delete().eq('tenant_id', tenant.id).eq('eventId', eventId);
+      await supabase.from('events').delete().eq('tenant_id', tenant.id).eq('id', eventId);
+
+      addToast(
+        byMember.size > 0
+          ? `Event deleted. XP reversed for ${byMember.size} member${byMember.size === 1 ? '' : 's'}.`
+          : 'Event deleted.',
+        'success'
+      );
+
+      if (selectedEventId === eventId) setSelectedEventId('');
+      if (historyEventId === eventId) { setHistoryEventId(''); setHistoryRecords([]); }
+      setDeleteTarget(null);
+      await loadBaseData();
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to delete event — some data may be partially cleaned up, check console', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   /* ---- analytics ---- */
   const analytics = useMemo(() => {
     const byType: Record<string, { present: number; total: number }> = {};
@@ -340,11 +438,12 @@ export default function AdminAttendance() {
     return { byType, memberRates, overallRate, totalXP, eventsMarked: new Set(allAttendance.map((r) => r.eventId)).size };
   }, [events, allAttendance, activeMembers]);
 
-  /* ---- style tokens (reused across cards) ---- */
+  /* ---- style tokens ---- */
   const card: React.CSSProperties = { borderRadius: 20, padding: 16, background: p.dark, color: p.tl, border: `1px solid ${p.border}` };
   const lightCard: React.CSSProperties = { borderRadius: 20, padding: 16, background: p.lightCard, color: p.td };
   const pillBtn: React.CSSProperties = { border: `1px solid ${p.pillBorder}`, borderRadius: 20, fontSize: 10, padding: '6px 12px', color: p.tmid, background: 'none', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 };
   const solidBtn: React.CSSProperties = { background: p.green, color: '#1b0c12', borderRadius: 20, fontSize: 11, fontWeight: 700, padding: '8px 16px', border: 'none', cursor: 'pointer' };
+  const dangerBtn: React.CSSProperties = { background: '#3a1a14', color: '#e08a72', borderRadius: 20, fontSize: 11, fontWeight: 700, padding: '8px 16px', border: '1px solid #5c2a20', cursor: 'pointer' };
   const input: React.CSSProperties = { width: '100%', background: p.lightCard, color: p.td, border: `1px solid ${p.border}`, borderRadius: 10, padding: '8px 10px', fontSize: 12, fontWeight: 500, outline: 'none' };
 
   if (loading) {
@@ -369,13 +468,11 @@ export default function AdminAttendance() {
       `}</style>
       <div style={{ background: p.bg, padding: 18, transition: 'background .25s' }} className="p-4 md:p-8 -m-4 md:-m-8">
         <div style={{ maxWidth: 960, margin: '0 auto' }}>
-          {/* page-top */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12, padding: '0 2px', gap: 12 }}>
             <span style={{ fontSize: 19, fontWeight: 600, color: p.ptxt, letterSpacing: '-.2px' }}>Attendance</span>
-            <span style={{ fontSize: 11, color: p.pmut, fontWeight: 500 }}>{tenant.id}</span>
+            <span style={{ fontSize: 9, color: p.tmid, fontWeight: 500, fontFamily: 'monospace' }} title="Build version">{ATTENDANCE_PAGE_VERSION}</span>
           </div>
 
-          {/* mode tabs */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
             {[
               { id: 'mark', label: 'Mark Attendance' },
@@ -420,19 +517,20 @@ export default function AdminAttendance() {
                 const ev = events.find((e) => e.id === selectedEventId);
                 return (
                   <div style={{ borderTop: `1px solid ${p.border}`, paddingTop: 14 }}>
-                    {/* XP reward summary for this event */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14, alignItems: 'center' }}>
                       {STATUS_ORDER.map((s) => (
                         <div key={s} style={{ fontSize: 10, color: p.tsub, background: p.lightCard, borderRadius: 20, padding: '4px 10px', fontWeight: 600 }}>
                           {STATUS_META[s].label}: <span style={{ color: p.tl }}>{xpForStatus(ev, s)} XP</span>
                         </div>
                       ))}
                       <button onClick={() => openEditEvent(ev)} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Pencil size={11} /> Edit Event
+                        <Pencil size={11} /> Edit
+                      </button>
+                      <button onClick={() => requestDeleteEvent(ev)} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 4, borderColor: '#5c2a20', color: '#e08a72' }}>
+                        <Trash2 size={11} /> Delete
                       </button>
                     </div>
 
-                    {/* bulk actions */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', background: p.lightCard, borderRadius: 14, padding: 12, marginBottom: 12 }}>
                       {STATUS_ORDER.map((s) => (
                         <button key={s} onClick={() => setAll(s)} style={{ ...pillBtn, borderColor: p.pillBorder, color: p.tmid, background: 'transparent' }}>
@@ -528,10 +626,18 @@ export default function AdminAttendance() {
                 </div>
                 <div style={{ overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {events.map((e) => (
-                    <button key={e.id} onClick={() => setHistoryEventId(e.id)} style={{ textAlign: 'left', padding: 10, borderRadius: 12, border: `1px solid ${historyEventId === e.id ? p.green : 'transparent'}`, background: historyEventId === e.id ? p.greenDeep : 'transparent', cursor: 'pointer', color: p.tl }}>
-                      <div style={{ fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.title}</div>
-                      <div style={{ fontSize: 10, color: p.tsub, marginTop: 3 }}>{e.date} · {e.type}{e.sub_type ? ` · ${e.sub_type}` : ''}</div>
-                    </button>
+                    <div
+                      key={e.id}
+                      style={{ display: 'flex', alignItems: 'center', gap: 6, borderRadius: 12, border: `1px solid ${historyEventId === e.id ? p.green : 'transparent'}`, background: historyEventId === e.id ? p.greenDeep : 'transparent' }}
+                    >
+                      <button onClick={() => setHistoryEventId(e.id)} style={{ flex: 1, textAlign: 'left', padding: 10, background: 'none', border: 'none', cursor: 'pointer', color: p.tl, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.title}</div>
+                        <div style={{ fontSize: 10, color: p.tsub, marginTop: 3 }}>{e.date} · {e.type}{e.sub_type ? ` · ${e.sub_type}` : ''}</div>
+                      </button>
+                      <button onClick={() => requestDeleteEvent(e)} title="Delete event" style={{ background: 'none', border: 'none', color: p.tsub, cursor: 'pointer', padding: 8, flexShrink: 0 }}>
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -555,6 +661,7 @@ export default function AdminAttendance() {
                         ))}
                         <span style={{ fontSize: 10.5, color: p.tsub, marginLeft: 'auto' }}>Unmarked: {activeMembers.length - historyRecords.length}</span>
                         <button onClick={() => openEditEvent(ev)} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 4 }}><Pencil size={11} /> Edit</button>
+                        <button onClick={() => requestDeleteEvent(ev)} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 4, borderColor: '#5c2a20', color: '#e08a72' }}><Trash2 size={11} /> Delete</button>
                       </div>
                       <div style={{ maxHeight: 440, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
                         {historyRecords.map((r, i) => {
@@ -763,6 +870,54 @@ export default function AdminAttendance() {
 
               <button onClick={saveEvent} style={{ ...solidBtn, width: '100%', marginTop: 6, padding: '11px 0' }}>
                 {editingEventId ? 'Save Changes' : 'Create Event'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------- DELETE CONFIRM MODAL ----------------
+          Type-to-confirm on the exact title — this is destructive and
+          irreversible (attendance rows + XP are both gone), so a plain
+          Yes/No button is too easy to misclick past. */}
+      {deleteTarget && (
+        <div
+          onClick={() => !isDeleting && setDeleteTarget(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110, padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: '100%', maxWidth: 420 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: '#3a1a14', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <AlertTriangle size={17} color="#e08a72" />
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>Delete "{deleteTarget.title}"?</span>
+            </div>
+
+            <p style={{ fontSize: 11.5, color: p.tsub, lineHeight: 1.5, marginBottom: 14 }}>
+              This permanently deletes the event and all its attendance records.
+              Any XP members earned from this event's attendance will be reversed
+              from their totals. This cannot be undone.
+            </p>
+
+            <label style={{ fontSize: 10, color: p.tsub, fontWeight: 600, display: 'block', marginBottom: 6 }}>
+              Type <b style={{ color: p.tl }}>{deleteTarget.title}</b> to confirm
+            </label>
+            <input
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              style={{ ...input, marginBottom: 16 }}
+              placeholder={deleteTarget.title}
+              autoFocus
+            />
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setDeleteTarget(null)} disabled={isDeleting} style={pillBtn}>Cancel</button>
+              <button
+                onClick={confirmDeleteEvent}
+                disabled={isDeleting || deleteConfirmText !== deleteTarget.title}
+                style={{ ...dangerBtn, opacity: isDeleting || deleteConfirmText !== deleteTarget.title ? 0.5 : 1 }}
+              >
+                {isDeleting ? 'Deleting…' : 'Delete Event'}
               </button>
             </div>
           </div>
