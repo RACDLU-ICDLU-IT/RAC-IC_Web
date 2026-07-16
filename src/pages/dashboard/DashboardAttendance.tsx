@@ -1,3 +1,8 @@
+// DASHBOARD_ATTENDANCE_VERSION = "v2-2026-07-17-1"
+// If this string isn't visible in your browser's page source / React DevTools
+// after saving, you're editing a file the router isn't rendering — check
+// the import path in whatever renders this route, not this file.
+
 import { supabase } from '../../supabase';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -8,6 +13,8 @@ import {
   CheckCircle2, XCircle, Clock, MinusCircle, FileQuestion,
   CalendarDays, List, ChevronLeft, ChevronRight, Search, X,
 } from 'lucide-react';
+
+const ATTENDANCE_PAGE_VERSION = 'v2-2026-07-17-1';
 
 /* ---- font loader: identical pattern/id to DashboardHome.tsx, idempotent ---- */
 const INTER_FONT_URL = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
@@ -24,13 +31,12 @@ function useInterFont() {
 }
 
 /* ---- event taxonomy — duplicated from AdminAttendance.tsx (no shared
-   constants file exists yet in this codebase). Worth extracting to e.g.
-   src/constants/events.ts if these two files keep needing to stay in sync. */
+   constants file exists yet in this codebase). ---- */
 const EVENT_TYPES = ['Meeting', 'Event', 'Project', 'Workshop'] as const;
 type EventType = typeof EVENT_TYPES[number];
 
 /* ---- status vocabulary: canonical full-word values, matching the unified
-   attendance.status column (see admin-side migration). ---- */
+   attendance.status column. ---- */
 type Status = 'present' | 'late' | 'excused' | 'absent';
 const STATUS_ORDER: Status[] = ['present', 'late', 'excused', 'absent'];
 const STATUS_ICON: Record<Status, React.ElementType> = {
@@ -40,11 +46,6 @@ const STATUS_LABEL: Record<Status, string> = {
   present: 'Present', late: 'Late', excused: 'Excused', absent: 'Absent',
 };
 
-/* Colors: present/late reuse real palette tokens (brand accent + its
-   lighter variant). excused/absent are NOT in racPalette.ts — these are new
-   fixed tokens. Absent reuses the exact red already established by
-   DashboardHome.tsx's own error banner for consistency; excused is a new
-   low-saturation amber with no existing precedent in this codebase. */
 const FIXED_ABSENT = '#e08a72';
 const FIXED_ABSENT_BG = '#3a1a14';
 const FIXED_EXCUSED = '#c9a45c';
@@ -96,7 +97,7 @@ async function loadMemberAttendance(tenantId: string, userId: string): Promise<A
 /* ------------------------------- calendar helpers ------------------------------- */
 
 function buildMonthGrid(year: number, month: number) {
-  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+  const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells: (number | null)[] = [];
   for (let i = 0; i < firstDay; i++) cells.push(null);
@@ -125,6 +126,10 @@ export default function DashboardAttendance() {
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
   const p = getClubPalette(tenant.id, dark ? 'dark' : 'light');
+
+  useEffect(() => {
+    console.log('[DashboardAttendance] version:', ATTENDANCE_PAGE_VERSION);
+  }, []);
 
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -169,9 +174,6 @@ export default function DashboardAttendance() {
   const hasActiveFilters = typeFilter !== 'All' || dateFrom || dateTo || search;
   const clearFilters = () => { setTypeFilter('All'); setDateFrom(''); setDateTo(''); setSearch(''); };
 
-  /* stats always computed over the FULL record set, not the filtered view —
-     filters narrow what you're browsing, they shouldn't silently change what
-     your attendance rate says. */
   const stats = useMemo(() => {
     const present = records.filter((r) => r.status === 'present').length;
     const late = records.filter((r) => r.status === 'late').length;
@@ -199,7 +201,6 @@ export default function DashboardAttendance() {
   const today = todayISO();
   const selectedDayRecords = selectedDay ? recordsByDate.get(selectedDay) || [] : [];
 
-  /* ---- shared style tokens, mirroring DashboardHome/AdminAttendance ---- */
   const darkCard: React.CSSProperties = { borderRadius: 20, padding: 16, background: p.dark, color: p.tl, border: `1px solid ${p.border}` };
   const lightCard: React.CSSProperties = { borderRadius: 20, padding: 16, background: p.lightCard, color: p.td };
   const pillBtn: React.CSSProperties = { border: `1px solid ${p.pillBorder}`, borderRadius: 20, fontSize: 10, padding: '6px 12px', color: p.tmid, background: 'none', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 };
@@ -232,10 +233,9 @@ export default function DashboardAttendance() {
       `}</style>
       <div style={{ background: p.bg, padding: 18, transition: 'background .25s' }} className="p-4 md:p-8 -m-4 md:-m-8">
         <div style={{ maxWidth: 960, margin: '0 auto' }}>
-          {/* page-top */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12, padding: '0 2px', gap: 12 }}>
             <span style={{ fontSize: 19, fontWeight: 600, color: p.ptxt, letterSpacing: '-.2px' }}>Attendance</span>
-            <span style={{ fontSize: 11, color: p.pmut, fontWeight: 500 }}>{stats.total} record{stats.total === 1 ? '' : 's'}</span>
+            <span style={{ fontSize: 9, color: p.tmid, fontWeight: 500, fontFamily: 'monospace' }} title="Build version">{ATTENDANCE_PAGE_VERSION}</span>
           </div>
 
           {error && (
@@ -245,7 +245,6 @@ export default function DashboardAttendance() {
             </div>
           )}
 
-          {/* stats row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }} className="!grid-cols-2 sm:!grid-cols-3 lg:!grid-cols-5">
             <div style={{ ...darkCard, textAlign: 'center' }}>
               <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-.3px', color: p.green }}>{stats.rate}%</div>
@@ -262,7 +261,6 @@ export default function DashboardAttendance() {
             })}
           </div>
 
-          {/* progress bar */}
           {stats.total > 0 && (
             <div style={{ ...darkCard, marginBottom: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: p.tsub, marginBottom: 8 }}>
@@ -283,7 +281,6 @@ export default function DashboardAttendance() {
             </div>
           ) : (
             <>
-              {/* filter/search bar */}
               <div style={{ ...darkCard, marginBottom: 12 }}>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 160, background: p.bg, border: `1px solid ${p.border}`, borderRadius: 10, padding: '7px 10px' }}>
@@ -314,7 +311,6 @@ export default function DashboardAttendance() {
                 )}
               </div>
 
-              {/* ---------------- LIST VIEW ---------------- */}
               {view === 'list' && (
                 <div style={{ ...darkCard, padding: 0, overflow: 'hidden' }}>
                   {filtered.length === 0 ? (
@@ -353,7 +349,6 @@ export default function DashboardAttendance() {
                 </div>
               )}
 
-              {/* ---------------- CALENDAR VIEW ---------------- */}
               {view === 'calendar' && (
                 <div style={darkCard}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -394,7 +389,6 @@ export default function DashboardAttendance() {
                     })}
                   </div>
 
-                  {/* legend — mirrors DashboardHome's attendance-rate timeline legend */}
                   <div style={{ display: 'flex', gap: 14, marginTop: 16, paddingTop: 14, borderTop: `1px solid ${p.border}`, flexWrap: 'wrap' }}>
                     {STATUS_ORDER.map((s) => {
                       const c = statusColor(p, s);
@@ -407,7 +401,6 @@ export default function DashboardAttendance() {
                     })}
                   </div>
 
-                  {/* selected-day detail */}
                   {selectedDay && selectedDayRecords.length > 0 && (
                     <div style={{ marginTop: 14, background: p.lightCard, borderRadius: 14, padding: 12 }}>
                       <div style={{ fontSize: 10.5, color: p.mut, fontWeight: 600, marginBottom: 8 }}>
