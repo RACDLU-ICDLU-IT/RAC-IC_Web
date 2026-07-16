@@ -59,7 +59,6 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
   const displayLabel = buttonText || label || 'Upload Image';
   const [isUploading, setIsUploading] = useState(false);
   const { addToast } = useToast();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const uploadOne = async (file: File, cloudName: string, uploadPreset: string): Promise<{ url: string; publicId: string }> => {
     const formData = new FormData();
@@ -93,8 +92,10 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
     const files = e.target.files;
     // Reset the input immediately so selecting the same file twice in a row
     // still fires this handler (browsers don't fire onChange for an
-    // unchanged value otherwise).
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    // unchanged value otherwise). Reset via the event's own target — no
+    // ref needed now that the input is wired through id/htmlFor rather
+    // than a .click()-triggering ref.
+    e.target.value = '';
     if (!files || files.length === 0) return;
 
     const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
@@ -121,35 +122,42 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
     }
   };
 
-  const triggerPicker = () => {
-    fileInputRef.current?.click();
-  };
+  // ------------------------------------------------------------------
+  // Second iteration of the hidden-input approach. The first version
+  // used a JS `.click()` on a CSS-clipped/absolutely-positioned input
+  // (via fileInputRef) — confirmed via a raw addEventListener test (no
+  // React involved) to silently fail to deliver `change` at all on the
+  // device this was tested on, despite the OS picker completing
+  // normally. That rules out React's synthetic events and this file's
+  // own logic as the cause; the failure was in the click()+CSS-hiding
+  // mechanism itself on that Chromium build.
+  //
+  // This version removes both suspects at once: no programmatic
+  // .click() call (so there's no user-gesture-chain to break), and no
+  // CSS technique that hides the input from computed-visibility checks
+  // (clip-rect/1px/opacity:0 previously; that combination can be
+  // treated as "not interactable" by some Android WebView builds even
+  // though it isn't display:none).
+  //
+  // Instead: a native <label htmlFor="..."> wraps the *visible* button
+  // styling, associated with a real <input> that sits underneath it
+  // via z-index stacking rather than clipping. The browser's own
+  // label→input activation opens the picker — no JS click(), no CSS
+  // visibility hack for Chromium to second-guess. The input is
+  // functionally invisible (fully covered by the styled label content
+  // and 0-size relative to it) without relying on opacity/clip/absolute
+  // positioning tricks.
+  // ------------------------------------------------------------------
+  const inputId = useRef(`cloudinary-upload-${Math.random().toString(36).slice(2)}`).current;
 
-  // NOT className="hidden" (display:none) on purpose — a display:none file
-  // input's onChange can silently fail to fire after a programmatic
-  // .click() on some mobile browsers/WebViews. This keeps the input
-  // technically present and interactive (required for the change event to
-  // reliably dispatch) while making it fully invisible and out of layout:
-  // 1px, clipped, absolutely positioned off-screen, zero opacity.
-  const hiddenInput = (
+  const realInput = (
     <input
-      ref={fileInputRef}
+      id={inputId}
       type="file"
       accept="image/*"
       multiple={multiple}
       onChange={handleFilesSelected}
-      style={{
-        position: 'absolute',
-        width: 1,
-        height: 1,
-        padding: 0,
-        margin: -1,
-        overflow: 'hidden',
-        clip: 'rect(0,0,0,0)',
-        whiteSpace: 'nowrap',
-        border: 0,
-        opacity: 0,
-      }}
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
     />
   );
 
@@ -161,24 +169,24 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
 
   if (multiple) {
     return (
-      <>
-        {hiddenInput}
-        <button
-          type="button"
-          onClick={triggerPicker}
-          disabled={isUploading}
+      <label
+        htmlFor={inputId}
+        style={{ position: 'relative', display: 'block' }}
+        className={isUploading ? 'pointer-events-none' : ''}
+      >
+        {realInput}
+        <span
           className="w-full flex items-center justify-center gap-2 py-3 px-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
         >
           {isUploading ? <Loader2 className="animate-spin" size={20} /> : <UploadCloud size={20} />}
           <span className="font-medium">{isUploading ? 'Uploading...' : displayLabel}</span>
-        </button>
-      </>
+        </span>
+      </label>
     );
   }
 
   return (
     <div className="flex flex-col gap-2 w-full">
-      {hiddenInput}
       {currentUrl ? (
         <div className={`relative w-full ${ratioClass} bg-gray-100 rounded-lg overflow-hidden border border-gray-200 group`}>
           <img src={currentUrl} alt="Preview" className="w-full h-full object-cover" />
@@ -218,15 +226,18 @@ export const CloudinaryUpload: React.FC<CloudinaryUploadProps> = ({
           </div>
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={triggerPicker}
-          disabled={isUploading}
-          className={`w-full ${ratioClass} flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-accent hover:text-accent hover:bg-accent/5 transition-colors disabled:opacity-50`}
+        <label
+          htmlFor={inputId}
+          style={{ position: 'relative', display: 'block' }}
         >
-          {isUploading ? <Loader2 className="animate-spin" size={32} /> : <UploadCloud size={32} />}
-          <span className="font-medium">{isUploading ? 'Uploading...' : displayLabel}</span>
-        </button>
+          {realInput}
+          <span
+            className={`w-full ${ratioClass} flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-accent hover:text-accent hover:bg-accent/5 transition-colors ${isUploading ? 'opacity-50' : ''}`}
+          >
+            {isUploading ? <Loader2 className="animate-spin" size={32} /> : <UploadCloud size={32} />}
+            <span className="font-medium">{isUploading ? 'Uploading...' : displayLabel}</span>
+          </span>
+        </label>
       )}
     </div>
   );
