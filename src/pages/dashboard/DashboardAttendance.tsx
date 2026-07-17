@@ -1,11 +1,3 @@
-// DASHBOARD_ATTENDANCE — member-facing, polished pass
-// Changes from v2: version tag removed from header; stats reflow to a
-// full-width rate bar above a 2×2 status grid (was 5 cramped columns —
-// screenshot showed "Rate" squeezed same-width as the other four when it
-// deserves visual priority as the headline number); filter bar restructured
-// from a wrapping row of unlabeled controls into a labeled two-row layout
-// with a real select-styled dropdown chevron and matched-height inputs.
-
 import { supabase } from '../../supabase';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -14,7 +6,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { getClubPalette } from '../../theme/racPalette';
 import {
   CheckCircle2, XCircle, Clock, MinusCircle, FileQuestion,
-  CalendarDays, List, ChevronLeft, ChevronRight, Search, X, ChevronDown,
+  CalendarDays, List, ChevronLeft, ChevronRight, Search, X, ChevronDown, Ban,
 } from 'lucide-react';
 
 /* ---- font loader: identical pattern/id to DashboardHome.tsx, idempotent ---- */
@@ -34,7 +26,12 @@ function useInterFont() {
 const EVENT_TYPES = ['Meeting', 'Event', 'Project', 'Workshop'] as const;
 type EventType = typeof EVENT_TYPES[number];
 
+/* ---- status: 4 XP-bearing statuses + 'not_required', matching
+   AdminAttendance.tsx exactly. not_required is excluded from every rate/
+   count calculation on this page — same principle as the admin side's
+   analytics and member-history views. ---- */
 type Status = 'present' | 'late' | 'excused' | 'absent';
+type MarkValue = Status | 'not_required';
 const STATUS_ORDER: Status[] = ['present', 'late', 'excused', 'absent'];
 const STATUS_ICON: Record<Status, React.ElementType> = {
   present: CheckCircle2, late: MinusCircle, excused: Clock, absent: XCircle,
@@ -59,7 +56,7 @@ type AttendanceRecord = {
   id: string;
   userId: string;
   eventId: string;
-  status: Status | string;
+  status: MarkValue | string;
   eventTitle: string;
   eventDate: string;
   eventType: string;
@@ -167,15 +164,20 @@ export default function DashboardAttendance() {
   const hasActiveFilters = typeFilter !== 'All' || dateFrom || dateTo || search;
   const clearFilters = () => { setTypeFilter('All'); setDateFrom(''); setDateTo(''); setSearch(''); };
 
+  /* stats: not_required is tracked separately and excluded from `total`
+     (the rate denominator) and from `attended` — same rule as the admin
+     side's analytics and member-history calculations. Always computed
+     over the full record set, not the filtered view. */
   const stats = useMemo(() => {
     const present = records.filter((r) => r.status === 'present').length;
     const late = records.filter((r) => r.status === 'late').length;
     const excused = records.filter((r) => r.status === 'excused').length;
     const absent = records.filter((r) => r.status === 'absent').length;
-    const total = records.length;
+    const notRequired = records.filter((r) => r.status === 'not_required').length;
+    const total = present + late + excused + absent; // not_required excluded
     const attended = present + late;
     const rate = total > 0 ? Math.round((attended / total) * 100) : 0;
-    return { present, late, excused, absent, total, attended, rate };
+    return { present, late, excused, absent, notRequired, total, attended, rate };
   }, [records]);
 
   const recordsByDate = useMemo(() => {
@@ -198,10 +200,6 @@ export default function DashboardAttendance() {
   const lightCard: React.CSSProperties = { borderRadius: 20, padding: 16, background: p.lightCard, color: p.td };
   const pillBtn: React.CSSProperties = { border: `1px solid ${p.pillBorder}`, borderRadius: 20, fontSize: 10, padding: '6px 12px', color: p.tmid, background: 'none', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 };
 
-  /* Filter-area tokens — a select needs its own wrapper (relative + custom
-     chevron overlay) since a plain <select> can't be given a right-aligned
-     icon without one; date inputs and the search box share `filterField`
-     directly since they don't need that wrapper. */
   const filterField: React.CSSProperties = {
     background: p.bg, color: p.tl, border: `1px solid ${p.border}`, borderRadius: 12,
     padding: '10px 12px', fontSize: 12, fontWeight: 500, outline: 'none', height: 38, boxSizing: 'border-box',
@@ -254,7 +252,7 @@ export default function DashboardAttendance() {
             </div>
           )}
 
-          {/* ---- rate: full-width headline card, own visual tier above the 2×2 grid ---- */}
+          {/* ---- rate: full-width headline card ---- */}
           <div style={{ ...darkCard, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
             <div>
               <div style={{ fontSize: 9.5, color: p.tsub, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Attendance Rate</div>
@@ -273,7 +271,7 @@ export default function DashboardAttendance() {
           </div>
 
           {/* ---- 2×2 status grid ---- */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: stats.notRequired > 0 ? 8 : 12 }}>
             {STATUS_ORDER.map((s) => {
               const c = statusColor(p, s);
               const Icon = STATUS_ICON[s];
@@ -291,7 +289,16 @@ export default function DashboardAttendance() {
             })}
           </div>
 
-          {stats.total === 0 ? (
+          {/* not_required note — only shown when relevant, kept out of the
+              2x2 grid itself since it isn't part of the rate and shouldn't
+              visually compete with the four statuses that are. */}
+          {stats.notRequired > 0 && (
+            <div style={{ fontSize: 10, color: p.tsub, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5, padding: '0 2px' }}>
+              <Ban size={11} /> {stats.notRequired} event{stats.notRequired === 1 ? '' : 's'} marked not required for you — excluded from your rate
+            </div>
+          )}
+
+          {records.length === 0 ? (
             <div style={{ ...darkCard, textAlign: 'center', padding: '48px 16px' }}>
               <CalendarDays size={40} color={p.tmid} style={{ opacity: 0.35, margin: '0 auto 12px' }} />
               <div style={{ fontSize: 13, fontWeight: 600 }}>No attendance records yet</div>
@@ -299,7 +306,7 @@ export default function DashboardAttendance() {
             </div>
           ) : (
             <>
-              {/* ---- filter area: labeled two-row layout, matched-height fields ---- */}
+              {/* ---- filter area ---- */}
               <div style={{ ...darkCard, marginBottom: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <span style={{ fontSize: 12, fontWeight: 600 }}>Filter</span>
@@ -361,9 +368,10 @@ export default function DashboardAttendance() {
                   ) : (
                     <div style={{ maxHeight: 560, overflowY: 'auto' }}>
                       {filtered.map((r, i) => {
-                        const s = (r.status as Status) in STATUS_LABEL ? (r.status as Status) : 'present';
-                        const c = statusColor(p, s);
-                        const Icon = STATUS_ICON[s];
+                        const isNA = r.status === 'not_required';
+                        const s = !isNA && (r.status as Status) in STATUS_LABEL ? (r.status as Status) : null;
+                        const c = s ? statusColor(p, s) : { fg: p.tmid, bg: p.lightCard };
+                        const Icon = s ? STATUS_ICON[s] : Ban;
                         return (
                           <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 16px', borderTop: i === 0 ? 'none' : `1px solid ${p.border}` }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
@@ -379,7 +387,7 @@ export default function DashboardAttendance() {
                               </div>
                             </div>
                             <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: c.fg, background: c.bg, padding: '5px 11px', borderRadius: 20, flexShrink: 0 }}>
-                              {STATUS_LABEL[s]}
+                              {isNA ? 'Not Required' : (s ? STATUS_LABEL[s] : r.status)}
                             </span>
                           </div>
                         );
@@ -411,8 +419,9 @@ export default function DashboardAttendance() {
                       const dayRecords = recordsByDate.get(dateStr) || [];
                       const isToday = dateStr === today;
                       const isSelected = dateStr === selectedDay;
-                      const primaryStatus = dayRecords[0]?.status as Status | undefined;
-                      const c = primaryStatus && primaryStatus in STATUS_LABEL ? statusColor(p, primaryStatus) : null;
+                      const primaryStatus = dayRecords[0]?.status as MarkValue | undefined;
+                      const isPrimaryNA = primaryStatus === 'not_required';
+                      const c = primaryStatus && !isPrimaryNA && primaryStatus in STATUS_LABEL ? statusColor(p, primaryStatus as Status) : null;
                       return (
                         <button
                           key={dateStr}
@@ -425,6 +434,7 @@ export default function DashboardAttendance() {
                         >
                           <span style={{ fontSize: 10.5, color: dayRecords.length ? p.tl : p.tsub, fontWeight: isToday ? 700 : 500 }}>{day}</span>
                           {c && <span style={{ width: 5, height: 5, borderRadius: '50%', background: c.fg }} />}
+                          {isPrimaryNA && <Ban size={7} color={p.tmid} />}
                         </button>
                       );
                     })}
@@ -440,6 +450,10 @@ export default function DashboardAttendance() {
                         </div>
                       );
                     })}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <Ban size={9} color={p.tmid} />
+                      <span style={{ fontSize: 9.5, color: p.tsub }}>Not Required</span>
+                    </div>
                   </div>
 
                   {selectedDay && selectedDayRecords.length > 0 && (
@@ -448,12 +462,13 @@ export default function DashboardAttendance() {
                         {new Date(`${selectedDay}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
                       </div>
                       {selectedDayRecords.map((r) => {
-                        const s = (r.status as Status) in STATUS_LABEL ? (r.status as Status) : 'present';
-                        const c = statusColor(p, s);
+                        const isNA = r.status === 'not_required';
+                        const s = !isNA && (r.status as Status) in STATUS_LABEL ? (r.status as Status) : null;
+                        const c = s ? statusColor(p, s) : { fg: p.tmid, bg: p.lightCard };
                         return (
                           <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' }}>
                             <span style={{ fontSize: 12, fontWeight: 600, color: p.td }}>{r.eventTitle}</span>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: c.fg }}>{STATUS_LABEL[s]}</span>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: c.fg }}>{isNA ? 'Not Required' : (s ? STATUS_LABEL[s] : r.status)}</span>
                           </div>
                         );
                       })}
