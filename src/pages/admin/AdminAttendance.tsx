@@ -5,14 +5,12 @@ import { useToast } from '../../hooks/useToast';
 import { useSearchParams } from 'react-router-dom';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { useTheme } from '../../contexts/ThemeContext';
-import { usePoints } from '../../hooks/usePoints';
+import { usePoints, AttendanceStatus } from '../../hooks/usePoints';
 import { getClubPalette } from '../../theme/racPalette';
 import {
   Download, CalendarPlus, CalendarDays, X, Pencil, Copy, BarChart3,
-  Users, TrendingUp, Trash2, AlertTriangle,
+  Users, TrendingUp, Trash2, AlertTriangle, Ban,
 } from 'lucide-react';
-
-const ATTENDANCE_PAGE_VERSION = 'v3-2026-07-17-1';
 
 /* ---- font loader: same pattern/id as DashboardHome.tsx, idempotent ---- */
 const INTER_FONT_URL = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
@@ -38,10 +36,15 @@ const SUB_TYPES: Record<EventType, string[]> = {
   Workshop: ['Personal skills', 'TRF', 'Other'],
 };
 
-/* ---- status: canonical value is the full word (matches DB + member views).
-   Letter is a display-only badge, never stored. ---- */
+/* ---- status: 4 XP-bearing statuses + 1 non-XP "not required" status.
+   'not_required' is NEVER sent to awardAttendancePoints (always 0 XP) and
+   is excluded from every rate/denominator calculation in both this file
+   and the member-facing dashboard — a member marked not_required for an
+   event simply doesn't have that event counted against them at all. */
 type Status = 'present' | 'late' | 'excused' | 'absent';
+type MarkValue = Status | 'not_required';
 const STATUS_ORDER: Status[] = ['present', 'late', 'excused', 'absent'];
+const MARK_ORDER: MarkValue[] = [...STATUS_ORDER, 'not_required'];
 const STATUS_META: Record<Status, { letter: string; label: string }> = {
   present: { letter: 'P', label: 'Present' },
   late: { letter: 'L', label: 'Late' },
@@ -49,6 +52,7 @@ const STATUS_META: Record<Status, { letter: string; label: string }> = {
   absent: { letter: 'A', label: 'Absent' },
 };
 
+const isXpStatus = (s: MarkValue): s is Status => s !== 'not_required';
 const xpForStatus = (ev: any, status: Status) => Number(ev?.[`xp_${status}`] ?? 0);
 
 const uid = () => (crypto as any).randomUUID();
@@ -67,7 +71,7 @@ function downloadCSV(filename: string, rows: string[][]) {
 export default function AdminAttendance() {
   const { adminTenant: tenant } = useAdminTenant();
   const { user } = useAuth();
-  const { awardAttendancePoints } = usePoints();
+  const { awardAttendancePoints, reverseAttendancePoints, adjustAttendanceXpForEdit } = usePoints();
   const { addToast } = useToast();
   const [searchParams] = useSearchParams();
   const targetMemberId = searchParams.get('memberId');
@@ -77,10 +81,6 @@ export default function AdminAttendance() {
   const dark = resolvedTheme === 'dark';
   const p = getClubPalette(tenant.id, dark ? 'dark' : 'light');
 
-  useEffect(() => {
-    console.log('[AdminAttendance] version:', ATTENDANCE_PAGE_VERSION);
-  }, []);
-
   const [mode, setMode] = useState<'mark' | 'history' | 'member' | 'analytics'>('mark');
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<any[]>([]);
@@ -89,7 +89,7 @@ export default function AdminAttendance() {
 
   /* mark mode */
   const [selectedEventId, setSelectedEventId] = useState('');
-  const [sheet, setSheet] = useState<Record<string, Status | ''>>({});
+  const [sheet, setSheet] = useState<Record<string, MarkValue | ''>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
   const [copyFromEventId, setCopyFromEventId] = useState('');
@@ -106,6 +106,7 @@ export default function AdminAttendance() {
   /* add/edit event modal */
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [isSavingEvent, setIsSavingEvent] = useState(false);
   const [form, setForm] = useState({
     title: '', date: '', type: 'Meeting' as EventType, sub_type: SUB_TYPES.Meeting[0],
     xp_present: 0, xp_late: 0, xp_excused: 0, xp_absent: 0,
@@ -141,7 +142,7 @@ export default function AdminAttendance() {
     const { data } = await supabase.from('attendance').select('*').eq('tenant_id', tenant.id).eq('eventId', eventId);
     const records = data || [];
     if (applyToSheet) {
-      const s: Record<string, Status | ''> = {};
+      const s: Record<string, MarkValue | ''> = {};
       records.forEach((r: any) => { s[r.userId] = r.status; });
       setSheet(s);
     }
@@ -186,12 +187,9 @@ export default function AdminAttendance() {
     fetchMemberHistory(targetMemberId);
   }, [targetMemberId, loading, activeMembers.length]);
 
-  /* ---- mark: save + award XP ----
-     onConflict: 'id' — 'id' is deterministic (`${eventId}_${userId}`) and
-     already unique on its own; a compound 'id, tenant_id' target 400s unless
-     a matching compound unique constraint exists in Postgres, and even
-     whitespace-stripped ('id,tenant_id') it still requires that constraint
-     to exist. This was the bug behind the earlier save failures. */
+  /* ---- mark: save + award XP.
+     not_required marks are saved to attendance normally (so history/exports
+     show them) but never passed to awardAttendancePoints. ---- */
   const handleSaveAttendance = async () => {
     if (!selectedEventId) return;
     setIsSaving(true);
@@ -211,7 +209,10 @@ export default function AdminAttendance() {
             { onConflict: 'id' }
           )
         );
-        awards.push(awardAttendancePoints(userId, selectedEventId, status as Status).catch(console.error));
+        if (isXpStatus(status)) {
+          const amount = xpForStatus(ev, status);
+          awards.push(awardAttendancePoints(userId, selectedEventId, status, amount).catch(console.error));
+        }
       });
       await Promise.all(batch);
       await Promise.all(awards);
@@ -227,12 +228,12 @@ export default function AdminAttendance() {
     }
   };
 
-  const setAll = (status: Status | null) => {
-    const s: Record<string, Status | ''> = {};
+  const setAll = (status: MarkValue | null) => {
+    const s: Record<string, MarkValue | ''> = {};
     if (status) activeMembers.forEach((m) => { s[m.id] = status; });
     setSheet(s);
   };
-  const applyToSelected = (status: Status) => {
+  const applyToSelected = (status: MarkValue) => {
     setSheet((prev) => {
       const next = { ...prev };
       selectedMemberIds.forEach((id) => { next[id] = status; });
@@ -261,23 +262,38 @@ export default function AdminAttendance() {
     if (!selectedEventId) return;
     const ev = events.find((e) => e.id === selectedEventId);
     const rows = [['Member Name', 'School', 'Status']];
-    activeMembers.forEach((m) => rows.push([m.name || '', m.school || '', sheet[m.id] ? STATUS_META[sheet[m.id] as Status].label : 'Not Marked']));
+    activeMembers.forEach((m) => {
+      const s = sheet[m.id];
+      const label = s ? (s === 'not_required' ? 'Not Required' : STATUS_META[s].label) : 'Not Marked';
+      rows.push([m.name || '', m.school || '', label]);
+    });
     downloadCSV(`Attendance_${(ev?.title || 'event').replace(/\s+/g, '_')}.csv`, rows);
   };
 
   const exportSummary = () => {
+    /* not_required rows are excluded from BOTH the numerator and the
+       denominator here — markedEvents still counts the event as "marked"
+       overall (someone was marked), but a member's own not_required rows
+       don't inflate or deflate anything for them individually. */
     const totals: Record<string, Record<Status, number>> = {};
+    const notRequiredByMember: Record<string, number> = {};
     const markedEvents = new Set(allAttendance.map((r) => r.eventId));
     allAttendance.forEach((r) => {
+      if (r.status === 'not_required') {
+        notRequiredByMember[r.userId] = (notRequiredByMember[r.userId] || 0) + 1;
+        return;
+      }
       if (!totals[r.userId]) totals[r.userId] = { present: 0, late: 0, excused: 0, absent: 0 };
       if (STATUS_ORDER.includes(r.status)) totals[r.userId][r.status as Status]++;
     });
-    const rows = [['Member Name', 'Role', 'School', 'Present', 'Late', 'Absent', 'Excused', 'Total Marked Events', 'Attendance Rate %']];
+    const rows = [['Member Name', 'Role', 'School', 'Present', 'Late', 'Absent', 'Excused', 'Not Required', 'Applicable Events', 'Attendance Rate %']];
     activeMembers.forEach((m) => {
       const t = totals[m.id] || { present: 0, late: 0, excused: 0, absent: 0 };
+      const notReq = notRequiredByMember[m.id] || 0;
+      const applicableEvents = markedEvents.size - notReq;
       const attended = t.present + t.late;
-      const rate = markedEvents.size > 0 ? Math.round((attended / markedEvents.size) * 100) : 0;
-      rows.push([m.name || '', m.role || '', m.school || '', String(t.present), String(t.late), String(t.absent), String(t.excused), String(markedEvents.size), `${rate}%`]);
+      const rate = applicableEvents > 0 ? Math.round((attended / applicableEvents) * 100) : 0;
+      rows.push([m.name || '', m.role || '', m.school || '', String(t.present), String(t.late), String(t.absent), String(t.excused), String(notReq), String(applicableEvents), `${rate}%`]);
     });
     downloadCSV(`Attendance_Summary_${new Date().toISOString().split('T')[0]}.csv`, rows);
   };
@@ -296,10 +312,23 @@ export default function AdminAttendance() {
     });
     setIsEventModalOpen(true);
   };
+
+  /* ---- save event: if editing AND any xp_* value changed, auto-adjust
+     XP for every member currently marked with that status on this event.
+     Reads the pre-edit event row first (not the form state) so the "old"
+     values being diffed against are guaranteed to be what was actually
+     saved, not stale form state from a re-open. ---- */
   const saveEvent = async () => {
     if (!form.title || !form.date) { addToast('Title and date are required', 'error'); return; }
+    setIsSavingEvent(true);
     try {
       const id = editingEventId || uid();
+      let previousEvent: any = null;
+      if (editingEventId) {
+        const { data } = await supabase.from('events').select('xp_present, xp_late, xp_excused, xp_absent').eq('id', editingEventId).eq('tenant_id', tenant.id).single();
+        previousEvent = data;
+      }
+
       await supabase.from('events').upsert(
         {
           id, tenant_id: tenant.id, title: form.title, date: form.date, type: form.type, sub_type: form.sub_type,
@@ -308,26 +337,42 @@ export default function AdminAttendance() {
         },
         { onConflict: 'id' }
       );
-      addToast(editingEventId ? 'Event updated' : 'Event created', 'success');
+
+      if (editingEventId && previousEvent) {
+        const changedStatuses = STATUS_ORDER.filter((s) => Number(previousEvent[`xp_${s}`] || 0) !== Number(form[`xp_${s}` as keyof typeof form]));
+        if (changedStatuses.length > 0) {
+          const { data: markedRows } = await supabase.from('attendance').select('userId, status').eq('tenant_id', tenant.id).eq('eventId', editingEventId);
+          const affected = (markedRows || []).filter((r: any) => changedStatuses.includes(r.status));
+          if (affected.length > 0) {
+            await Promise.all(
+              affected.map((r: any) => {
+                const newAmount = xpForStatus(form, r.status as Status);
+                return adjustAttendanceXpForEdit(r.userId, editingEventId, r.status as Status, newAmount).catch(console.error);
+              })
+            );
+            addToast(`Event updated. XP adjusted for ${affected.length} member${affected.length === 1 ? '' : 's'}.`, 'success');
+          } else {
+            addToast('Event updated', 'success');
+          }
+        } else {
+          addToast('Event updated', 'success');
+        }
+      } else {
+        addToast('Event created', 'success');
+      }
+
       await loadBaseData();
       if (!editingEventId) setSelectedEventId(id);
       setIsEventModalOpen(false);
     } catch (err) {
       console.error(err);
       addToast('Failed to save event', 'error');
+    } finally {
+      setIsSavingEvent(false);
     }
   };
 
-  /* ---- delete event ----
-     Order matters: reverse XP BEFORE deleting attendance rows, since the
-     reversal reads point_ledger by source_id (`${eventId}:${status}`) —
-     it doesn't need the attendance rows themselves, but doing this first
-     means a failure here still leaves attendance/event data intact to
-     retry against, rather than orphaning ledger entries with no event to
-     reference. awardPoints isn't exposed from usePoints for a direct XP
-     debit, so this writes the reversal ledger row directly via supabase
-     and updates users.xp inline — mirrors what awardPoints does internally,
-     scoped to XP only since attendance never touched FP. */
+  /* ---- delete event ---- */
   const requestDeleteEvent = (ev: any) => {
     setDeleteTarget(ev);
     setDeleteConfirmText('');
@@ -343,54 +388,23 @@ export default function AdminAttendance() {
     try {
       const eventId = deleteTarget.id;
 
-      const { data: ledgerRows } = await supabase
-        .from('point_ledger')
-        .select('id, member_id, xp_delta, source_id')
-        .eq('tenant_id', tenant.id)
-        .eq('source_type', 'attendance')
-        .like('source_id', `${eventId}:%`);
+      const { data: markedRows } = await supabase.from('attendance').select('userId').eq('tenant_id', tenant.id).eq('eventId', eventId);
+      const memberIds = [...new Set((markedRows || []).map((r: any) => r.userId))];
 
-      const byMember = new Map<string, number>();
-      (ledgerRows || []).forEach((row: any) => {
-        if (!row.xp_delta) return;
-        byMember.set(row.member_id, (byMember.get(row.member_id) || 0) + row.xp_delta);
-      });
-
-      for (const [memberId, totalXp] of byMember.entries()) {
-        if (totalXp === 0) continue;
-        const { data: memberRow } = await supabase.from('users').select('xp').eq('id', memberId).single();
-        const currentXp = memberRow?.xp || 0;
-        const newXp = Math.max(0, currentXp - totalXp);
-
-        await supabase.from('point_ledger').insert({
-          id: uid(),
-          member_id: memberId,
-          tenant_id: tenant.id,
-          xp_delta: -totalXp,
-          fp_delta: 0,
-          source_type: 'attendance',
-          source_id: `${eventId}:deleted:${Date.now()}`,
-          note: `Event "${deleteTarget.title}" deleted — attendance XP reversed`,
-        });
-
-        const { data: levelData } = await supabase
-          .from('level_config')
-          .select('level, xp_required')
-          .eq('tenant_id', tenant.id)
-          .lte('xp_required', newXp)
-          .order('level', { ascending: false })
-          .limit(1);
-        const newLevel = levelData?.[0]?.level || 0;
-
-        await supabase.from('users').update({ xp: newXp, level: newLevel }).eq('id', memberId);
+      if (memberIds.length > 0) {
+        await Promise.all(
+          memberIds.map((memberId) =>
+            reverseAttendancePoints(memberId, eventId, `Event "${deleteTarget.title}" deleted — attendance XP reversed`).catch(console.error)
+          )
+        );
       }
 
       await supabase.from('attendance').delete().eq('tenant_id', tenant.id).eq('eventId', eventId);
       await supabase.from('events').delete().eq('tenant_id', tenant.id).eq('id', eventId);
 
       addToast(
-        byMember.size > 0
-          ? `Event deleted. XP reversed for ${byMember.size} member${byMember.size === 1 ? '' : 's'}.`
+        memberIds.length > 0
+          ? `Event deleted. XP reversed for ${memberIds.length} member${memberIds.length === 1 ? '' : 's'}.`
           : 'Event deleted.',
         'success'
       );
@@ -407,7 +421,8 @@ export default function AdminAttendance() {
     }
   };
 
-  /* ---- analytics ---- */
+  /* ---- analytics: not_required excluded from both numerator and
+     denominator throughout, same principle as exportSummary. ---- */
   const analytics = useMemo(() => {
     const byType: Record<string, { present: number; total: number }> = {};
     events.forEach((ev) => {
@@ -415,22 +430,25 @@ export default function AdminAttendance() {
       if (!byType[t]) byType[t] = { present: 0, total: 0 };
     });
     allAttendance.forEach((r) => {
+      if (r.status === 'not_required') return;
       const ev = events.find((e) => e.id === r.eventId);
       const t = ev?.type || 'Other';
       if (!byType[t]) byType[t] = { present: 0, total: 0 };
       byType[t].total++;
       if (r.status === 'present' || r.status === 'late') byType[t].present++;
     });
+
+    const applicableAttendance = allAttendance.filter((r) => r.status !== 'not_required');
     const memberRates = activeMembers.map((m) => {
-      const recs = allAttendance.filter((r) => r.userId === m.id);
+      const recs = applicableAttendance.filter((r) => r.userId === m.id);
       const present = recs.filter((r) => r.status === 'present' || r.status === 'late').length;
       const rate = recs.length > 0 ? Math.round((present / recs.length) * 100) : null;
       return { member: m, rate, total: recs.length };
     }).filter((m) => m.total > 0).sort((a, b) => (b.rate ?? 0) - (a.rate ?? 0));
 
-    const overallPresent = allAttendance.filter((r) => r.status === 'present' || r.status === 'late').length;
-    const overallRate = allAttendance.length > 0 ? Math.round((overallPresent / allAttendance.length) * 100) : 0;
-    const totalXP = allAttendance.reduce((sum, r) => {
+    const overallPresent = applicableAttendance.filter((r) => r.status === 'present' || r.status === 'late').length;
+    const overallRate = applicableAttendance.length > 0 ? Math.round((overallPresent / applicableAttendance.length) * 100) : 0;
+    const totalXP = applicableAttendance.reduce((sum, r) => {
       const ev = events.find((e) => e.id === r.eventId);
       return sum + (ev && STATUS_ORDER.includes(r.status) ? xpForStatus(ev, r.status as Status) : 0);
     }, 0);
@@ -470,7 +488,7 @@ export default function AdminAttendance() {
         <div style={{ maxWidth: 960, margin: '0 auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12, padding: '0 2px', gap: 12 }}>
             <span style={{ fontSize: 19, fontWeight: 600, color: p.ptxt, letterSpacing: '-.2px' }}>Attendance</span>
-            <span style={{ fontSize: 9, color: p.tmid, fontWeight: 500, fontFamily: 'monospace' }} title="Build version">{ATTENDANCE_PAGE_VERSION}</span>
+            <span style={{ fontSize: 11, color: p.pmut, fontWeight: 500 }}>{tenant.id}</span>
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -523,6 +541,9 @@ export default function AdminAttendance() {
                           {STATUS_META[s].label}: <span style={{ color: p.tl }}>{xpForStatus(ev, s)} XP</span>
                         </div>
                       ))}
+                      <div style={{ fontSize: 10, color: p.tsub, background: p.lightCard, borderRadius: 20, padding: '4px 10px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Ban size={10} /> Not Required
+                      </div>
                       <button onClick={() => openEditEvent(ev)} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 4 }}>
                         <Pencil size={11} /> Edit
                       </button>
@@ -537,6 +558,9 @@ export default function AdminAttendance() {
                           Mark All {STATUS_META[s].label}
                         </button>
                       ))}
+                      <button onClick={() => setAll('not_required')} style={{ ...pillBtn, borderColor: p.pillBorder, color: p.tmid, background: 'transparent', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Ban size={11} /> Mark All N/A
+                      </button>
                       <button onClick={() => setAll(null)} style={pillBtn}>Clear All</button>
                       <div style={{ flex: 1 }} />
                       <div style={{ fontSize: 11, fontWeight: 700, color: p.tsub }}>
@@ -562,6 +586,9 @@ export default function AdminAttendance() {
                         {STATUS_ORDER.map((s) => (
                           <button key={s} onClick={() => applyToSelected(s)} style={{ ...pillBtn, borderColor: p.recBd }}>{STATUS_META[s].label}</button>
                         ))}
+                        <button onClick={() => applyToSelected('not_required')} style={{ ...pillBtn, borderColor: p.recBd, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Ban size={11} /> N/A
+                        </button>
                         <button onClick={() => setSelectedMemberIds(new Set())} style={{ ...pillBtn, marginLeft: 'auto' }}>Deselect</button>
                       </div>
                     )}
@@ -600,6 +627,17 @@ export default function AdminAttendance() {
                                   {STATUS_META[st].letter}
                                 </button>
                               ))}
+                              <button
+                                onClick={() => setSheet({ ...sheet, [m.id]: 'not_required' })}
+                                title="Not required to attend"
+                                style={{
+                                  width: 28, height: 28, borderRadius: 8, border: 'none', cursor: 'pointer',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  background: s === 'not_required' ? p.tmid : 'transparent', color: s === 'not_required' ? p.dark : p.tmid,
+                                }}
+                              >
+                                <Ban size={13} />
+                              </button>
                             </div>
                           </div>
                         );
@@ -650,6 +688,7 @@ export default function AdminAttendance() {
                   </div>
                 ) : (() => {
                   const ev = events.find((e) => e.id === historyEventId);
+                  const notRequiredCount = historyRecords.filter((r) => r.status === 'not_required').length;
                   return (
                     <>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14, alignItems: 'center' }}>
@@ -659,6 +698,10 @@ export default function AdminAttendance() {
                             <span style={{ fontSize: 9.5, color: p.mut }}>{STATUS_META[s].label}</span>
                           </div>
                         ))}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: p.lightCard, borderRadius: 20, padding: '5px 10px' }}>
+                          <span style={{ fontWeight: 700, fontSize: 11, color: p.td }}>{notRequiredCount}</span>
+                          <Ban size={9} color={p.mut} />
+                        </div>
                         <span style={{ fontSize: 10.5, color: p.tsub, marginLeft: 'auto' }}>Unmarked: {activeMembers.length - historyRecords.length}</span>
                         <button onClick={() => openEditEvent(ev)} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 4 }}><Pencil size={11} /> Edit</button>
                         <button onClick={() => requestDeleteEvent(ev)} style={{ ...pillBtn, display: 'flex', alignItems: 'center', gap: 4, borderColor: '#5c2a20', color: '#e08a72' }}><Trash2 size={11} /> Delete</button>
@@ -666,6 +709,7 @@ export default function AdminAttendance() {
                       <div style={{ maxHeight: 440, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
                         {historyRecords.map((r, i) => {
                           const m = activeMembers.find((x) => x.id === r.userId);
+                          const isNA = r.status === 'not_required';
                           const st = r.status as Status;
                           return (
                             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 4px', borderTop: i === 0 ? 'none' : `1px solid ${p.border}` }}>
@@ -673,7 +717,9 @@ export default function AdminAttendance() {
                                 <div style={{ fontWeight: 600, fontSize: 12 }}>{m?.name || 'Unknown'}</div>
                                 <div style={{ fontSize: 10, color: p.tsub }}>{m?.school || '…'}</div>
                               </div>
-                              <span style={{ fontSize: 10, fontWeight: 700, background: p.lightCard, color: p.td, padding: '4px 10px', borderRadius: 20 }}>{STATUS_META[st]?.label || r.status}</span>
+                              <span style={{ fontSize: 10, fontWeight: 700, background: p.lightCard, color: p.td, padding: '4px 10px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                {isNA ? <><Ban size={10} /> Not Required</> : (STATUS_META[st]?.label || r.status)}
+                              </span>
                             </div>
                           );
                         })}
@@ -687,59 +733,73 @@ export default function AdminAttendance() {
           )}
 
           {/* ---------------- MEMBER ---------------- */}
-          {mode === 'member' && (
-            <div style={card}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, paddingBottom: 14, borderBottom: `1px solid ${p.border}` }}>
-                {targetMember?.photo ? (
-                  <img src={targetMember.photo} style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }} />
-                ) : (
-                  <div style={{ width: 48, height: 48, borderRadius: '50%', background: p.greenDeep, color: p.av2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
-                    {targetMember?.name?.substring(0, 2)?.toUpperCase() || '??'}
-                  </div>
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>{targetMember?.name || 'Loading…'}</div>
-                  <div style={{ fontSize: 11, color: p.tsub }}>{targetMember?.email}</div>
-                </div>
-                <a href="/admin/members" style={{ fontSize: 11, color: p.green, fontWeight: 600, textDecoration: 'none' }}>← Members</a>
-              </div>
-
-              {memberHistoryLoading ? (
-                <div style={{ padding: '40px 0', textAlign: 'center', color: p.tsub, fontSize: 12 }}>Loading…</div>
-              ) : (
-                <>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }} className="!grid-cols-2">
-                    {[
-                      { label: 'Total Events', value: memberHistoryRecords.length },
-                      { label: 'Present', value: memberHistoryRecords.filter((r) => r.status === 'present' || r.status === 'late').length },
-                      { label: 'Absent', value: memberHistoryRecords.filter((r) => r.status === 'absent').length },
-                      { label: 'Rate', value: memberHistoryRecords.length ? `${Math.round((memberHistoryRecords.filter((r) => r.status === 'present' || r.status === 'late').length / memberHistoryRecords.length) * 100)}%` : 'N/A' },
-                    ].map((s) => (
-                      <div key={s.label} style={{ ...lightCard, textAlign: 'center', padding: 12 }}>
-                        <div style={{ fontSize: 22, fontWeight: 700 }}>{s.value}</div>
-                        <div style={{ fontSize: 9, color: p.mut, textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 3 }}>{s.label}</div>
-                      </div>
-                    ))}
-                  </div>
-                  {memberHistoryRecords.length === 0 ? (
-                    <p style={{ textAlign: 'center', color: p.tsub, padding: '30px 0', fontSize: 12 }}>No attendance records for this member.</p>
+          {mode === 'member' && (() => {
+            const applicableRecords = memberHistoryRecords.filter((r) => r.status !== 'not_required');
+            const notRequiredCount = memberHistoryRecords.length - applicableRecords.length;
+            return (
+              <div style={card}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, paddingBottom: 14, borderBottom: `1px solid ${p.border}` }}>
+                  {targetMember?.photo ? (
+                    <img src={targetMember.photo} style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }} />
                   ) : (
-                    <div style={{ maxHeight: 480, overflowY: 'auto' }}>
-                      {memberHistoryRecords.map((r, i) => (
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 2px', borderTop: i === 0 ? 'none' : `1px solid ${p.border}` }}>
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: 12 }}>{r.eventTitle}</div>
-                            <div style={{ fontSize: 10, color: p.tsub }}>{r.eventDate} {r.eventType ? `· ${r.eventType}` : ''}</div>
-                          </div>
-                          <span style={{ fontSize: 10, fontWeight: 700, background: p.lightCard, color: p.td, padding: '4px 10px', borderRadius: 20 }}>{STATUS_META[r.status as Status]?.label || r.status}</span>
+                    <div style={{ width: 48, height: 48, borderRadius: '50%', background: p.greenDeep, color: p.av2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+                      {targetMember?.name?.substring(0, 2)?.toUpperCase() || '??'}
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{targetMember?.name || 'Loading…'}</div>
+                    <div style={{ fontSize: 11, color: p.tsub }}>{targetMember?.email}</div>
+                  </div>
+                  <a href="/admin/members" style={{ fontSize: 11, color: p.green, fontWeight: 600, textDecoration: 'none' }}>← Members</a>
+                </div>
+
+                {memberHistoryLoading ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: p.tsub, fontSize: 12 }}>Loading…</div>
+                ) : (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }} className="!grid-cols-2">
+                      {[
+                        { label: 'Applicable Events', value: applicableRecords.length },
+                        { label: 'Present', value: applicableRecords.filter((r) => r.status === 'present' || r.status === 'late').length },
+                        { label: 'Absent', value: applicableRecords.filter((r) => r.status === 'absent').length },
+                        { label: 'Rate', value: applicableRecords.length ? `${Math.round((applicableRecords.filter((r) => r.status === 'present' || r.status === 'late').length / applicableRecords.length) * 100)}%` : 'N/A' },
+                      ].map((s) => (
+                        <div key={s.label} style={{ ...lightCard, textAlign: 'center', padding: 12 }}>
+                          <div style={{ fontSize: 22, fontWeight: 700 }}>{s.value}</div>
+                          <div style={{ fontSize: 9, color: p.mut, textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 3 }}>{s.label}</div>
                         </div>
                       ))}
                     </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+                    {notRequiredCount > 0 && (
+                      <div style={{ fontSize: 10, color: p.tsub, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <Ban size={11} /> {notRequiredCount} event{notRequiredCount === 1 ? '' : 's'} marked not required — excluded from rate
+                      </div>
+                    )}
+                    {memberHistoryRecords.length === 0 ? (
+                      <p style={{ textAlign: 'center', color: p.tsub, padding: '30px 0', fontSize: 12 }}>No attendance records for this member.</p>
+                    ) : (
+                      <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+                        {memberHistoryRecords.map((r, i) => {
+                          const isNA = r.status === 'not_required';
+                          return (
+                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 2px', borderTop: i === 0 ? 'none' : `1px solid ${p.border}` }}>
+                              <div>
+                                <div style={{ fontWeight: 600, fontSize: 12 }}>{r.eventTitle}</div>
+                                <div style={{ fontSize: 10, color: p.tsub }}>{r.eventDate} {r.eventType ? `· ${r.eventType}` : ''}</div>
+                              </div>
+                              <span style={{ fontSize: 10, fontWeight: 700, background: p.lightCard, color: p.td, padding: '4px 10px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                {isNA ? <><Ban size={10} /> Not Required</> : (STATUS_META[r.status as Status]?.label || r.status)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ---------------- ANALYTICS ---------------- */}
           {mode === 'analytics' && (
@@ -761,6 +821,9 @@ export default function AdminAttendance() {
 
               <div style={{ ...card, marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Attendance rate by event type</div>
+                <div style={{ fontSize: 9.5, color: p.tsub, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Ban size={10} /> Not-required marks excluded from these rates
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {EVENT_TYPES.map((t) => {
                     const d = analytics.byType[t] || { present: 0, total: 0 };
@@ -810,13 +873,13 @@ export default function AdminAttendance() {
       {/* ---------------- ADD / EDIT EVENT MODAL ---------------- */}
       {isEventModalOpen && (
         <div
-          onClick={() => setIsEventModalOpen(false)}
+          onClick={() => !isSavingEvent && setIsEventModalOpen(false)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}
         >
           <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <span style={{ fontSize: 14, fontWeight: 700 }}>{editingEventId ? 'Edit Event' : 'Add Event'}</span>
-              <button onClick={() => setIsEventModalOpen(false)} style={{ background: 'none', border: 'none', color: p.tsub, cursor: 'pointer' }}><X size={18} /></button>
+              <button onClick={() => setIsEventModalOpen(false)} disabled={isSavingEvent} style={{ background: 'none', border: 'none', color: p.tsub, cursor: 'pointer' }}><X size={18} /></button>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -851,7 +914,12 @@ export default function AdminAttendance() {
               </div>
 
               <div style={{ borderTop: `1px solid ${p.border}`, paddingTop: 12, marginTop: 4 }}>
-                <label style={{ fontSize: 10, color: p.tsub, fontWeight: 600, display: 'block', marginBottom: 8 }}>Rewarded XP for Attendance</label>
+                <label style={{ fontSize: 10, color: p.tsub, fontWeight: 600, display: 'block', marginBottom: 4 }}>Rewarded XP for Attendance</label>
+                {editingEventId && (
+                  <div style={{ fontSize: 9.5, color: p.tsub, marginBottom: 8, lineHeight: 1.4 }}>
+                    Changing a value here retroactively adjusts XP for every member already marked with that status on this event.
+                  </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   {STATUS_ORDER.map((s) => (
                     <div key={s}>
@@ -866,20 +934,20 @@ export default function AdminAttendance() {
                     </div>
                   ))}
                 </div>
+                <div style={{ fontSize: 9.5, color: p.tsub, marginTop: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Ban size={10} /> Not Required members never earn XP for this event, by design.
+                </div>
               </div>
 
-              <button onClick={saveEvent} style={{ ...solidBtn, width: '100%', marginTop: 6, padding: '11px 0' }}>
-                {editingEventId ? 'Save Changes' : 'Create Event'}
+              <button onClick={saveEvent} disabled={isSavingEvent} style={{ ...solidBtn, width: '100%', marginTop: 6, padding: '11px 0', opacity: isSavingEvent ? 0.6 : 1 }}>
+                {isSavingEvent ? 'Saving…' : editingEventId ? 'Save Changes' : 'Create Event'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ---------------- DELETE CONFIRM MODAL ----------------
-          Type-to-confirm on the exact title — this is destructive and
-          irreversible (attendance rows + XP are both gone), so a plain
-          Yes/No button is too easy to misclick past. */}
+      {/* ---------------- DELETE CONFIRM MODAL ---------------- */}
       {deleteTarget && (
         <div
           onClick={() => !isDeleting && setDeleteTarget(null)}
