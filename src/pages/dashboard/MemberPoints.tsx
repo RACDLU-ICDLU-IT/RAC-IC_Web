@@ -106,7 +106,31 @@ export default function MemberPoints() {
       fetchMemberPointLedger(user.id),
       fetchLevelConfigs(),
     ]).then(([pts, led, lvls]) => {
-      setPoints(pts);
+      // fetchMemberPoints() reads a `member_points` table that doesn't exist
+      // in this schema yet (see usePoints.ts comments) — it unconditionally
+      // resolves to { xp:0, fp:0, level:0 } for every member, regardless of
+      // their real balance. point_ledger is the confirmed-live source of
+      // truth (attendance writes go through award_points_sourced into it),
+      // so derive the running totals from it directly rather than trusting
+      // fetchMemberPoints()'s xp/fp. `level` is kept from fetchMemberPoints()
+      // since it isn't ledger-derivable and may be maintained elsewhere
+      // (e.g. a users.level column) — once member_points is backed by a
+      // real migration, this derivation can be removed and pts.xp/pts.fp
+      // used directly again.
+      //
+      // Caveat: fetchMemberPointLedger caps at the most recent 100 rows
+      // (.limit(100) in usePoints.ts). For a member with >100 lifetime
+      // ledger entries, this sum will under-count older activity that
+      // fell off the window. Fine for now since real balances are 0 for
+      // everyone either way, but flag this if/when member_points ships.
+      const derivedXp = led.reduce((sum, entry) => sum + (entry.xp_delta || 0), 0);
+      const derivedFp = led.reduce((sum, entry) => sum + (entry.fp_delta || 0), 0);
+
+      setPoints({
+        xp: derivedXp,
+        fp: derivedFp,
+        level: pts.level,
+      });
       setLedger(led);
       setLevelConfigs(lvls);
       setLoading(false);
