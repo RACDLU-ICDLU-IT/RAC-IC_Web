@@ -547,7 +547,7 @@ export function useDues() {
     setLoading(true);
     try {
       const { data, error } = await supabase.rpc('pay_due_with_fp', {
-        p_ledger_id: entryId, p_member_id: user.id, p_fp_amount: fpAmount,
+        p_ledger_id: entryId, p_fp_amount: fpAmount,
       });
       if (error) handleError(error);
       await logAudit(tenant.id, 'fee_ledger', entryId, 'update', user.id, { action: 'fp_payment', fp_amount: fpAmount });
