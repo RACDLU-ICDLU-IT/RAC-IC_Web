@@ -64,7 +64,21 @@ function TemplateForm({
     e.preventDefault();
     if (form.amount <= 0) return;
     setLoading(true);
-    await onSubmit(form);
+    // Postgres date/uuid columns reject '' — only null is valid for "empty".
+    // Fields like due_date, event_id, category, description are optional
+    // depending on recurrence_type, so any left blank must be sent as null,
+    // not the empty string the input elements default to.
+    const sanitized = {
+      ...form,
+      due_date: form.due_date || null,
+      event_id: form.event_id || null,
+      category: form.category || null,
+      description: form.description || null,
+      recurrence_day: form.recurrence_day || null,
+      recurrence_month: form.recurrence_month || null,
+      custom_dates: (form.custom_dates || []).length > 0 ? form.custom_dates : null,
+    };
+    await onSubmit(sanitized);
     setLoading(false);
   };
 
@@ -583,7 +597,7 @@ export default function AdminDues() {
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <Button variant="outline" onClick={() => setGenTarget(null)}>Cancel</Button>
-              <Button onClick={async () => {
+              <Button disabled={!genDate} onClick={async () => {
                 const n = await generateChargesForDate(genTarget.id, genDate, genAmount ? Number(genAmount) : undefined);
                 addToast(`Generated ${n} charge(s)`, 'success');
                 setGenTarget(null);
