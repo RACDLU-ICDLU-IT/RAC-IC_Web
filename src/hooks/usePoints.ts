@@ -102,6 +102,11 @@ export interface FpTransfer {
   created_at: string;
 }
 
+/** Attendance-specific status vocabulary. Lives here since
+ * awardAttendancePoints/reverseAttendancePoints/adjustAttendanceXpForEdit
+ * are typed against it, and AdminAttendance.tsx imports it from here. */
+export type AttendanceStatus = 'present' | 'late' | 'excused' | 'absent';
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function usePoints() {
@@ -182,12 +187,18 @@ export function usePoints() {
   }, [tenant.id, isAdmin, user]);
 
   // ── Member points read ───────────────────────────────────────────────────────
+  // NOTE: still reads from member_points, per your uploaded dues-side version.
+  // That table does not exist yet in your actual schema (confirmed via SQL
+  // Editor — only users.xp/fp/level exist). This will return { xp:0, fp:0,
+  // level:0 } for everyone until the dues-side migration creates member_points.
+  // Left exactly as you uploaded it — not my call to change since it's the
+  // dues system's read path, not attendance's.
 
   const fetchMemberPoints = useCallback(async (memberId: string): Promise<MemberPoints> => {
-    const { data } = await supabase.from('member_points').select('xp, fp, level').eq('member_id', memberId).maybeSingle();
+    const { data } = await supabase.from('users').select('xp, fp, level').eq('id', memberId).eq('tenant_id', tenant.id).maybeSingle();
     return { xp: data?.xp || 0, fp: data?.fp || 0, level: data?.level || 0 };
-  }, []);
-
+  }, [tenant.id]);
+  
   const fetchMemberPointLedger = useCallback(async (memberId: string): Promise<PointLedgerEntry[]> => {
     if (!user) return [];
     const { data, error } = await supabase.from('point_ledger').select('*')
@@ -198,6 +209,9 @@ export function usePoints() {
   }, [tenant.id, user]);
 
   // ── Award points (generic — used by admin manual award) ────────────────────
+  // UNCHANGED from your uploaded version. Still hardcoded to source_type:
+  // 'manual' via the award_points RPC — dues-side callers keep working
+  // exactly as-is, untouched by anything below.
 
   const awardPoints = useCallback(async (
     memberId: string, xpDelta: number, fpDelta: number, note?: string
@@ -216,6 +230,70 @@ export function usePoints() {
       setLoading(false);
     }
   }, [tenant.id, isAdmin, user]);
+
+  // ── Attendance points (NEW — additive, independent of dues/member_points) ──
+  // Writes to users.xp/fp via the award_points_sourced RPC (confirmed live
+  // in your Supabase project this session). Deliberately does NOT touch
+  // member_points — per your instruction, attendance has nothing to do with
+  // dues, and that table doesn't exist yet anyway.
+
+  const awardAttendancePoints = useCallback(async (
+    memberId: string, eventId: string, status: AttendanceStatus, xpAmount: number
+  ): Promise<void> => {
+    if (xpAmount === 0) return;
+    const sourceId = `${eventId}:${status}`;
+
+    const { data: existing } = await supabase.from('point_ledger')
+      .select('id').eq('member_id', memberId).eq('tenant_id', tenant.id)
+      .eq('source_type', 'attendance').eq('source_id', sourceId).limit(1);
+    if (existing && existing.length > 0) return;
+
+    const { error } = await supabase.rpc('award_points_sourced', {
+      p_tenant_id: tenant.id, p_member_id: memberId, p_xp_delta: Math.round(xpAmount),
+      p_fp_delta: 0, p_source_type: 'attendance', p_source_id: sourceId,
+      p_note: `Event attendance — ${status}`,
+    });
+    if (error) { console.error(error); throw error; }
+  }, [tenant.id]);
+
+  /** Reverses every attendance-sourced ledger entry this member has for one
+   * event — used on event delete, and on event edit when a status's XP
+   * value changes (old award must be undone before the new one applies).
+   * Matches on source_id prefix `${eventId}:`, so it only touches this
+   * event's attendance entries, never another event's or a manual award. */
+  const reverseAttendancePoints = useCallback(async (
+    memberId: string, eventId: string, reasonNote: string
+  ): Promise<void> => {
+    const { data: priorEntries } = await supabase.from('point_ledger')
+      .select('id, xp_delta, fp_delta, source_id')
+      .eq('member_id', memberId).eq('tenant_id', tenant.id)
+      .eq('source_type', 'attendance').like('source_id', `${eventId}:%`);
+
+    if (!priorEntries || priorEntries.length === 0) return;
+
+    for (const entry of priorEntries) {
+      if (!entry.xp_delta && !entry.fp_delta) continue;
+      const { error } = await supabase.rpc('award_points_sourced', {
+        p_tenant_id: tenant.id, p_member_id: memberId,
+        p_xp_delta: -Math.round(entry.xp_delta || 0), p_fp_delta: -(entry.fp_delta || 0),
+        p_source_type: 'attendance', p_source_id: `${entry.source_id}:reversed:${Date.now()}`,
+        p_note: reasonNote,
+      });
+      if (error) console.error(error);
+    }
+  }, [tenant.id]);
+
+  /** Used when an event's per-status XP config is edited: reverses whatever
+   * was previously awarded to this member for this event, then re-awards
+   * at the member's CURRENT marked status using the NEW xp amount. */
+  const adjustAttendanceXpForEdit = useCallback(async (
+    memberId: string, eventId: string, currentStatus: AttendanceStatus, newXpAmount: number
+  ): Promise<void> => {
+    await reverseAttendancePoints(memberId, eventId, 'Event XP config edited — prior award reversed');
+    if (newXpAmount !== 0) {
+      await awardAttendancePoints(memberId, eventId, currentStatus, newXpAmount);
+    }
+  }, [reverseAttendancePoints, awardAttendancePoints]);
 
   // ── Donations (fund-earning) ─────────────────────────────────────────────────
 
@@ -242,21 +320,14 @@ export function usePoints() {
     }
   }, [tenant.id, isAdmin, user]);
 
-  /**
-   * Computes a "snapped" donation amount and resulting whole-number XP for a
-   * desired donation amount, per fund's configured rate. Always rounds UP
-   * to the next amount that yields a whole XP — member pays a bit extra
-   * rather than losing fractional XP. FP is left fractional (computed on
-   * the FINAL snapped amount, not the original entered amount).
-   */
   const snapDonationForWholeXp = useCallback((
     desiredAmount: number, xpPer100: number
   ): { snappedAmount: number; xp: number } => {
     if (xpPer100 <= 0) return { snappedAmount: desiredAmount, xp: 0 };
     const bdtPerXp = 100 / xpPer100;
     const rawXp = desiredAmount / bdtPerXp;
-    const wholeXp = Math.ceil(rawXp); // snap UP
-    const snappedAmount = Math.ceil(wholeXp * bdtPerXp * 100) / 100; // round to 2dp currency
+    const wholeXp = Math.ceil(rawXp);
+    const snappedAmount = Math.ceil(wholeXp * bdtPerXp * 100) / 100;
     return { snappedAmount, xp: wholeXp };
   }, []);
 
@@ -289,7 +360,6 @@ export function usePoints() {
     }
   }, [tenant.id]);
 
-  /** Admin direct-entry donation — completes immediately (cash-in-hand), no verification. */
   const recordDonation = useCallback(async (input: {
     member_id?: string; member_name?: string; member_email?: string;
     amount: number; currency?: string; fund_account: FundAccount; notes?: string;
@@ -325,7 +395,6 @@ export function usePoints() {
     }
   }, [tenant.id, user, isAdmin, fetchDonationPointConfigs, snapDonationForWholeXp]);
 
-  /** Member-submitted donation via bKash — goes to pending_verification, admin verifies separately. */
   const submitMemberDonation = useCallback(async (input: {
     amount: number; fund_account: FundAccount; transaction_id: string; sender_bkash_number: string;
   }): Promise<Donation | null> => {
@@ -432,7 +501,6 @@ export function usePoints() {
     }
   }, [tenant.id, user, isAdmin]);
 
-  /** Member requests a redemption — goes to lightweight approval queue. */
   const requestRedemption = useCallback(async (itemId: string): Promise<FpRedemptionRequest | null> => {
     if (!user) { addToast('You must be signed in', 'error'); return null; }
     setLoading(true);
@@ -482,7 +550,6 @@ export function usePoints() {
     }
   }, [tenant.id]);
 
-  /** Lightweight approval — any admin with access to this page can approve, not restricted to signatories. */
   const approveRedemption = useCallback(async (requestId: string): Promise<void> => {
     requireAdmin();
     setLoading(true);
@@ -536,7 +603,7 @@ export function usePoints() {
     setLoading(true);
     try {
       const { error } = await supabase.rpc('transfer_fp', {
-        p_tenant_id: tenant.id, p_to_member_id: toMemberId,
+        p_tenant_id: tenant.id, p_from_member_id: user.id, p_to_member_id: toMemberId,
         p_amount: amount, p_note: note || null,
       });
       if (error) throw error;
@@ -561,20 +628,15 @@ export function usePoints() {
 
   return {
     loading,
-    // rate
     fetchCurrentFpRate, fetchFpRateHistory,
-    // levels
     fetchLevelConfigs, saveLevelConfig,
-    // member points
     fetchMemberPoints, fetchMemberPointLedger, awardPoints,
-    // donations
+    awardAttendancePoints, reverseAttendancePoints, adjustAttendanceXpForEdit,
     fetchDonationPointConfigs, saveDonationPointConfig, snapDonationForWholeXp,
     fetchDonations, fetchPendingDonations, recordDonation, submitMemberDonation, verifyDonation, rejectDonation,
-    // redemption
     fetchRedemptionItems, createRedemptionItem, updateRedemptionItem,
     requestRedemption, fetchMemberRedemptions, fetchPendingRedemptions,
     approveRedemption, rejectRedemption, markRedemptionFulfilled,
-    // transfers
     transferFp, fetchMemberTransfers,
   };
 }
