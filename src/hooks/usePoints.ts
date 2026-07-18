@@ -195,10 +195,10 @@ export function usePoints() {
   // dues system's read path, not attendance's.
 
   const fetchMemberPoints = useCallback(async (memberId: string): Promise<MemberPoints> => {
-    const { data } = await supabase.from('member_points').select('xp, fp, level').eq('member_id', memberId).maybeSingle();
+    const { data } = await supabase.from('users').select('xp, fp, level').eq('id', memberId).eq('tenant_id', tenant.id).maybeSingle();
     return { xp: data?.xp || 0, fp: data?.fp || 0, level: data?.level || 0 };
-  }, []);
-
+  }, [tenant.id]);
+  
   const fetchMemberPointLedger = useCallback(async (memberId: string): Promise<PointLedgerEntry[]> => {
     if (!user) return [];
     const { data, error } = await supabase.from('point_ledger').select('*')
