@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -384,18 +385,11 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
               boxShadow: dark ? 'none' : '0 2px 8px rgba(31,45,61,0.06)',
             }}
           >
-            {/* left: mobile menu + home + club logo */}
+            {/* left: mobile menu + club logo */}
             <div className="flex items-center gap-2 lg:gap-3 min-w-0">
               <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-1 -ml-1 rounded shrink-0" style={{ color: p.tl }}>
                 <Menu size={22} />
               </button>
-              <NavLink
-                to="/dashboard/home"
-                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-                style={{ background: p.lightCard, color: p.mut }}
-              >
-                <Home size={17} />
-              </NavLink>
               {settings.logoUrl ? (
                 <span
                   role="img" aria-label="Logo"
@@ -415,29 +409,47 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
               )}
             </div>
 
-            {/* right: xp/fp pills, notifications, profile — always visible,
-                just tighter (icon+number only, no label) below lg so five
-                items still fit a narrow phone width without overflow.
+            {/* right: xp/fp pills, home, notifications, profile — always
+                visible, tighter (icon+number only, no label) below lg so
+                everything fits a narrow phone width without overflow.
                 Pill fills use p.greenDeep/p.gcA (the same deep-accent chip
                 backgrounds DashboardHome.tsx's Zap/Star icon squares use)
                 instead of flat rgba(gold) / accent+alpha, which read fine
                 against a white card but muddied against p.dark in light
                 mode. Text stays p.av2 (XP) / p.green (FP) — same colors
-                DashboardHome.tsx's own XP/FP numbers use. */}
-            <div className="flex items-center gap-1.5 lg:gap-3 shrink-0">
-              <div className="flex items-center gap-1 lg:gap-1.5 rounded-full px-2 lg:px-3 py-1.5" style={{ background: p.greenDeep }}>
-                <Zap size={14} color={p.av2} className="shrink-0" />
-                <span className="text-[11px] lg:text-[12px] font-bold whitespace-nowrap" style={{ color: p.av2 }}>{points.xp.toLocaleString()}</span>
+                DashboardHome.tsx's own XP/FP numbers use.
+
+                Icon-chip circles (home/notifications) previously used
+                p.lightCard — that token is DashboardHome.tsx's dedicated
+                standalone-card surface (see "Tracking" card), a full step
+                brighter than p.dark by design, meant to read as its OWN
+                card. Used here as a small inset circle it just looked like
+                a stray white blob sitting on the header. Swapped for a low
+                alpha wash of p.tl OVER p.dark instead — always reads as
+                "a bit lighter than the header," in either theme, without
+                borrowing a different surface's identity. */}
+            <div className="flex items-center gap-1 lg:gap-3 shrink-0">
+              <div className="flex items-center gap-1 lg:gap-1.5 rounded-full px-1.5 lg:px-2.5 py-1 lg:py-1.5" style={{ background: p.greenDeep }}>
+                <Zap size={13} color={p.av2} className="shrink-0" />
+                <span className="text-[10.5px] lg:text-[12px] font-bold whitespace-nowrap" style={{ color: p.av2 }}>{points.xp.toLocaleString()}</span>
               </div>
-              <div className="flex items-center gap-1 lg:gap-1.5 rounded-full px-2 lg:px-3 py-1.5" style={{ background: p.gcA }}>
-                <Star size={14} color={p.green} className="shrink-0" />
-                <span className="text-[11px] lg:text-[12px] font-bold whitespace-nowrap" style={{ color: p.green }}>{points.fp.toFixed(2)}</span>
+              <div className="flex items-center gap-1 lg:gap-1.5 rounded-full px-1.5 lg:px-2.5 py-1 lg:py-1.5" style={{ background: p.gcA }}>
+                <Star size={13} color={p.green} className="shrink-0" />
+                <span className="text-[10.5px] lg:text-[12px] font-bold whitespace-nowrap" style={{ color: p.green }}>{points.fp.toFixed(2)}</span>
               </div>
+
+              <NavLink
+                to="/dashboard/home"
+                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                style={{ background: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', color: p.mut }}
+              >
+                <Home size={17} />
+              </NavLink>
 
               <NavLink
                 to="/dashboard/notifications"
                 className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-                style={{ background: p.lightCard, color: p.mut }}
+                style={{ background: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', color: p.mut }}
               >
                 <Bell size={17} />
               </NavLink>
