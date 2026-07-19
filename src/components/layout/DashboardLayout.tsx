@@ -5,10 +5,11 @@ import { useTenant } from '../../hooks/useTenant';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../supabase';
-import { LogOut, Menu, ChevronLeft, Lock, LayoutDashboard, ShieldCheck } from 'lucide-react';
+import { LogOut, Menu, ChevronLeft, Lock, LayoutDashboard, ShieldCheck, Bell, Zap, Star } from 'lucide-react';
 import ThemeToggle from '../common/ThemeToggle';
 import { usePageRegistry } from '../../hooks/usePageRegistry';
 import { getClubPalette } from '../../theme/racPalette';
+import { usePoints } from '../../hooks/usePoints';
 
 /** Converts a #rrggbb hex string + alpha (0–1) into an rgba() string.
  * Used once, for headerBg in light mode, to blend p.bg (an opaque hex
@@ -23,15 +24,17 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?: boolean }) {
-  const { profile, signOut, role, isMasterAdmin, permissions } = useAuth();
+  const { profile, signOut, role, isMasterAdmin, permissions, user } = useAuth();
   const { settings, theme, tenant } = useTenant();
   const { adminTenant, setAdminTenant } = useAdminTenant();
   const { resolvedTheme } = useTheme();
+  const { fetchMemberPoints } = usePoints();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [points, setPoints] = useState({ xp: 0, fp: 0, level: 0 });
 
   const dark = resolvedTheme === 'dark';
 
@@ -57,6 +60,14 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [isAdminMode, adminTenant.id]);
+
+  // XP/FP belong to the logged-in person, not the tenant being viewed —
+  // fetched regardless of isAdminMode so the header stays consistent
+  // whether they're looking at /dashboard or /admin.
+  useEffect(() => {
+    if (!user) return;
+    fetchMemberPoints(user.id).then((pts) => pts && setPoints(pts));
+  }, [user?.id]);
 
   const handleSignOut = async () => { await signOut(); navigate('/'); };
   const closeMobile = () => setMobileOpen(false);
@@ -353,36 +364,77 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
-        <header
-          className="h-[64px] shrink-0 flex items-center justify-between px-4 lg:px-6 backdrop-blur-2xl border-b"
-          style={{ background: c.headerBg, borderColor: c.sidebarBorder }}
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-1 -ml-1 rounded shrink-0" style={{ color: c.brandText }}>
-              <Menu size={22} />
-            </button>
-            {/* Was `hidden lg:flex` — invisible on mobile, which is why the
-                header looked completely empty on phone screenshots. Now
-                always visible; only the font size steps down on small screens. */}
-            <span
-              className="flex items-center gap-2 font-semibold text-[14px] lg:text-[15px] tracking-[-.2px] truncate"
-              style={{ color: c.brandText, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: c.accent }} />
-              {isAdminMode ? 'Admin Panel' : 'Dashboard'}
-            </span>
-          </div>
+        <header className="shrink-0 px-3 pt-3 lg:px-6 lg:pt-4">
+          <div
+            className="h-[60px] rounded-2xl flex items-center justify-between px-3 lg:px-5 gap-2"
+            style={{
+              background: dark ? 'rgba(255,255,255,0.06)' : '#ffffff',
+              border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : c.border}`,
+              boxShadow: dark ? 'none' : '0 2px 8px rgba(31,45,61,0.08)',
+            }}
+          >
+            {/* left: mobile menu + club logo */}
+            <div className="flex items-center gap-3 min-w-0">
+              <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-1 -ml-1 rounded shrink-0" style={{ color: c.brandText }}>
+                <Menu size={22} />
+              </button>
+              {settings.logoUrl ? (
+                <span
+                  role="img" aria-label="Logo"
+                  className="h-7 w-28 lg:h-8 lg:w-32 shrink-0"
+                  style={{
+                    display: 'inline-block',
+                    backgroundColor: c.accent,
+                    WebkitMaskImage: `url(${settings.logoUrl})`,
+                    maskImage: `url(${settings.logoUrl})`,
+                    WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
+                    WebkitMaskPosition: 'left center', maskPosition: 'left center',
+                    WebkitMaskSize: 'contain', maskSize: 'contain',
+                  }}
+                />
+              ) : (
+                <span className="h-7 w-7 rounded-full shrink-0" style={{ background: c.accent }} />
+              )}
+            </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            {/* Was `hidden sm:inline-flex` — also invisible on mobile.
-                Now always visible; padding/gap tighten on small screens. */}
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full text-[10px] lg:text-[11px] font-semibold px-2.5 lg:px-3 py-1"
-              style={{ background: c.tenantSwitchBg, color: c.accent, border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : c.border}` }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.accent }} />
-              {activeTenantId === 'racdlu' ? 'Rotaract' : 'Interact'}
-            </span>
+            {/* right: xp/fp pills, notifications, profile */}
+            <div className="flex items-center gap-2 lg:gap-3 shrink-0">
+              <div className="hidden sm:flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ background: 'rgba(201,154,60,0.12)' }}>
+                <Zap size={14} color="#c99a3c" />
+                <span className="text-[12px] font-bold" style={{ color: '#c99a3c' }}>{points.xp.toLocaleString()}</span>
+              </div>
+              <div className="hidden sm:flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ background: `${c.accent}18` }}>
+                <Star size={14} color={c.accent} />
+                <span className="text-[12px] font-bold" style={{ color: c.accent }}>{points.fp.toFixed(2)}</span>
+              </div>
+
+              <NavLink
+                to="/dashboard/notifications"
+                className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                style={{ background: dark ? 'rgba(255,255,255,0.05)' : '#f5f5f9', color: c.brandText }}
+              >
+                <Bell size={17} />
+              </NavLink>
+
+              <NavLink to="/dashboard/profile" className="shrink-0">
+                {(profile as any)?.photo ? (
+                  <img
+                    src={(profile as any).photo}
+                    alt={profile?.name || 'Profile'}
+                    className="h-9 w-9 rounded-full object-cover"
+                    style={{ border: `2px solid ${c.accent}` }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                ) : (
+                  <div
+                    className="h-9 w-9 rounded-full flex items-center justify-center text-white font-bold text-[13px]"
+                    style={{ background: c.accent }}
+                  >
+                    {(profile?.name || 'U').charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </NavLink>
+            </div>
           </div>
         </header>
 
