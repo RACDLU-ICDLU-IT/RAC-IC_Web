@@ -31,6 +31,7 @@ import Contact from './pages/Contact';
 import Join from './pages/Join';
 import Login from './pages/auth/Login';
 import ForgotPassword from './pages/auth/ForgotPassword';
+import ResetPassword from './pages/auth/ResetPassword';
 import Sponsorship from './pages/Sponsorship';
 import Donate from './pages/Donate';
 import TermsOfService from './pages/TermsOfService';
@@ -138,6 +139,7 @@ export default function App() {
                     <Route path="/join" element={<Join />} />
                     <Route path="/sponsorship" element={<Sponsorship />} />
                     <Route path="/donate" element={<Donate />} />
+                    <Route path="/reset-password" element={<ResetPassword />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/forgot-password" element={<ForgotPassword />} />
                     <Route path="/terms-of-service" element={<TermsOfService />} />
