@@ -52,16 +52,43 @@ export default function ResetPassword() {
   const [done, setDone]                       = useState(false);
   const pwRef = useRef<HTMLInputElement>(null);
 
-  // The reset link lands here with a recovery token in the URL that
-  // Supabase's client exchanges for a session automatically on load.
-  // We just confirm a session actually exists before letting the user
-  // set a new password — otherwise this page could be hit directly
-  // with no valid token.
+  // The reset link lands here with a recovery token in the URL hash
+  // fragment (#access_token=...&type=recovery). The supabase-js client
+  // auto-parses this on load (detectSessionInUrl: true), but that parse
+  // is async and can race ahead of a naive one-shot getSession() call —
+  // which is what caused this page to hang on "Verifying...". Listening
+  // to onAuthStateChange instead catches the PASSWORD_RECOVERY event
+  // the moment the client finishes exchanging the hash token, with a
+  // getSession() fallback + short delay for any other startup event.
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setValidSession(!!data.session);
-      setCheckingSession(false);
+    let settled = false;
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (settled) return;
+      if (event === 'PASSWORD_RECOVERY' || (session && event !== 'SIGNED_OUT')) {
+        settled = true;
+        setValidSession(true);
+        setCheckingSession(false);
+      }
     });
+
+    // Fallback: if no auth event fires within a short window (e.g. the
+    // hash was already invalid/expired so there's nothing to exchange),
+    // fall back to a direct session check before giving up.
+    const fallback = setTimeout(() => {
+      if (settled) return;
+      supabase.auth.getSession().then(({ data }) => {
+        if (settled) return;
+        settled = true;
+        setValidSession(!!data.session);
+        setCheckingSession(false);
+      });
+    }, 1500);
+
+    return () => {
+      listener.subscription.unsubscribe();
+      clearTimeout(fallback);
+    };
   }, []);
 
   useEffect(() => { if (validSession) pwRef.current?.focus(); }, [validSession]);
