@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../../supabase';
 import { useTenant } from '../../hooks/useTenant';
 
@@ -361,6 +361,16 @@ export default function Login() {
         /* Extra right padding for password input */
         .lr-input-pass { padding-right:52px; }
 
+        /* ── Forgot password link ── */
+        .lr-forgot-row {
+          text-align:right; margin-top:-12px; margin-bottom:24px;
+        }
+        .lr-forgot-link {
+          font-size:13px; font-weight:600; color:var(--accent);
+          text-decoration:none; font-family:'Nunito', var(--font-body, sans-serif);
+        }
+        .lr-forgot-link:hover { text-decoration:underline; }
+
         /* ── Remember me row ── */
         .lr-options {
           display:flex; align-items:center; justify-content:space-between;
@@ -572,6 +582,10 @@ export default function Login() {
                   </button>
                 </div>
               </div>
+
+              <p className="lr-forgot-row">
+                <Link to="/forgot-password" className="lr-forgot-link">Forgot password?</Link>
+              </p>
 
               <div className="lr-options">
                 <label className="lr-remember">
