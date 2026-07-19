@@ -243,6 +243,10 @@ export function useDues() {
         p_override_amount: overrideAmount ?? null,
       });
       if (error) handleError(error);
+      // NOTE: record_id must be a uuid — templateId is the correct value
+      // here (it identifies which template this generation run was for),
+      // never tenant.id (text, e.g. "racdlu"), which would violate the
+      // audit_log.record_id uuid column and throw 22P02.
       await logAudit(tenant.id, 'fee_ledger', templateId, 'create', user?.id, {
         action: 'manual_generation', due_date: dueDate, override_amount: overrideAmount, generated: data,
       });
@@ -261,7 +265,10 @@ export function useDues() {
     try {
       const { data, error } = await supabase.rpc('run_auto_generation', { p_tenant_id: tenant.id });
       if (error) handleError(error);
-      await logAudit(tenant.id, 'fee_ledger', tenant.id, 'create', user?.id, { action: 'auto_generation', generated: data });
+      // FIX: this action has no single associated record — was previously
+      // wrongly passing tenant.id (text) into a uuid column. Generate a
+      // fresh uuid to represent this specific audit event instead.
+      await logAudit(tenant.id, 'fee_ledger', crypto.randomUUID(), 'create', user?.id, { action: 'auto_generation', generated: data });
       addToast(`Auto-generated ${data} charge(s)`, 'success');
       return (data as number) || 0;
     } catch {
@@ -368,7 +375,11 @@ export function useDues() {
     try {
       const { data, error } = await supabase.rpc('mark_overdue_fees', { p_tenant_id: tenant.id });
       if (error) throw error;
-      if (data > 0) await logAudit(tenant.id, 'fee_ledger', tenant.id, 'update', user?.id, { action: 'mark_overdue', count: data });
+      // FIX: was passing tenant.id (text) as record_id (uuid) — this ran
+      // on EVERY AdminDues page load and was the primary source of the
+      // repeated 22P02 "invalid input syntax for type uuid: racdlu" errors
+      // flooding the Postgres logs.
+      if (data > 0) await logAudit(tenant.id, 'fee_ledger', crypto.randomUUID(), 'update', user?.id, { action: 'mark_overdue', count: data });
     } catch (err) {
       console.error('mark_overdue_fees failed', err);
     }
@@ -379,7 +390,8 @@ export function useDues() {
     try {
       const { data, error } = await supabase.rpc('flag_overpayments', { p_tenant_id: tenant.id });
       if (error) throw error;
-      if (data > 0) await logAudit(tenant.id, 'fee_ledger', tenant.id, 'update', user?.id, { action: 'flag_overpayments', count: data });
+      // FIX: same record_id bug as markOverdueFees above.
+      if (data > 0) await logAudit(tenant.id, 'fee_ledger', crypto.randomUUID(), 'update', user?.id, { action: 'flag_overpayments', count: data });
     } catch (err) {
       console.error('flag_overpayments failed', err);
     }
@@ -458,7 +470,10 @@ export function useDues() {
       const { error: insErr } = await supabase.from('reminders').insert(inserts);
       if (insErr) handleError(insErr);
 
-      await logAudit(tenant.id, 'fee_ledger', tenant.id, 'update', user?.id, { action: 'bulk_reminders', count: ledgers.length });
+      // FIX: same record_id bug — was passing tenant.id (text) as the uuid
+      // record_id. This ran every time the "Send All Overdue Reminders"
+      // bulk action fired.
+      await logAudit(tenant.id, 'fee_ledger', crypto.randomUUID(), 'update', user?.id, { action: 'bulk_reminders', count: ledgers.length });
       addToast(`Sent ${ledgers.length} reminders`, 'success');
     } catch {
       // handled
@@ -626,7 +641,10 @@ export function useDues() {
         { onConflict: 'tenant_id' }
       );
       if (error) { addToast(error.message || 'Failed to save settings', 'error'); return false; }
-      await logAudit(tenant.id, 'dues_settings', tenant.id, 'update', user?.id, settings);
+      // FIX: dues_settings has no natural uuid record id (its PK is
+      // tenant_id, a text column) — was wrongly passing tenant.id into
+      // audit_log.record_id (uuid). Generate a fresh uuid for this event.
+      await logAudit(tenant.id, 'dues_settings', crypto.randomUUID(), 'update', user?.id, settings);
       addToast('Payment settings saved', 'success');
       return true;
     } catch (err: any) {
