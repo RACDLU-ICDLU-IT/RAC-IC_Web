@@ -5,7 +5,7 @@ import { useTenant } from '../../hooks/useTenant';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../supabase';
-import { LogOut, Menu, ChevronLeft, Lock, LayoutDashboard, ShieldCheck, Bell, Zap, Star } from 'lucide-react';
+import { LogOut, Menu, ChevronLeft, Lock, LayoutDashboard, ShieldCheck, Bell, Zap, Star, Home } from 'lucide-react';
 import ThemeToggle from '../common/ThemeToggle';
 import { usePageRegistry } from '../../hooks/usePageRegistry';
 import { getClubPalette } from '../../theme/racPalette';
@@ -364,24 +364,42 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
-        <header className="shrink-0 px-3 pt-3 lg:px-6 lg:pt-4">
+        <header className="shrink-0 px-3 pt-4 pb-1 lg:px-6 lg:pt-6 lg:pb-2">
+          {/* Was hardcoded to #ffffff in light mode — every card on the
+              actual dashboard page (DashboardHome.tsx) reads its surface
+              color from `p.dark` (the getClubPalette token for card
+              backgrounds, in both themes despite the token's name), not a
+              literal white. That mismatch is why this floated as a bright,
+              disconnected slab in light mode while every card below it
+              used the page's own warm-gray-derived surface tone. Now this
+              reads from the same `p` object DashboardHome.tsx uses, so the
+              header is a card of the page rather than a separate surface
+              guessing at what "light mode" should look like. */}
           <div
             className="h-[60px] rounded-2xl flex items-center justify-between px-3 lg:px-5 gap-2"
             style={{
-              background: dark ? 'rgba(255,255,255,0.06)' : '#ffffff',
-              border: `1px solid ${dark ? 'rgba(255,255,255,0.08)' : c.border}`,
-              boxShadow: dark ? 'none' : '0 2px 8px rgba(31,45,61,0.08)',
+              background: p.dark,
+              color: p.tl,
+              border: `1px solid ${p.border}`,
+              boxShadow: dark ? 'none' : '0 2px 8px rgba(31,45,61,0.06)',
             }}
           >
-            {/* left: mobile menu + club logo */}
-            <div className="flex items-center gap-3 min-w-0">
-              <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-1 -ml-1 rounded shrink-0" style={{ color: c.brandText }}>
+            {/* left: mobile menu + home + club logo */}
+            <div className="flex items-center gap-2 lg:gap-3 min-w-0">
+              <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-1 -ml-1 rounded shrink-0" style={{ color: p.tl }}>
                 <Menu size={22} />
               </button>
+              <NavLink
+                to="/dashboard/home"
+                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                style={{ background: p.lightCard, color: p.mut }}
+              >
+                <Home size={17} />
+              </NavLink>
               {settings.logoUrl ? (
                 <span
                   role="img" aria-label="Logo"
-                  className="h-7 w-28 lg:h-8 lg:w-32 shrink-0"
+                  className="hidden xs:inline-block h-7 w-24 lg:h-8 lg:w-32 shrink-0"
                   style={{
                     display: 'inline-block',
                     backgroundColor: c.accent,
@@ -397,21 +415,29 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
               )}
             </div>
 
-            {/* right: xp/fp pills, notifications, profile */}
-            <div className="flex items-center gap-2 lg:gap-3 shrink-0">
-              <div className="hidden sm:flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ background: 'rgba(201,154,60,0.12)' }}>
-                <Zap size={14} color="#c99a3c" />
-                <span className="text-[12px] font-bold" style={{ color: '#c99a3c' }}>{points.xp.toLocaleString()}</span>
+            {/* right: xp/fp pills, notifications, profile — always visible,
+                just tighter (icon+number only, no label) below lg so five
+                items still fit a narrow phone width without overflow.
+                Pill fills use p.greenDeep/p.gcA (the same deep-accent chip
+                backgrounds DashboardHome.tsx's Zap/Star icon squares use)
+                instead of flat rgba(gold) / accent+alpha, which read fine
+                against a white card but muddied against p.dark in light
+                mode. Text stays p.av2 (XP) / p.green (FP) — same colors
+                DashboardHome.tsx's own XP/FP numbers use. */}
+            <div className="flex items-center gap-1.5 lg:gap-3 shrink-0">
+              <div className="flex items-center gap-1 lg:gap-1.5 rounded-full px-2 lg:px-3 py-1.5" style={{ background: p.greenDeep }}>
+                <Zap size={14} color={p.av2} className="shrink-0" />
+                <span className="text-[11px] lg:text-[12px] font-bold whitespace-nowrap" style={{ color: p.av2 }}>{points.xp.toLocaleString()}</span>
               </div>
-              <div className="hidden sm:flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ background: `${c.accent}18` }}>
-                <Star size={14} color={c.accent} />
-                <span className="text-[12px] font-bold" style={{ color: c.accent }}>{points.fp.toFixed(2)}</span>
+              <div className="flex items-center gap-1 lg:gap-1.5 rounded-full px-2 lg:px-3 py-1.5" style={{ background: p.gcA }}>
+                <Star size={14} color={p.green} className="shrink-0" />
+                <span className="text-[11px] lg:text-[12px] font-bold whitespace-nowrap" style={{ color: p.green }}>{points.fp.toFixed(2)}</span>
               </div>
 
               <NavLink
                 to="/dashboard/notifications"
                 className="relative w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-                style={{ background: dark ? 'rgba(255,255,255,0.05)' : '#f5f5f9', color: c.brandText }}
+                style={{ background: p.lightCard, color: p.mut }}
               >
                 <Bell size={17} />
               </NavLink>
