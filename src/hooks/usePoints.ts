@@ -179,7 +179,12 @@ export function usePoints() {
         const { error } = await supabase.from('level_config').insert(rows);
         if (error) handleError(error);
       }
-      await logAudit(tenant.id, 'level_config', tenant.id, 'update', user?.id, { count: rows.length });
+      // FIX: was passing tenant.id (text, e.g. "racdlu") into
+      // audit_log.record_id (uuid column) — caused a 22P02 "invalid input
+      // syntax for type uuid" error every time level config was saved.
+      // This action covers multiple rows at once, so there's no single
+      // natural record id; generate a fresh uuid to represent this event.
+      await logAudit(tenant.id, 'level_config', crypto.randomUUID(), 'update', user?.id, { count: rows.length });
       addToast('Level configuration saved', 'success');
     } finally {
       setLoading(false);
@@ -187,12 +192,8 @@ export function usePoints() {
   }, [tenant.id, isAdmin, user]);
 
   // ── Member points read ───────────────────────────────────────────────────────
-  // NOTE: still reads from member_points, per your uploaded dues-side version.
-  // That table does not exist yet in your actual schema (confirmed via SQL
-  // Editor — only users.xp/fp/level exist). This will return { xp:0, fp:0,
-  // level:0 } for everyone until the dues-side migration creates member_points.
-  // Left exactly as you uploaded it — not my call to change since it's the
-  // dues system's read path, not attendance's.
+  // Reads from users.xp/fp/level (confirmed live schema — member_points was
+  // never created; points storage was migrated to users directly).
 
   const fetchMemberPoints = useCallback(async (memberId: string): Promise<MemberPoints> => {
     const { data } = await supabase.from('users').select('xp, fp, level').eq('id', memberId).eq('tenant_id', tenant.id).maybeSingle();
@@ -209,9 +210,6 @@ export function usePoints() {
   }, [tenant.id, user]);
 
   // ── Award points (generic — used by admin manual award) ────────────────────
-  // UNCHANGED from your uploaded version. Still hardcoded to source_type:
-  // 'manual' via the award_points RPC — dues-side callers keep working
-  // exactly as-is, untouched by anything below.
 
   const awardPoints = useCallback(async (
     memberId: string, xpDelta: number, fpDelta: number, note?: string
@@ -224,6 +222,8 @@ export function usePoints() {
         p_fp_delta: fpDelta, p_source_type: 'manual', p_source_id: null, p_note: note || 'Manual award',
       });
       if (error) handleError(error);
+      // memberId is a valid uuid here (it's the target member's id) — this
+      // call site was already correct, unlike the others fixed above.
       await logAudit(tenant.id, 'member_points', memberId, 'update', user?.id, { action: 'manual_award', xp: xpDelta, fp: fpDelta, note });
       addToast(`Awarded ${xpDelta} XP, ${fpDelta} FP`, 'success');
     } finally {
@@ -231,11 +231,8 @@ export function usePoints() {
     }
   }, [tenant.id, isAdmin, user]);
 
-  // ── Attendance points (NEW — additive, independent of dues/member_points) ──
-  // Writes to users.xp/fp via the award_points_sourced RPC (confirmed live
-  // in your Supabase project this session). Deliberately does NOT touch
-  // member_points — per your instruction, attendance has nothing to do with
-  // dues, and that table doesn't exist yet anyway.
+  // ── Attendance points (additive, independent of dues) ──────────────────────
+  // Writes to users.xp/fp via the award_points_sourced RPC.
 
   const awardAttendancePoints = useCallback(async (
     memberId: string, eventId: string, status: AttendanceStatus, xpAmount: number
@@ -596,6 +593,13 @@ export function usePoints() {
   }, [tenant.id, user, isAdmin]);
 
   // ── FP member-to-member transfers ────────────────────────────────────────────
+  // FIX: transfer_fp's old signature (p_tenant_id, p_from_member_id,
+  // p_to_member_id, p_amount, p_note) has been DROPPED from the database —
+  // only the hardened version (p_tenant_id, p_to_member_id, p_amount,
+  // p_note) remains, which resolves the sender from auth.uid() server-side
+  // instead of trusting a client-supplied "from" id. p_from_member_id is no
+  // longer sent; calling the old signature would now fail with
+  // "function transfer_fp(...) does not exist".
 
   const transferFp = useCallback(async (toMemberId: string, amount: number, note?: string): Promise<boolean> => {
     if (!user) { addToast('You must be signed in', 'error'); return false; }
@@ -603,7 +607,7 @@ export function usePoints() {
     setLoading(true);
     try {
       const { error } = await supabase.rpc('transfer_fp', {
-        p_tenant_id: tenant.id, p_from_member_id: user.id, p_to_member_id: toMemberId,
+        p_tenant_id: tenant.id, p_to_member_id: toMemberId,
         p_amount: amount, p_note: note || null,
       });
       if (error) throw error;
