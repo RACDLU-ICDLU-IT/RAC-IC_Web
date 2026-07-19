@@ -52,14 +52,10 @@ export default function ForgotPassword() {
     setLoading(true);
     setError(null);
     try {
-      // Edge Function (not yet built) — looks up email under this tenant,
-      // generates + stores a hashed reset token, sends it via Resend.
-      // Should always return success even for unknown emails, so this
-      // page can't be used to enumerate accounts.
-      const { error: fnError } = await supabase.functions.invoke('request-password-reset', {
-        body: { email: email.trim(), tenant_id: tenant.id },
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/reset-password`,
       });
-      if (fnError) throw fnError;
+      if (resetError) throw resetError;
       setSubmitted(true);
     } catch (err: any) {
       setError(err.message || 'Something went wrong. Please try again.');
