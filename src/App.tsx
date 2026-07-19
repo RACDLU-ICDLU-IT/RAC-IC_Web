@@ -30,6 +30,7 @@ import Gallery from './pages/Gallery';
 import Contact from './pages/Contact';
 import Join from './pages/Join';
 import Login from './pages/auth/Login';
+import ForgotPassword from './pages/auth/ForgotPassword';
 import Sponsorship from './pages/Sponsorship';
 import Donate from './pages/Donate';
 import TermsOfService from './pages/TermsOfService';
@@ -138,6 +139,7 @@ export default function App() {
                     <Route path="/sponsorship" element={<Sponsorship />} />
                     <Route path="/donate" element={<Donate />} />
                     <Route path="/login" element={<Login />} />
+                    <Route path="/forgot-password" element={<ForgotPassword />} />
                     <Route path="/terms-of-service" element={<TermsOfService />} />
                     <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                   </Route>
