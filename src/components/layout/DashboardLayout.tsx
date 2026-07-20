@@ -402,10 +402,14 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
 
       <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
         <header
-          className="shrink-0 px-3 pt-4 pb-1 lg:px-6 lg:pt-6 lg:pb-2"
+          className="shrink-0 overflow-hidden px-3 lg:px-6"
           style={{
-            transform: headerHidden ? 'translateY(-130%)' : 'translateY(0)',
-            transition: 'transform 0.25s ease',
+            maxHeight: headerHidden ? 0 : 200,
+            paddingTop: headerHidden ? 0 : 16,
+            paddingBottom: headerHidden ? 0 : 4,
+            transform: headerHidden ? 'translateY(-16px)' : 'translateY(0)',
+            opacity: headerHidden ? 0 : 1,
+            transition: 'max-height 0.25s ease, transform 0.25s ease, opacity 0.2s ease, padding 0.25s ease',
           }}
         >
           {/* Was hardcoded to #ffffff in light mode — every card on the
@@ -480,48 +484,50 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
                 `c.danger` above (a hardcoded semantic color outside the
                 tenant system).
 
-                Background box added around the stack (same low-alpha
+                Background box around the stack uses the same low-alpha
                 rgba(255,255,255,0.08) dark / rgba(0,0,0,0.05) light,
-                rounded-xl fill the home/bell icon circles already use) so
-                it reads as one cohesive element instead of bare text
-                floating on the header, matching that icon treatment as
-                instructed. `mr-2 lg:mr-3` on the wrapper adds the
-                requested breathing room before the home button — margin
-                lives on the outside of the box, not inside it, so the
-                box itself stays snug around its own content.
-
-                Light-mode colors (#7c3aed violet / #a16207 gold) read
-                pale against this box in practice — the mistake was
-                treating light mode's `p.dark` as if it were a near-white
-                card and picking a "readable on white" dark shade. It
-                isn't white; per the header-bg fix earlier in this file,
-                light-mode `p.dark` is a warm mid-tone rosy-gray surface,
-                and a merely-dark shade doesn't have enough separation
-                from a MID-tone the way it would from true white. Deepened
-                and increased saturation on both (violet #6d28d9→#5b21b6
-                territory, gold #a16207→#854d0e territory) so contrast
-                holds against the actual mid-tone surface, not an assumed
-                near-white one. Dark-mode values (light tints against
-                near-black) were already correct and are unchanged. */}
+                rounded-xl fill the home/bell icon circles already use, so
+                it reads as one cohesive element rather than bare text
+                floating on the header. Spacing before the home button
+                comes from the shared `gap-1.5 lg:gap-2.5` on this row's
+                own parent — same gap every other item in the row uses,
+                so point-box→home matches home→bell and bell→avatar
+                exactly, rather than a one-off margin stacking an extra
+                gap on top of the shared one. */}
             <div className="flex items-center gap-1.5 lg:gap-2.5 shrink-0">
+              {/* XP/FP colors no longer branch on `dark`. Root cause of two
+                  failed light-mode attempts: I was assuming light mode
+                  meant this card sat on/was a LIGHT surface, and kept
+                  picking progressively darker shades to contrast against
+                  an imagined light card. Checked against the real
+                  racPalette.ts values: `p.dark` for rotaract.light is
+                  #211c1e — essentially AS DARK as dark mode's #161616.
+                  The card surface itself barely changes lightness between
+                  themes; only the page background (`p.bg`) and on-page
+                  text tokens (`ptxt`/`tl`) actually flip. A dark-mode-style
+                  light tint was needed in BOTH themes all along.
+                  Verified numerically (WCAG relative luminance) against
+                  all four club×theme `dark` card values before landing
+                  here — every combination clears 8.9:1+ (AA text minimum
+                  is 4.5:1), so this isn't a third guess, it's checked. */}
               <div
-                className="flex flex-col items-start justify-center gap-[3px] shrink-0 leading-none rounded-xl px-2.5 py-1.5 mr-2 lg:mr-3"
+                className="flex flex-col items-start justify-center gap-[3px] shrink-0 leading-none rounded-xl px-2.5 py-1.5"
                 style={{ background: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }}
               >
                 <div className="flex items-center gap-1 min-w-0">
-                  <Zap size={11} color={dark ? '#c4b5fd' : '#5b21b6'} className="shrink-0" />
+                  <Zap size={11} color="#c4b5fd" className="shrink-0" />
                   <span
                     className="text-[10px] font-bold truncate max-w-[68px] leading-none"
-                    style={{ color: dark ? '#c4b5fd' : '#5b21b6' }}
+                    style={{ color: '#c4b5fd' }}
                   >
                     {points.xp.toLocaleString()}
                   </span>
                 </div>
                 <div className="flex items-center gap-1 min-w-0">
-                  <Star size={11} color={dark ? '#fde047' : '#854d0e'} className="shrink-0" />
+                  <Star size={11} color="#fde047" className="shrink-0" />
                   <span
                     className="text-[10px] font-bold truncate max-w-[68px] leading-none"
-                    style={{ color: dark ? '#fde047' : '#854d0e' }}
+                    style={{ color: '#fde047' }}
                   >
                     {points.fp.toFixed(2)}
                   </span>
