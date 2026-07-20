@@ -384,7 +384,13 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
               boxShadow: dark ? 'none' : '0 2px 8px rgba(31,45,61,0.06)',
             }}
           >
-            {/* left: mobile menu + club logo */}
+            {/* left: mobile menu + club logo.
+                Logo was `hidden xs:inline-block` + size swapping at `lg`
+                — invisible below a breakpoint that likely isn't even
+                configured in this project's Tailwind config, and a
+                different fixed size at desktop. Now one constant size,
+                always rendered, regardless of viewport — "always the same
+                size" per instruction, not conditional on width. */}
             <div className="flex items-center gap-2 lg:gap-3 min-w-0 shrink">
               <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-1 -ml-1 rounded shrink-0" style={{ color: p.tl }}>
                 <Menu size={22} />
@@ -392,7 +398,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
               {settings.logoUrl ? (
                 <span
                   role="img" aria-label="Logo"
-                  className="hidden xs:inline-block h-7 w-24 lg:h-8 lg:w-32 shrink min-w-0"
+                  className="inline-block h-7 w-24 shrink min-w-0"
                   style={{
                     display: 'inline-block',
                     backgroundColor: c.accent,
@@ -408,62 +414,47 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
               )}
             </div>
 
-            {/* right: xp/fp stat blocks, home, notifications, profile.
-                
-                Shape: rounded-xl (12px) rather than rounded-full — matches
-                the corner radius the header card itself and every
-                DashboardHome.tsx card use (rounded-2xl on cards, this one
-                step down since it's a nested element), not the fully
-                circular pill shape from before, per explicit instruction
-                that this should look like "the same round cornered
-                rectangle... as the header elements or cards use."
+            {/* right: xp/fp, home, notifications, profile.
 
-                Color: XP is fixed violet, FP is fixed gold — NOT sourced
-                from `p` (getClubPalette), because that palette is built
-                around each tenant's green/accent shades and has no
-                violet/gold tokens; inventing a shade FROM the tenant
-                palette risked picking something that clashes depending on
-                tenant. Same pattern as `c.danger` above (a hardcoded
-                semantic red outside the tenant system) — XP/FP color
-                identity is fixed regardless of club, deliberately.
+                XP/FP: pill/card treatment removed entirely per instruction
+                ("if needed, remove the pill entirety") — no background, no
+                border, no padding box. Just icon + number, sized down to
+                fit. Explicit flex-col (not CSS grid + a `lg:` breakpoint
+                swap) so XP sits directly above FP as two rows UNCONDITION-
+                ALLY, at every viewport width — the previous grid version
+                still rendered side-by-side at some widths because
+                `lg:grid-cols-2` was doing exactly what it said, which
+                wasn't actually what was wanted here. flex-col has no
+                breakpoint to cross, so there's nothing to debug or drift.
+                Both rows sit centered against the home/bell/avatar icons
+                beside them via the outer wrapper's `items-center`.
 
-                Overflow fix: previous version had no length limit or
-                truncation on the number itself, so a large XP value (see
-                "58,725" screenshot) ran directly into the logo/rotary-wheel
-                graphic beside it instead of the row making room. Now:
-                - the left cluster (logo) is `shrink` + `min-w-0` so IT
-                  gives up space first, before the point blocks are asked to
-                - each number span is `truncate` inside a `max-w-[...]` cap,
-                  so a huge value clips with an ellipsis instead of pushing
-                  into the next element
-                - the two stat blocks themselves are `shrink-0` so they
-                  hold their shape and never get squished into unreadable
-                  slivers — they're the thing the user actually needs to
-                  read, so they're what everything else yields to. */}
+                Colors: XP fixed violet, FP fixed gold — not sourced from
+                `p` (getClubPalette), since that palette has no violet/gold
+                tokens of its own and pulling a shade FROM the tenant
+                palette risked clashing depending on club. Same pattern as
+                `c.danger` above (a hardcoded semantic color outside the
+                tenant system). */}
             <div className="flex items-center gap-1.5 lg:gap-2.5 shrink-0">
-              <div
-                className="flex items-center gap-1 lg:gap-1.5 rounded-xl px-2 lg:px-2.5 py-1.5 min-w-0"
-                style={{ background: dark ? 'rgba(139,92,246,0.16)' : 'rgba(124,58,237,0.10)', border: `1px solid ${dark ? 'rgba(167,139,250,0.25)' : 'rgba(124,58,237,0.18)'}` }}
-              >
-                <Zap size={13} color={dark ? '#c4b5fd' : '#7c3aed'} className="shrink-0" />
-                <span
-                  className="text-[10.5px] lg:text-[12px] font-bold truncate max-w-[64px] lg:max-w-[88px]"
-                  style={{ color: dark ? '#c4b5fd' : '#7c3aed' }}
-                >
-                  {points.xp.toLocaleString()}
-                </span>
-              </div>
-              <div
-                className="flex items-center gap-1 lg:gap-1.5 rounded-xl px-2 lg:px-2.5 py-1.5 min-w-0"
-                style={{ background: dark ? 'rgba(234,179,8,0.14)' : 'rgba(202,138,4,0.10)', border: `1px solid ${dark ? 'rgba(250,204,21,0.25)' : 'rgba(202,138,4,0.18)'}` }}
-              >
-                <Star size={13} color={dark ? '#fde047' : '#a16207'} className="shrink-0" />
-                <span
-                  className="text-[10.5px] lg:text-[12px] font-bold truncate max-w-[64px] lg:max-w-[88px]"
-                  style={{ color: dark ? '#fde047' : '#a16207' }}
-                >
-                  {points.fp.toFixed(2)}
-                </span>
+              <div className="flex flex-col items-start justify-center gap-[3px] shrink-0 leading-none">
+                <div className="flex items-center gap-1 min-w-0">
+                  <Zap size={11} color={dark ? '#c4b5fd' : '#7c3aed'} className="shrink-0" />
+                  <span
+                    className="text-[10px] font-bold truncate max-w-[68px] leading-none"
+                    style={{ color: dark ? '#c4b5fd' : '#7c3aed' }}
+                  >
+                    {points.xp.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 min-w-0">
+                  <Star size={11} color={dark ? '#fde047' : '#a16207'} className="shrink-0" />
+                  <span
+                    className="text-[10px] font-bold truncate max-w-[68px] leading-none"
+                    style={{ color: dark ? '#fde047' : '#a16207' }}
+                  >
+                    {points.fp.toFixed(2)}
+                  </span>
+                </div>
               </div>
 
               <NavLink
