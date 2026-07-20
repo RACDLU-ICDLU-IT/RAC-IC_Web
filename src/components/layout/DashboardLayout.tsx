@@ -35,6 +35,17 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
   const [pendingCount, setPendingCount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
   const [points, setPoints] = useState({ xp: 0, fp: 0, level: 0 });
+  // Header show/hide on scroll: tracks scroll DIRECTION (not just
+  // position) against `<main>` — the actual scrolling element in this
+  // layout (it has its own `overflow-y-auto`; `window` never scrolls
+  // here, so a window scroll listener would never fire). Hides on
+  // scroll-down, reveals on scroll-up — hiding permanently after any
+  // scroll at all would make the header unreachable without scrolling
+  // all the way back to the top, which isn't what "hide while
+  // scrolling" should mean in practice.
+  const [headerHidden, setHeaderHidden] = useState(false);
+  const mainRef = React.useRef<HTMLElement>(null);
+  const lastScrollY = React.useRef(0);
 
   const dark = resolvedTheme === 'dark';
 
@@ -68,6 +79,32 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
     if (!user) return;
     fetchMemberPoints(user.id).then((pts) => pts && setPoints(pts));
   }, [user?.id]);
+
+  // Attaches to `<main>` itself (the real scroll container in this
+  // layout) rather than `window`. A small delta threshold (8px) avoids
+  // flicker from trackpad/momentum micro-jitter counting as a direction
+  // change on every frame. Always forces the header visible below 24px
+  // from the top, so it never hides while someone is still essentially
+  // AT the top of the page — only once they've actually scrolled INTO
+  // the content does direction start to matter.
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const y = el.scrollTop;
+      if (y < 24) {
+        setHeaderHidden(false);
+        lastScrollY.current = y;
+        return;
+      }
+      const delta = y - lastScrollY.current;
+      if (delta > 8) setHeaderHidden(true);
+      else if (delta < -8) setHeaderHidden(false);
+      lastScrollY.current = y;
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const handleSignOut = async () => { await signOut(); navigate('/'); };
   const closeMobile = () => setMobileOpen(false);
@@ -364,7 +401,13 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
       </aside>
 
       <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
-        <header className="shrink-0 px-3 pt-4 pb-1 lg:px-6 lg:pt-6 lg:pb-2">
+        <header
+          className="shrink-0 px-3 pt-4 pb-1 lg:px-6 lg:pt-6 lg:pb-2"
+          style={{
+            transform: headerHidden ? 'translateY(-130%)' : 'translateY(0)',
+            transition: 'transform 0.25s ease',
+          }}
+        >
           {/* Was hardcoded to #ffffff in light mode — every card on the
               actual dashboard page (DashboardHome.tsx) reads its surface
               color from `p.dark` (the getClubPalette token for card
@@ -390,7 +433,8 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
                 configured in this project's Tailwind config, and a
                 different fixed size at desktop. Now one constant size,
                 always rendered, regardless of viewport — "always the same
-                size" per instruction, not conditional on width. */}
+                size" per instruction, not conditional on width. Bumped
+                h-7/w-24 to h-8/w-28 — a small step up, not a big jump. */}
             <div className="flex items-center gap-2 lg:gap-3 min-w-0 shrink">
               <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-1 -ml-1 rounded shrink-0" style={{ color: p.tl }}>
                 <Menu size={22} />
@@ -398,7 +442,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
               {settings.logoUrl ? (
                 <span
                   role="img" aria-label="Logo"
-                  className="inline-block h-7 w-24 shrink min-w-0"
+                  className="inline-block h-8 w-28 shrink min-w-0"
                   style={{
                     display: 'inline-block',
                     backgroundColor: c.accent,
@@ -434,23 +478,50 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
                 tokens of its own and pulling a shade FROM the tenant
                 palette risked clashing depending on club. Same pattern as
                 `c.danger` above (a hardcoded semantic color outside the
-                tenant system). */}
+                tenant system).
+
+                Background box added around the stack (same low-alpha
+                rgba(255,255,255,0.08) dark / rgba(0,0,0,0.05) light,
+                rounded-xl fill the home/bell icon circles already use) so
+                it reads as one cohesive element instead of bare text
+                floating on the header, matching that icon treatment as
+                instructed. `mr-2 lg:mr-3` on the wrapper adds the
+                requested breathing room before the home button — margin
+                lives on the outside of the box, not inside it, so the
+                box itself stays snug around its own content.
+
+                Light-mode colors (#7c3aed violet / #a16207 gold) read
+                pale against this box in practice — the mistake was
+                treating light mode's `p.dark` as if it were a near-white
+                card and picking a "readable on white" dark shade. It
+                isn't white; per the header-bg fix earlier in this file,
+                light-mode `p.dark` is a warm mid-tone rosy-gray surface,
+                and a merely-dark shade doesn't have enough separation
+                from a MID-tone the way it would from true white. Deepened
+                and increased saturation on both (violet #6d28d9→#5b21b6
+                territory, gold #a16207→#854d0e territory) so contrast
+                holds against the actual mid-tone surface, not an assumed
+                near-white one. Dark-mode values (light tints against
+                near-black) were already correct and are unchanged. */}
             <div className="flex items-center gap-1.5 lg:gap-2.5 shrink-0">
-              <div className="flex flex-col items-start justify-center gap-[3px] shrink-0 leading-none">
+              <div
+                className="flex flex-col items-start justify-center gap-[3px] shrink-0 leading-none rounded-xl px-2.5 py-1.5 mr-2 lg:mr-3"
+                style={{ background: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)' }}
+              >
                 <div className="flex items-center gap-1 min-w-0">
-                  <Zap size={11} color={dark ? '#c4b5fd' : '#7c3aed'} className="shrink-0" />
+                  <Zap size={11} color={dark ? '#c4b5fd' : '#5b21b6'} className="shrink-0" />
                   <span
                     className="text-[10px] font-bold truncate max-w-[68px] leading-none"
-                    style={{ color: dark ? '#c4b5fd' : '#7c3aed' }}
+                    style={{ color: dark ? '#c4b5fd' : '#5b21b6' }}
                   >
                     {points.xp.toLocaleString()}
                   </span>
                 </div>
                 <div className="flex items-center gap-1 min-w-0">
-                  <Star size={11} color={dark ? '#fde047' : '#a16207'} className="shrink-0" />
+                  <Star size={11} color={dark ? '#fde047' : '#854d0e'} className="shrink-0" />
                   <span
                     className="text-[10px] font-bold truncate max-w-[68px] leading-none"
-                    style={{ color: dark ? '#fde047' : '#a16207' }}
+                    style={{ color: dark ? '#fde047' : '#854d0e' }}
                   >
                     {points.fp.toFixed(2)}
                   </span>
@@ -495,7 +566,7 @@ export default function DashboardLayout({ isAdminMode = false }: { isAdminMode?:
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 w-full relative">
+        <main ref={mainRef} className="flex-1 overflow-y-auto p-4 md:p-8 w-full relative">
           <div className="mx-auto max-w-7xl">
             <Outlet />
           </div>
