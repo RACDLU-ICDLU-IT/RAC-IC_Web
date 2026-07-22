@@ -233,17 +233,26 @@ export function usePoints() {
 
   // ── Attendance points (additive, independent of dues) ──────────────────────
   // Writes to users.xp/fp via the award_points_sourced RPC.
+  //
+  // ── Ledger convention (all three functions below share this contract) ──────
+  // An attendance award's source_id is `${eventId}:${status}:${awardId}`,
+  // where awardId is a fresh uuid per award — NOT a fixed "eventId:status"
+  // key. A fixed key was the root bug: reversing an award never removed or
+  // relabeled the original row, so (a) the "does an award already exist"
+  // check in awardAttendancePoints kept matching stale/reversed rows and
+  // silently no-op'd re-awards, and (b) reverseAttendancePoints's `like
+  // 'eventId:%'` scan had no way to tell an already-reversed row from a
+  // live one, so repeated edits/deletes could re-reverse or re-sum stale
+  // entries. Fix: every award gets a unique id; reversal is done by
+  // deleting the original ledger row (not offsetting it with a new one)
+  // after writing an equal-and-opposite audit delta, so a row is either
+  // "live" (present, counts) or "gone" (deleted, cannot be matched again).
 
   const awardAttendancePoints = useCallback(async (
     memberId: string, eventId: string, status: AttendanceStatus, xpAmount: number
   ): Promise<void> => {
     if (xpAmount === 0) return;
-    const sourceId = `${eventId}:${status}`;
-
-    const { data: existing } = await supabase.from('point_ledger')
-      .select('id').eq('member_id', memberId).eq('tenant_id', tenant.id)
-      .eq('source_type', 'attendance').eq('source_id', sourceId).limit(1);
-    if (existing && existing.length > 0) return;
+    const sourceId = `${eventId}:${status}:${crypto.randomUUID()}`;
 
     const { error } = await supabase.rpc('award_points_sourced', {
       p_tenant_id: tenant.id, p_member_id: memberId, p_xp_delta: Math.round(xpAmount),
@@ -253,11 +262,16 @@ export function usePoints() {
     if (error) { console.error(error); throw error; }
   }, [tenant.id]);
 
-  /** Reverses every attendance-sourced ledger entry this member has for one
-   * event — used on event delete, and on event edit when a status's XP
-   * value changes (old award must be undone before the new one applies).
-   * Matches on source_id prefix `${eventId}:`, so it only touches this
-   * event's attendance entries, never another event's or a manual award. */
+  /** Reverses every LIVE attendance-sourced ledger entry this member has for
+   * one event — used on event delete, and on event edit / status change
+   * (old award must be undone before the new one applies). Matches on
+   * source_id prefix `${eventId}:`, which is safe now because a reversed
+   * entry is deleted rather than left behind with a new source_id — so this
+   * scan can never re-match something it already reversed. Writes one
+   * negative audit delta per row (so the ledger/toast history still shows
+   * the reversal happened and why), then deletes the original row so it
+   * can never be found again by this function or by awardAttendancePoints's
+   * (now-removed) existence check. */
   const reverseAttendancePoints = useCallback(async (
     memberId: string, eventId: string, reasonNote: string
   ): Promise<void> => {
@@ -269,20 +283,28 @@ export function usePoints() {
     if (!priorEntries || priorEntries.length === 0) return;
 
     for (const entry of priorEntries) {
-      if (!entry.xp_delta && !entry.fp_delta) continue;
-      const { error } = await supabase.rpc('award_points_sourced', {
-        p_tenant_id: tenant.id, p_member_id: memberId,
-        p_xp_delta: -Math.round(entry.xp_delta || 0), p_fp_delta: -(entry.fp_delta || 0),
-        p_source_type: 'attendance', p_source_id: `${entry.source_id}:reversed:${Date.now()}`,
-        p_note: reasonNote,
-      });
-      if (error) console.error(error);
+      if (entry.xp_delta || entry.fp_delta) {
+        const { error } = await supabase.rpc('award_points_sourced', {
+          p_tenant_id: tenant.id, p_member_id: memberId,
+          p_xp_delta: -Math.round(entry.xp_delta || 0), p_fp_delta: -(entry.fp_delta || 0),
+          p_source_type: 'attendance', p_source_id: `${entry.source_id}:reversed:${crypto.randomUUID()}`,
+          p_note: reasonNote,
+        });
+        if (error) { console.error(error); continue; }
+      }
+      // Delete the original row so it's structurally impossible for a
+      // future reverse/award call to see it again.
+      const { error: delErr } = await supabase.from('point_ledger').delete().eq('id', entry.id);
+      if (delErr) console.error(delErr);
     }
   }, [tenant.id]);
 
-  /** Used when an event's per-status XP config is edited: reverses whatever
-   * was previously awarded to this member for this event, then re-awards
-   * at the member's CURRENT marked status using the NEW xp amount. */
+  /** Used both when an event's per-status XP config is edited AND when a
+   * member's marked status changes: reverses whatever was previously
+   * awarded to this member for this event (any status), then re-awards at
+   * the given status using the given (current/new) xp amount. Since
+   * reverseAttendancePoints now deletes the original row, this is a true
+   * "set to new value" operation, not an additive one. */
   const adjustAttendanceXpForEdit = useCallback(async (
     memberId: string, eventId: string, currentStatus: AttendanceStatus, newXpAmount: number
   ): Promise<void> => {
