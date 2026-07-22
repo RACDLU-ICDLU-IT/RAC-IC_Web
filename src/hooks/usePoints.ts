@@ -237,16 +237,12 @@ export function usePoints() {
   // ── Ledger convention (all three functions below share this contract) ──────
   // An attendance award's source_id is `${eventId}:${status}:${awardId}`,
   // where awardId is a fresh uuid per award — NOT a fixed "eventId:status"
-  // key. A fixed key was the root bug: reversing an award never removed or
-  // relabeled the original row, so (a) the "does an award already exist"
-  // check in awardAttendancePoints kept matching stale/reversed rows and
-  // silently no-op'd re-awards, and (b) reverseAttendancePoints's `like
-  // 'eventId:%'` scan had no way to tell an already-reversed row from a
-  // live one, so repeated edits/deletes could re-reverse or re-sum stale
-  // entries. Fix: every award gets a unique id; reversal is done by
-  // deleting the original ledger row (not offsetting it with a new one)
-  // after writing an equal-and-opposite audit delta, so a row is either
-  // "live" (present, counts) or "gone" (deleted, cannot be matched again).
+  // key. A fixed key was an earlier bug: reversing an award never removed
+  // or relabeled the original row, so re-award checks kept matching stale
+  // rows and silently no-op'd. Fix: every award gets a unique id; reversal
+  // deletes the original ledger row (after writing an equal-and-opposite
+  // audit delta) so a row is either "live" (present, counts) or "gone"
+  // (deleted, cannot be matched again).
 
   const awardAttendancePoints = useCallback(async (
     memberId: string, eventId: string, status: AttendanceStatus, xpAmount: number
@@ -265,13 +261,20 @@ export function usePoints() {
   /** Reverses every LIVE attendance-sourced ledger entry this member has for
    * one event — used on event delete, and on event edit / status change
    * (old award must be undone before the new one applies). Matches on
-   * source_id prefix `${eventId}:`, which is safe now because a reversed
-   * entry is deleted rather than left behind with a new source_id — so this
-   * scan can never re-match something it already reversed. Writes one
-   * negative audit delta per row (so the ledger/toast history still shows
-   * the reversal happened and why), then deletes the original row so it
-   * can never be found again by this function or by awardAttendancePoints's
-   * (now-removed) existence check. */
+   * source_id prefix `${eventId}:`, then filters OUT rows that are
+   * themselves reversal audit entries.
+   *
+   * FIX: a reversal row's own source_id is built as
+   * `${originalSourceId}:reversed:${uuid}`, and originalSourceId already
+   * starts with `${eventId}:` — so the raw `like` scan matches reversal
+   * rows too, not just live awards. Without excluding them, calling
+   * reverse a second time for the same event (e.g. two separate edits, or
+   * edit-then-delete) re-reverses its own past reversal rows and the
+   * balance snowballs up or down depending on call order — this was
+   * reproduced exactly (175 -> 225 -> 200 -> edit -> 255 instead of 205
+   * -> delete -> 200 instead of 175). Only rows whose source_id does NOT
+   * contain ':reversed:' represent a live, un-reversed award; those are
+   * the only ones eligible to be reversed and deleted here. */
   const reverseAttendancePoints = useCallback(async (
     memberId: string, eventId: string, reasonNote: string
   ): Promise<void> => {
@@ -282,7 +285,10 @@ export function usePoints() {
 
     if (!priorEntries || priorEntries.length === 0) return;
 
-    for (const entry of priorEntries) {
+    const liveEntries = priorEntries.filter((e: any) => !e.source_id.includes(':reversed:'));
+    if (liveEntries.length === 0) return;
+
+    for (const entry of liveEntries) {
       if (entry.xp_delta || entry.fp_delta) {
         const { error } = await supabase.rpc('award_points_sourced', {
           p_tenant_id: tenant.id, p_member_id: memberId,
@@ -303,8 +309,8 @@ export function usePoints() {
    * member's marked status changes: reverses whatever was previously
    * awarded to this member for this event (any status), then re-awards at
    * the given status using the given (current/new) xp amount. Since
-   * reverseAttendancePoints now deletes the original row, this is a true
-   * "set to new value" operation, not an additive one. */
+   * reverseAttendancePoints deletes live original rows and ignores its own
+   * past reversal rows, this is a true "set to new value" operation. */
   const adjustAttendanceXpForEdit = useCallback(async (
     memberId: string, eventId: string, currentStatus: AttendanceStatus, newXpAmount: number
   ): Promise<void> => {
