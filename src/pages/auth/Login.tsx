@@ -583,9 +583,11 @@ export default function Login() {
                 </div>
               </div>
 
-              <p className="lr-forgot-row">
-                <Link to="/forgot-password" className="lr-forgot-link">Forgot password?</Link>
-              </p>
+              {tenant.shortName !== 'ICDLU' && (
+  <p className="lr-forgot-row">
+    <Link to="/forgot-password" className="lr-forgot-link">Forgot password?</Link>
+  </p>
+)}
 
               <div className="lr-options">
                 <label className="lr-remember">
