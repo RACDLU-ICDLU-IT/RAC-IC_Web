@@ -57,8 +57,7 @@ export default function MainLayout() {
   const isLight         = tenant.brand.primaryColor === '#FFFFFF';
   const onPrimaryBorder = isLight ? 'border-gray-200' : 'border-white/10';
 
-  const isLoginPage = location.pathname === '/login';
-
+  const isLoginPage = ['/login', '/forgot-password', '/reset-password'].includes(location.pathname);
   // Pages where a full-bleed hero sits behind the transparent navbar.
   // All other pages get a solid navbar at all times so links stay readable.
   const isHeroPage = ['/', '/about', '/join', '/donate'].includes(location.pathname);
