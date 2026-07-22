@@ -8,7 +8,6 @@ import { useToast } from '../hooks/useToast';
 import { useTenant } from '../hooks/useTenant';
 import SEOHead from '../components/SEOHead';
 import { CloudinaryUpload } from '../components/CloudinaryUpload';
-import '../theme/join-form-light-mode.css';
 
 // Validation Schema
 const joinSchema = z.object({
@@ -451,10 +450,13 @@ export default function Join() {
 
         {/* ── APPLICATION FORM STEP ── */}
         {step === 'form' && (
-          <div className="join-form-card bg-white text-gray-900 p-8 md:p-12 rounded-3xl shadow-2xl animate-fade-in-up">
+          <div
+            className="p-8 md:p-12 rounded-3xl shadow-2xl animate-fade-in-up"
+            style={{ backgroundColor: '#ffffff', color: '#111827', colorScheme: 'light' }}
+          >
             <div className="text-center mb-10">
-              <h2 className="text-3xl font-heading font-bold mb-2">Application Form</h2>
-              <p className="text-gray-500 text-sm">
+              <h2 className="text-3xl font-heading font-bold mb-2" style={{ color: '#111827' }}>Application Form</h2>
+              <p className="text-sm" style={{ color: '#6b7280' }}>
                 Please fill in all details carefully. We will review and contact you shortly.
               </p>
             </div>
@@ -462,8 +464,8 @@ export default function Join() {
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
               {/* Formal Picture */}
               <div className="flex flex-col items-center gap-3">
-                <label className="text-sm font-bold text-gray-700">
-                  Formal Picture <span className="text-red-500">*</span>
+                <label className="text-sm font-bold" style={{ color: '#374151' }}>
+                  Formal Picture <span style={{ color: '#ef4444' }}>*</span>
                 </label>
                 <div className="w-36">
                   <CloudinaryUpload
@@ -477,75 +479,79 @@ export default function Join() {
                     aspectRatio="portrait"
                   />
                 </div>
-                <p className="text-xs text-gray-400 text-center">
+                <p className="text-xs text-center" style={{ color: '#9ca3af' }}>
                   Upload a clear, formal/passport-style photo
                 </p>
               </div>
 
-              <div className="border-t border-gray-100 pt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="pt-6 grid grid-cols-1 md:grid-cols-2 gap-6" style={{ borderTop: '1px solid #f3f4f6' }}>
                 {/* Full Name */}
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Full Name <span className="text-red-500">*</span>
+                  <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                    Full Name <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <input
                     {...register('name')}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                    className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                    style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
                     placeholder="Your full name as per official ID"
                   />
                   {errors.name && (
-                    <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>
+                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{errors.name.message}</p>
                   )}
                 </div>
 
                 {/* Date of Birth */}
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Date of Birth <span className="text-red-500">*</span>
+                  <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                    Date of Birth <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <input
                     {...register('dob')}
                     type="date"
                     min={dobRange.min}
                     max={dobRange.max}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-700"
+                    className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                    style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
                   />
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs mt-1" style={{ color: '#9ca3af' }}>
                     {isRotaract
                       ? 'Rotaract requires applicants to be 18 years or older.'
                       : 'Interact requires applicants to be between 12 and 17 years old.'}
                   </p>
                   {errors.dob && (
-                    <p className="text-red-500 text-xs mt-1">{errors.dob.message}</p>
+                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{errors.dob.message}</p>
                   )}
                 </div>
 
                 {/* Gender */}
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Gender <span className="text-red-500">*</span>
+                  <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                    Gender <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <select
                     {...register('gender')}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                    className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                    style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
                   >
                     <option value="">Select gender...</option>
                     <option value="Male">Male</option>
                     <option value="Female">Female</option>
                   </select>
                   {errors.gender && (
-                    <p className="text-red-500 text-xs mt-1">{errors.gender.message}</p>
+                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{errors.gender.message}</p>
                   )}
                 </div>
 
                 {/* Blood Group */}
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Blood Group <span className="text-red-500">*</span>
+                  <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                    Blood Group <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <select
                     {...register('bloodGroup')}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                    className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                    style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
                   >
                     <option value="">Select blood group...</option>
                     <option value="A+">A+</option>
@@ -559,82 +565,87 @@ export default function Join() {
                     <option value="Unknown">Unknown</option>
                   </select>
                   {errors.bloodGroup && (
-                    <p className="text-red-500 text-xs mt-1">{errors.bloodGroup.message}</p>
+                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{errors.bloodGroup.message}</p>
                   )}
                 </div>
 
                 {/* Email */}
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Email Address <span className="text-red-500">*</span>
+                  <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                    Email Address <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <input
                     {...register('email')}
                     type="email"
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                    className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                    style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
                     placeholder="your@email.com"
                   />
                   {errors.email && (
-                    <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>
+                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{errors.email.message}</p>
                   )}
                 </div>
 
                 {/* Phone */}
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Phone Number <span className="text-red-500">*</span>
+                  <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                    Phone Number <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <input
                     {...register('phone')}
                     type="tel"
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                    className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                    style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
                     placeholder="+880 01XXX XXXXXX"
                   />
                   {errors.phone && (
-                    <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>
+                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{errors.phone.message}</p>
                   )}
                 </div>
 
                 {/* Emergency Contact */}
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Emergency Contact <span className="text-red-500">*</span>
+                  <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                    Emergency Contact <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <input
                     {...register('emergencyContact')}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                    className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                    style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
                     placeholder="Parent/Guardian name and phone number"
                   />
                   {errors.emergencyContact && (
-                    <p className="text-red-500 text-xs mt-1">{errors.emergencyContact.message}</p>
+                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{errors.emergencyContact.message}</p>
                   )}
                 </div>
 
                 {/* Residential Address */}
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Residential Address <span className="text-red-500">*</span>
+                  <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                    Residential Address <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <textarea
                     {...register('address')}
                     rows={2}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900 resize-none"
+                    className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all resize-none"
+                    style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
                     placeholder="House/Road/Block, Area, City"
                   />
                   {errors.address && (
-                    <p className="text-red-500 text-xs mt-1">{errors.address.message}</p>
+                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{errors.address.message}</p>
                   )}
                 </div>
 
                 {/* Referred By */}
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                  <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
                     Referred By{' '}
-                    <span className="text-gray-400 font-normal">(optional)</span>
+                    <span className="font-normal" style={{ color: '#9ca3af' }}>(optional)</span>
                   </label>
                   <input
                     {...register('referredBy')}
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all text-gray-900"
+                    className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                    style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
                     placeholder="Name of the member who referred you (if any)"
                   />
                 </div>
