@@ -8,6 +8,7 @@ import { useToast } from '../hooks/useToast';
 import { useTenant } from '../hooks/useTenant';
 import SEOHead from '../components/SEOHead';
 import { CloudinaryUpload } from '../components/CloudinaryUpload';
+import '../theme/join-form-light-mode.css';
 
 // Validation Schema
 const joinSchema = z.object({
@@ -450,7 +451,7 @@ export default function Join() {
 
         {/* ── APPLICATION FORM STEP ── */}
         {step === 'form' && (
-          <div className="bg-white text-gray-900 p-8 md:p-12 rounded-3xl shadow-2xl animate-fade-in-up">
+          <div className="join-form-card bg-white text-gray-900 p-8 md:p-12 rounded-3xl shadow-2xl animate-fade-in-up">
             <div className="text-center mb-10">
               <h2 className="text-3xl font-heading font-bold mb-2">Application Form</h2>
               <p className="text-gray-500 text-sm">
