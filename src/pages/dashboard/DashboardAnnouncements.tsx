@@ -168,13 +168,8 @@ function htmlToPreviewText(html: string): string {
  * announcement should look like page content, because it is page
  * content.
  *
- * This is safe to do with dangerouslySetInnerHTML specifically
- * because body_html only ever reaches this component after an admin
- * has written and published it through AdminCommunications.tsx's own
- * composer — there is no path for an untrusted member-submitted
- * string to land here. If that ever changes (e.g. members can submit
- * their own HTML content somewhere), this needs a sanitizer (e.g.
- * DOMPurify) in front of it first.
+ * body_html is only ever written by admins through
+ * AdminCommunications.tsx's composer, so it's rendered directly here.
  *
  * The problem an iframe *was* incidentally solving — a table-based
  * email template's fixed max-width:600px column overflowing a narrow
@@ -521,7 +516,7 @@ export default function DashboardAnnouncements() {
                     </button>
 
                     {expanded && (
-                      <div style={{ padding: '0 20px 20px 45px', maxWidth: '100%', overflow: 'hidden' }}>
+                      <div style={{ padding: '0 20px 20px 20px', maxWidth: '100%', overflow: 'hidden' }}>
                         <AnnouncementBody html={a.body_html} />
                         {(a.attachments || []).length > 0 && (
                           <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
