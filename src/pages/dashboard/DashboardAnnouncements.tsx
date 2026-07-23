@@ -196,14 +196,20 @@ function AnnouncementBodyFrame({ html }: { html: string }) {
   const FRAME_HEIGHT = 900;
 
   const doc = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-    html, body { margin: 0; padding: 0; }
+    html, body { margin: 0; padding: 0; width: 100%; max-width: 100%; overflow-x: hidden; }
     body { font-family: Georgia, 'Times New Roman', Times, serif; }
     /* Outermost full-bleed table (the page-background wrapper most
-       email templates start with) fills the iframe width. Nested
-       tables keep whatever width/max-width the template itself set
-       (e.g. max-width:600px on the actual card) — forcing every table
-       to 100% would break the intentional narrower content column. */
-    body > table { width: 100% !important; }
+       email templates start with) fills the iframe width and is
+       forced to fixed table layout so it can't be stretched wider by
+       a single nowrap/long cell inside it (e.g. a right-aligned date)
+       — without this, a table sized by its widest content can exceed
+       100% even with width:100% set, which is what caused content to
+       be sliced off at the iframe's edge instead of wrapping cleanly.
+       Nested tables keep whatever width/max-width the template itself
+       set (e.g. max-width:600px on the actual card) — forcing every
+       table to 100% would break the intentional narrower content
+       column. */
+    body > table { width: 100% !important; max-width: 100% !important; table-layout: fixed; }
     img { max-width: 100%; height: auto; }
   </style></head><body>${html}</body></html>`;
 
@@ -212,7 +218,7 @@ function AnnouncementBodyFrame({ html }: { html: string }) {
       title="Announcement content"
       srcDoc={doc}
       sandbox="allow-popups allow-popups-to-escape-sandbox"
-      style={{ width: '100%', height: FRAME_HEIGHT, border: 'none', display: 'block' }}
+      style={{ width: '100%', height: FRAME_HEIGHT, border: 'none', display: 'block', overflowX: 'auto' }}
     />
   );
 }
