@@ -1,5 +1,5 @@
 import { supabase } from '../../supabase';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenant';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -141,6 +141,88 @@ function isVisibleToMember(a: AnnouncementRow, memberId: string | undefined, rol
 function isImageAttachment(att: Attachment): boolean {
   const s = (att.name || att.url || '').toLowerCase();
   return /\.(png|jpe?g|gif|webp|svg)(\?|$)/.test(s);
+}
+
+/** Plain-text preview for the collapsed card. Strips whole <style> and
+ * <script> elements (contents included, not just the tags) before
+ * stripping the remaining tags — full HTML email templates like the
+ * club's formal announcement template embed a <style> block, and a
+ * naive tag-only strip leaves its raw CSS sitting in the visible
+ * preview text. */
+function htmlToPreviewText(html: string): string {
+  const withoutStyleScript = html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ');
+  return withoutStyleScript.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Renders an announcement's body_html inside a sandboxed, auto-height
+ * iframe rather than injecting it into the page DOM directly.
+ *
+ * This matters specifically because full HTML email templates (like
+ * the club's formal announcement template) are table-based layouts
+ * with fixed pixel widths (e.g. max-width:600px) — that's correct and
+ * necessary for email client compatibility, but dropped straight into
+ * a normal responsive page via dangerouslySetInnerHTML it just sits
+ * at its fixed width, forcing the whole page into horizontal scroll
+ * on a phone and leaving no defined height, which is why the footer
+ * below it visually detached from the card (the containing element
+ * had nothing to size itself against).
+ *
+ * The iframe gets its own layout context, so:
+ *  - a small injected <style> reset makes width:100%/max-width-only
+ *    tables shrink to fit an actual phone screen instead of forcing
+ *    horizontal scroll, while still respecting each table's own
+ *    max-width on wider screens.
+ *  - height is measured from the rendered content's real
+ *    scrollHeight after each load and pushed back onto the iframe
+ *    element, so the box always fits its content exactly — no fixed
+ *    height guess, no internal scrollbar, no leftover blank space
+ *    pushing the footer down.
+ */
+function AnnouncementBodyFrame({ html }: { html: string }) {
+  const [height, setHeight] = useState(120);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+
+  const doc = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+    html, body { margin: 0; padding: 0; }
+    body { font-family: Georgia, 'Times New Roman', Times, serif; }
+    /* Let fixed-width email tables shrink on narrow screens instead of
+       forcing horizontal scroll, while still honoring their own
+       max-width (so they don't stretch past it on wide screens). */
+    table { max-width: 100% !important; }
+    img { max-width: 100%; height: auto; }
+  </style></head><body>${html}</body></html>`;
+
+  const measure = () => {
+    const doc = frameRef.current?.contentDocument;
+    if (!doc) return;
+    const h = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
+    if (h > 0) setHeight(h);
+  };
+
+  useEffect(() => {
+    // Re-measure shortly after mount/update too, in case images inside
+    // the announcement load asynchronously and change the document's
+    // height after the initial onLoad fires.
+    const t1 = setTimeout(measure, 200);
+    const t2 = setTimeout(measure, 800);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [html]);
+
+  return (
+    <iframe
+      ref={frameRef}
+      title="Announcement content"
+      srcDoc={doc}
+      onLoad={measure}
+      sandbox="allow-popups allow-popups-to-escape-sandbox"
+      style={{ width: '100%', height, border: 'none', display: 'block' }}
+      scrolling="no"
+    />
+  );
 }
 
 export default function DashboardAnnouncements() {
@@ -298,14 +380,6 @@ export default function DashboardAnnouncements() {
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
         }
         .rac-announcements-page ::-webkit-scrollbar { display: none; }
-        .rac-announcements-page .rac-ann-body a { color: ${p.green}; text-decoration: underline; }
-        .rac-announcements-page .rac-ann-body img { max-width: 100%; border-radius: 10px; }
-        .rac-announcements-page .rac-ann-body h1,
-        .rac-announcements-page .rac-ann-body h2,
-        .rac-announcements-page .rac-ann-body h3 { font-weight: 700; margin: .6em 0 .3em; }
-        .rac-announcements-page .rac-ann-body ul,
-        .rac-announcements-page .rac-ann-body ol { padding-left: 1.4em; margin: .4em 0; }
-        .rac-announcements-page .rac-ann-body p { margin: .5em 0; }
       `}</style>
       <div style={{ background: p.bg, padding: 18, transition: 'background .25s' }} className="p-4 md:p-8 -m-4 md:-m-8">
         <div style={{ maxWidth: 780, margin: '0 auto', paddingBottom: 40 }}>
@@ -374,7 +448,7 @@ export default function DashboardAnnouncements() {
               {sorted.map(a => {
                 const unread = !readIds.has(a.id);
                 const expanded = expandedId === a.id;
-                const plainPreview = a.body_html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                const plainPreview = htmlToPreviewText(a.body_html);
                 return (
                   <div
                     key={a.id}
@@ -434,11 +508,9 @@ export default function DashboardAnnouncements() {
 
                     {expanded && (
                       <div style={{ padding: '0 20px 20px 45px' }}>
-                        <div
-                          className="rac-ann-body"
-                          style={{ fontSize: 13.5, color: p.tl, lineHeight: 1.65 }}
-                          dangerouslySetInnerHTML={{ __html: a.body_html }}
-                        />
+                        <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${p.border}` }}>
+                          <AnnouncementBodyFrame html={a.body_html} />
+                        </div>
                         {(a.attachments || []).length > 0 && (
                           <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
                             {a.attachments!.map((att, i) => (
@@ -476,24 +548,3 @@ export default function DashboardAnnouncements() {
   );
 }
 
-/**
- * ------------------------------------------------------------------
- * Migration notes — read-tracking table (run once, alongside the
- * announcements table migration in AdminCommunications.tsx):
- *
- * create table if not exists announcement_reads (
- *   announcement_id uuid not null references announcements(id) on delete cascade,
- *   user_id uuid not null,
- *   tenant_id text not null,
- *   read_at timestamptz not null default now(),
- *   primary key (announcement_id, user_id)
- * );
- * create index if not exists announcement_reads_user_idx
- *   on announcement_reads (tenant_id, user_id);
- *
- * RLS: members should only be able to upsert/select their own rows
- * (user_id = auth.uid()), scoped to their own tenant_id — matching
- * the RLS pattern already used on `attendance` and other per-member
- * tables in this schema.
- * ------------------------------------------------------------------
- */
