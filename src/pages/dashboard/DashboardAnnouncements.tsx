@@ -157,68 +157,40 @@ function htmlToPreviewText(html: string): string {
 }
 
 /**
- * Renders an announcement's body_html inside a sandboxed iframe rather
- * than injecting it into the page DOM directly.
+ * Renders an announcement's body_html directly into the page, scoped
+ * inside its own constrained container — not inside an iframe.
  *
- * This matters specifically because full HTML email templates (like
- * the club's formal announcement template) are table-based layouts
- * with fixed pixel widths (e.g. max-width:600px) — that's correct and
- * necessary for email client compatibility, but dropped straight into
- * a normal responsive page via dangerouslySetInnerHTML it just sits
- * at its fixed width and forces the whole page into horizontal
- * scroll on a phone.
+ * An iframe was tried first and reverted: however it's sized, it
+ * always reads visually as "a box inside a box" (its own scrollbars,
+ * a hard edge, a separate white background) rather than as part of
+ * the announcement card itself — which is exactly the "scrappy
+ * preview frame" look that doesn't belong in a real feed. A plain
+ * announcement should look like page content, because it is page
+ * content.
  *
- * Earlier versions of this component tried to auto-measure the
- * rendered content's height and resize the iframe to match exactly.
- * That approach kept cutting content off: a table-based layout with
- * images reflows in multiple passes as each image's intrinsic size
- * becomes known, and there is no single reliable moment to take a
- * "final" measurement — onLoad fires too early, ResizeObserver can
- * miss a pass if the browser's layout settles in one paint with
- * nothing left to observe changing, and any race left content
- * silently invisible below the last height that got set. That's a
- * fragile foundation for something as variable as arbitrary
- * admin-authored HTML.
+ * This is safe to do with dangerouslySetInnerHTML specifically
+ * because body_html only ever reaches this component after an admin
+ * has written and published it through AdminCommunications.tsx's own
+ * composer — there is no path for an untrusted member-submitted
+ * string to land here. If that ever changes (e.g. members can submit
+ * their own HTML content somewhere), this needs a sanitizer (e.g.
+ * DOMPurify) in front of it first.
  *
- * This version does the simple, robust thing instead: give the
- * iframe a generous fixed height and let it be a genuinely complete,
- * self-contained rendering surface — exactly like a real email
- * preview pane. If the template is taller than that height, the
- * iframe scrolls internally (visible scrollbar, native touch
- * scrolling); it never truncates or hides content. There's no
- * measurement to race against, so there's nothing to get wrong.
+ * The problem an iframe *was* incidentally solving — a table-based
+ * email template's fixed max-width:600px column overflowing a narrow
+ * phone card — is solved here directly instead, with scoped CSS that
+ * forces every table inside the rendered content (however deeply
+ * nested, whatever width or max-width it declares inline) to respect
+ * the card's own width. `table-layout: fixed` stops a single
+ * long/nowrap cell from stretching its row past 100% regardless of
+ * what width was requested.
  */
-function AnnouncementBodyFrame({ html }: { html: string }) {
-  // Deliberately tall — most announcements (including a full formal
-  // template like the club's) fit well within this without needing to
-  // scroll at all; anything taller scrolls inside its own box rather
-  // than being cut off or guessed at.
-  const FRAME_HEIGHT = 900;
-
-  const doc = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-    html, body { margin: 0; padding: 0; width: 100%; max-width: 100%; overflow-x: hidden; }
-    body { font-family: Georgia, 'Times New Roman', Times, serif; }
-    /* Outermost full-bleed table (the page-background wrapper most
-       email templates start with) fills the iframe width and is
-       forced to fixed table layout so it can't be stretched wider by
-       a single nowrap/long cell inside it (e.g. a right-aligned date)
-       — without this, a table sized by its widest content can exceed
-       100% even with width:100% set, which is what caused content to
-       be sliced off at the iframe's edge instead of wrapping cleanly.
-       Nested tables keep whatever width/max-width the template itself
-       set (e.g. max-width:600px on the actual card) — forcing every
-       table to 100% would break the intentional narrower content
-       column. */
-    body > table { width: 100% !important; max-width: 100% !important; table-layout: fixed; }
-    img { max-width: 100%; height: auto; }
-  </style></head><body>${html}</body></html>`;
-
+function AnnouncementBody({ html }: { html: string }) {
   return (
-    <iframe
-      title="Announcement content"
-      srcDoc={doc}
-      sandbox="allow-popups allow-popups-to-escape-sandbox"
-      style={{ width: '100%', height: FRAME_HEIGHT, border: 'none', display: 'block', overflowX: 'auto' }}
+    <div
+      className="rac-ann-body"
+      style={{ width: '100%', maxWidth: '100%', overflowX: 'hidden' }}
+      dangerouslySetInnerHTML={{ __html: html }}
     />
   );
 }
@@ -378,6 +350,51 @@ export default function DashboardAnnouncements() {
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
         }
         .rac-announcements-page ::-webkit-scrollbar { display: none; }
+
+        /* Announcement body — renders admin-authored HTML natively as
+           page content (no iframe). Two things this has to guarantee
+           regardless of what an admin pastes in:
+           1. Nothing can ever be wider than the card, however it was
+              authored — this is what actually matters for full HTML
+              email templates (table-based, often with an inline
+              max-width:600px on the main content table). table-layout:
+              fixed stops a single long/nowrap cell from stretching a
+              row past 100% even when a width was explicitly requested.
+           2. Normal rich-text content (headings, lists, links, plain
+              paragraphs from the WYSIWYG tab) still reads well as part
+              of the page, with sensible spacing and the club's accent
+              color on links — it shouldn't only look right for
+              full email templates. */
+        .rac-announcements-page .rac-ann-body,
+        .rac-announcements-page .rac-ann-body * {
+          max-width: 100% !important;
+          box-sizing: border-box;
+        }
+        .rac-announcements-page .rac-ann-body table {
+          width: 100% !important;
+          table-layout: fixed;
+        }
+        .rac-announcements-page .rac-ann-body img {
+          height: auto;
+        }
+        .rac-announcements-page .rac-ann-body a {
+          color: ${p.green};
+        }
+        .rac-announcements-page .rac-ann-body h1,
+        .rac-announcements-page .rac-ann-body h2,
+        .rac-announcements-page .rac-ann-body h3 {
+          font-weight: 700;
+          margin: .6em 0 .3em;
+          color: ${p.tl};
+        }
+        .rac-announcements-page .rac-ann-body ul,
+        .rac-announcements-page .rac-ann-body ol {
+          padding-left: 1.4em;
+          margin: .4em 0;
+        }
+        .rac-announcements-page .rac-ann-body p {
+          margin: .5em 0;
+        }
       `}</style>
       <div style={{ background: p.bg, padding: 18, transition: 'background .25s' }} className="p-4 md:p-8 -m-4 md:-m-8">
         <div style={{ maxWidth: 780, margin: '0 auto', paddingBottom: 40 }}>
@@ -504,10 +521,8 @@ export default function DashboardAnnouncements() {
                     </button>
 
                     {expanded && (
-                      <div style={{ padding: '0 20px 20px 45px' }}>
-                        <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${p.border}` }}>
-                          <AnnouncementBodyFrame html={a.body_html} />
-                        </div>
+                      <div style={{ padding: '0 20px 20px 45px', maxWidth: '100%', overflow: 'hidden' }}>
+                        <AnnouncementBody html={a.body_html} />
                         {(a.attachments || []).length > 0 && (
                           <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
                             {a.attachments!.map((att, i) => (
