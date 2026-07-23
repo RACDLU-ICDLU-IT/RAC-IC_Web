@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenant';
 import { useTheme } from '../../contexts/ThemeContext';
-import { usePoints, LevelConfig, PointLedgerEntry, FpRedemptionItem, FpRedemptionRequest, FpTransfer, FundAccount } from '../../hooks/usePoints';
+import { usePoints, LevelConfig, PointLedgerEntry, FpRedemptionItem, FpRedemptionRequest, FpTransfer, FundAccount, LeaderboardEntry } from '../../hooks/usePoints';
 import { supabase } from '../../supabase';
-import { Zap, Star, Trophy, TrendingUp, HandCoins, CheckSquare, CreditCard, Wand2, Send, Gift, ArrowLeftRight } from 'lucide-react';
+import { Zap, Star, Trophy, TrendingUp, HandCoins, CheckSquare, CreditCard, Wand2, Send, Gift, ArrowLeftRight, Medal } from 'lucide-react';
 
 /* ------------------------------- font loader ------------------------------- */
 const INTER_FONT_URL = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
@@ -45,7 +45,7 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const FUND_LABELS: Record<FundAccount, string> = { administrative: 'Administrative Fund', project: 'Project Fund', endowment: 'Endowment Fund' };
 
-type Tab = 'overview' | 'wallet' | 'redeem' | 'transfer' | 'donate';
+type Tab = 'overview' | 'wallet' | 'redeem' | 'transfer' | 'donate' | 'leaderboard';
 
 export default function MemberPoints() {
   const { user, profile } = useAuth();
@@ -54,7 +54,7 @@ export default function MemberPoints() {
     loading, fetchMemberPoints, fetchMemberPointLedger, fetchLevelConfigs,
     fetchCurrentFpRate, fetchRedemptionItems, requestRedemption, fetchMemberRedemptions,
     transferFp, fetchMemberTransfers, fetchDonationPointConfigs, submitMemberDonation,
-    snapDonationForWholeXp,
+    snapDonationForWholeXp, fetchLeaderboard,
   } = usePoints();
 
   const club = resolveClub(tenant.id);
@@ -95,7 +95,14 @@ export default function MemberPoints() {
   const [donateError, setDonateError] = useState<string | null>(null);
   const [donateSubmitted, setDonateSubmitted] = useState(false);
 
+  // Leaderboard
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [myRank, setMyRank] = useState<number | null>(null);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [leaderboardLoaded, setLeaderboardLoaded] = useState(false);
+
   useEffect(() => { if (user) loadAll(); }, [user?.id, tenant.id]);
+  useEffect(() => { if (user && tab === 'leaderboard' && !leaderboardLoaded) loadLeaderboard(); }, [user?.id, tab]);
 
   const loadAll = async () => {
     if (!user) return;
@@ -116,6 +123,24 @@ export default function MemberPoints() {
     setMembers(memberList || []);
 
     setPageLoading(false);
+  };
+
+  const loadLeaderboard = async () => {
+    if (!user) return;
+    setLeaderboardError(null);
+    try {
+      // fetchLeaderboard reads users.xp/fp/level directly (the live schema —
+      // see usePoints' fetchMemberPoints), scoped to this tenant, active
+      // members only, and already excludes master_admin server-side.
+      const rows = await fetchLeaderboard();
+      setLeaderboard(rows);
+      const mine = rows.find((r) => r.id === user.id);
+      setMyRank(mine ? mine.rank : null);
+    } catch (err) {
+      setLeaderboardError("Couldn't load the leaderboard. Pull to refresh and try again.");
+    } finally {
+      setLeaderboardLoaded(true);
+    }
   };
 
   const currentLevelConfig = levelConfigs.find((c) => c.level === points.level);
@@ -180,6 +205,7 @@ export default function MemberPoints() {
     { key: 'redeem', label: 'Redeem' },
     { key: 'transfer', label: 'Send FP' },
     { key: 'donate', label: 'Earn Points' },
+    { key: 'leaderboard', label: 'Leaderboard' },
   ];
 
   if (pageLoading) {
@@ -453,6 +479,113 @@ export default function MemberPoints() {
                 style={{ width: '100%', padding: '12px 0', borderRadius: 12, border: 'none', background: p.green, color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', opacity: donateSubmitting ? 0.6 : 1 }}>
                 {donateSubmitting ? 'Submitting…' : 'Submit for Verification'}
               </button>
+            </div>
+          )}
+
+          {/* ============ LEADERBOARD ============ */}
+          {tab === 'leaderboard' && (
+            <div className="space-y-3">
+              {/* Your position */}
+              <div style={{ borderRadius: 20, padding: 18, background: `linear-gradient(135deg, ${p.gcA}, ${p.dark})`, color: p.tl, border: `1px solid ${p.border}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{ width: 52, height: 52, borderRadius: 16, background: p.greenDeep, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Trophy size={24} color={p.av2} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 10, color: p.tsub, fontWeight: 600, textTransform: 'uppercase', marginBottom: 2 }}>Your Position</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>
+                      {!leaderboardLoaded ? '—' : myRank ? `#${myRank}` : 'Unranked'}
+                      {leaderboardLoaded && leaderboard.length > 0 && (
+                        <span style={{ fontSize: 11, fontWeight: 600, color: p.tsub, marginLeft: 8 }}>of {leaderboard.length}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: p.av2 }}>{points.xp.toLocaleString()}</div>
+                    <div style={{ fontSize: 9.5, color: p.tsub, fontWeight: 600, textTransform: 'uppercase' }}>XP</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ranked list */}
+              <div style={{ borderRadius: 20, background: p.dark, color: p.tl, border: `1px solid ${p.border}`, overflow: 'hidden' }}>
+                <div style={{ padding: '14px 16px', borderBottom: `1px solid ${p.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>Ranked by XP</span>
+                  <span style={{ fontSize: 9.5, color: p.tmid, fontWeight: 600 }}>Live standings</span>
+                </div>
+
+                {!leaderboardLoaded && !leaderboardError && (
+                  <div style={{ padding: 4 }}>
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px', borderTop: i === 0 ? 'none' : `1px solid ${p.border}` }}>
+                        <div className="animate-pulse" style={{ width: 26, height: 14, borderRadius: 4, background: p.border }} />
+                        <div className="animate-pulse" style={{ width: 34, height: 34, borderRadius: '50%', background: p.border }} />
+                        <div className="animate-pulse" style={{ flex: 1, height: 12, borderRadius: 4, background: p.border }} />
+                        <div className="animate-pulse" style={{ width: 48, height: 12, borderRadius: 4, background: p.border }} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {leaderboardError && (
+                  <div style={{ padding: '32px 16px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 11.5, color: p.tsub, marginBottom: 12 }}>{leaderboardError}</div>
+                    <button type="button" onClick={() => { setLeaderboardLoaded(false); loadLeaderboard(); }}
+                      style={{ padding: '8px 16px', borderRadius: 12, border: `1px solid ${p.pillBorder}`, background: 'none', color: p.tl, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                      Retry
+                    </button>
+                  </div>
+                )}
+
+                {leaderboardLoaded && !leaderboardError && leaderboard.length === 0 && (
+                  <div style={{ padding: '40px 16px', textAlign: 'center', fontSize: 11.5, color: p.tsub }}>No ranked members yet.</div>
+                )}
+
+                {leaderboardLoaded && !leaderboardError && leaderboard.length > 0 && (
+                  <div>
+                    {leaderboard.map((m, i) => {
+                      const isMe = m.id === user?.id;
+                      const initials = m.name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('') || '?';
+                      const medalColor = m.rank === 1 ? '#e0b64a' : m.rank === 2 ? '#c3c9d1' : m.rank === 3 ? '#c17a4a' : null;
+                      return (
+                        <div key={m.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 12, padding: '13px 16px',
+                          borderTop: i === 0 ? 'none' : `1px solid ${p.border}`,
+                          background: isMe ? p.lightCard : 'none',
+                        }}>
+                          <div style={{ width: 26, flexShrink: 0, textAlign: 'center' }}>
+                            {medalColor ? (
+                              <Medal size={17} color={medalColor} fill={medalColor} fillOpacity={0.18} />
+                            ) : (
+                              <span style={{ fontSize: 12, fontWeight: 700, color: p.tmid }}>{m.rank}</span>
+                            )}
+                          </div>
+                          <div style={{
+                            width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+                            background: isMe ? p.green : p.lightCard, color: isMe ? '#fff' : (dark ? p.td : p.mut),
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 11.5, fontWeight: 700, overflow: 'hidden',
+                          }}>
+                            {m.photo ? (
+                              <img src={m.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : initials}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 600, color: isMe ? p.td : p.tl, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {m.name}
+                              {isMe && <span style={{ fontSize: 9, fontWeight: 700, color: p.green, textTransform: 'uppercase' }}>You</span>}
+                            </div>
+                            <div style={{ fontSize: 9.5, color: p.tmid, marginTop: 1 }}>Level {m.level}</div>
+                          </div>
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: p.av2 }}>{m.xp.toLocaleString()} <span style={{ fontSize: 9.5, fontWeight: 600, color: p.tmid }}>XP</span></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
