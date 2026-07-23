@@ -134,16 +134,25 @@ export function useApprovals() {
     }
     setLoading(true);
     try {
+      const isMasterAdmin = profile?.role === 'master_admin';
       const { data, error } = await supabase.rpc('cast_approval_vote', {
         p_request_id: requestId, p_voter_id: user.id, p_voter_role: voterRole,
         p_decision: decision, p_note: note || null,
+        // Master admin resolves a request on a single decision, bypassing
+        // required_approvals entirely — see cast_approval_vote.sql for the
+        // matching server-side branch. voter_role is still sent/logged as
+        // 'treasurer' (a display stand-in, per the ternary above) but the
+        // RPC does NOT use voter_role to decide override power — only this
+        // explicit flag does, so relabeling later can't accidentally grant
+        // or revoke override authority.
+        p_is_master_admin: isMasterAdmin,
       });
       if (error) handleError(error);
-      await logAudit(tenant.id, 'approval_requests', requestId, decision === 'approve' ? 'approve' : 'reject', user.id, { voter_role: voterRole, note });
+      await logAudit(tenant.id, 'approval_requests', requestId, decision === 'approve' ? 'approve' : 'reject', user.id, { voter_role: voterRole, note, master_admin_override: isMasterAdmin });
 
       const result = data as ApprovalRequest;
-      if (result.status === 'approved') addToast('Request approved and executed', 'success');
-      else if (result.status === 'rejected') addToast('Request rejected', 'success');
+      if (result.status === 'approved') addToast(isMasterAdmin ? 'Approved and executed (master admin override)' : 'Request approved and executed', 'success');
+      else if (result.status === 'rejected') addToast(isMasterAdmin ? 'Rejected (master admin override)' : 'Request rejected', 'success');
       else addToast('Vote recorded — awaiting second decision', 'success');
       return result;
     } catch (err: any) {
