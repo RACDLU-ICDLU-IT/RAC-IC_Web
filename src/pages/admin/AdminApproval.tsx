@@ -69,7 +69,6 @@ function RequestCard({
   const approveCount = votes.filter((v) => v.decision === 'approve').length;
   const rejectCount = votes.filter((v) => v.decision === 'reject').length;
   const myVote = votes.find((v) => v.voter_id === currentVoterId);
-  const isOwnRequest = req.requested_by === currentVoterId;
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -101,11 +100,7 @@ function RequestCard({
         </div>
       )}
 
-      {isOwnRequest && (
-        <p className="text-xs text-amber-600 italic">You submitted this request — you cannot vote on your own submission.</p>
-      )}
-
-      {!isOwnRequest && isSignatory && !myVote && (
+      {isSignatory && !myVote && (
         <div className="space-y-2 pt-2 border-t border-gray-100">
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note"
             className="w-full px-3 py-2 border rounded text-sm" />
@@ -122,7 +117,7 @@ function RequestCard({
         </div>
       )}
 
-      {!isSignatory && !isOwnRequest && (
+      {!isSignatory && (
         <p className="text-xs text-gray-400 italic">Only President, Treasurer, or General Secretary can vote.</p>
       )}
 
