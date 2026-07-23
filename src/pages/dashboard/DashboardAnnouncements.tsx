@@ -1,5 +1,5 @@
 import { supabase } from '../../supabase';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenant';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -157,97 +157,62 @@ function htmlToPreviewText(html: string): string {
 }
 
 /**
- * Renders an announcement's body_html inside a sandboxed, auto-height
- * iframe rather than injecting it into the page DOM directly.
+ * Renders an announcement's body_html inside a sandboxed iframe rather
+ * than injecting it into the page DOM directly.
  *
  * This matters specifically because full HTML email templates (like
  * the club's formal announcement template) are table-based layouts
  * with fixed pixel widths (e.g. max-width:600px) — that's correct and
  * necessary for email client compatibility, but dropped straight into
  * a normal responsive page via dangerouslySetInnerHTML it just sits
- * at its fixed width, forcing the whole page into horizontal scroll
- * on a phone and leaving no defined height, which is why the footer
- * below it visually detached from the card (the containing element
- * had nothing to size itself against).
+ * at its fixed width and forces the whole page into horizontal
+ * scroll on a phone.
  *
- * The iframe gets its own layout context, so:
- *  - a small injected <style> reset makes width:100%/max-width-only
- *    tables shrink to fit an actual phone screen instead of forcing
- *    horizontal scroll, while still respecting each table's own
- *    max-width on wider screens.
- *  - height is measured from the rendered content's real
- *    scrollHeight after each load and pushed back onto the iframe
- *    element, so the box always fits its content exactly — no fixed
- *    height guess, no internal scrollbar, no leftover blank space
- *    pushing the footer down.
+ * Earlier versions of this component tried to auto-measure the
+ * rendered content's height and resize the iframe to match exactly.
+ * That approach kept cutting content off: a table-based layout with
+ * images reflows in multiple passes as each image's intrinsic size
+ * becomes known, and there is no single reliable moment to take a
+ * "final" measurement — onLoad fires too early, ResizeObserver can
+ * miss a pass if the browser's layout settles in one paint with
+ * nothing left to observe changing, and any race left content
+ * silently invisible below the last height that got set. That's a
+ * fragile foundation for something as variable as arbitrary
+ * admin-authored HTML.
+ *
+ * This version does the simple, robust thing instead: give the
+ * iframe a generous fixed height and let it be a genuinely complete,
+ * self-contained rendering surface — exactly like a real email
+ * preview pane. If the template is taller than that height, the
+ * iframe scrolls internally (visible scrollbar, native touch
+ * scrolling); it never truncates or hides content. There's no
+ * measurement to race against, so there's nothing to get wrong.
  */
 function AnnouncementBodyFrame({ html }: { html: string }) {
-  const [height, setHeight] = useState(120);
-  const frameRef = useRef<HTMLIFrameElement>(null);
-  const roRef = useRef<ResizeObserver | null>(null);
+  // Deliberately tall — most announcements (including a full formal
+  // template like the club's) fit well within this without needing to
+  // scroll at all; anything taller scrolls inside its own box rather
+  // than being cut off or guessed at.
+  const FRAME_HEIGHT = 900;
 
   const doc = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
     html, body { margin: 0; padding: 0; }
     body { font-family: Georgia, 'Times New Roman', Times, serif; }
-    /* Outermost full-bleed table (the EFEDF2 page-background wrapper
-       every email template starts with) should fill the iframe width.
-       Nested tables keep whatever width/max-width the template itself
-       set (e.g. max-width:600px on the actual card) — forcing every
-       table to 100% breaks the intentional narrower content column and
-       is what caused the previous cut-off/collapse. */
+    /* Outermost full-bleed table (the page-background wrapper most
+       email templates start with) fills the iframe width. Nested
+       tables keep whatever width/max-width the template itself set
+       (e.g. max-width:600px on the actual card) — forcing every table
+       to 100% would break the intentional narrower content column. */
     body > table { width: 100% !important; }
     img { max-width: 100%; height: auto; }
   </style></head><body>${html}</body></html>`;
 
-  const measure = () => {
-    const cdoc = frameRef.current?.contentDocument;
-    if (!cdoc || !cdoc.body) return;
-    const h = Math.max(cdoc.documentElement.scrollHeight, cdoc.body.scrollHeight);
-    if (h > 0) setHeight(h);
-  };
-
-  const handleLoad = () => {
-    measure();
-    const cdoc = frameRef.current?.contentDocument;
-    if (!cdoc || !cdoc.body) return;
-
-    // Re-measure whenever the iframe's own content actually changes
-    // size — covers images (including the header/footer logos and
-    // social icons in the template) loading asynchronously after the
-    // initial load event, web fonts swapping in, etc. This replaces a
-    // fixed set of setTimeout guesses, which either fired too early
-    // (before slow images finished) or left a gap if nothing changed
-    // between the two checks.
-    roRef.current?.disconnect();
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(cdoc.body);
-    roRef.current = ro;
-
-    // Belt-and-suspenders: also catch every image's load/error event
-    // directly, since a ResizeObserver on <body> won't necessarily
-    // fire if an image loads into a fixed-size cell that doesn't
-    // change the body's own box.
-    cdoc.querySelectorAll('img').forEach((img) => {
-      if (!(img as HTMLImageElement).complete) {
-        img.addEventListener('load', measure, { once: true });
-        img.addEventListener('error', measure, { once: true });
-      }
-    });
-  };
-
-  useEffect(() => {
-    return () => roRef.current?.disconnect();
-  }, []);
-
   return (
     <iframe
-      ref={frameRef}
       title="Announcement content"
       srcDoc={doc}
-      onLoad={handleLoad}
       sandbox="allow-popups allow-popups-to-escape-sandbox"
-      style={{ width: '100%', height, border: 'none', display: 'block' }}
-      scrolling="no"
+      style={{ width: '100%', height: FRAME_HEIGHT, border: 'none', display: 'block' }}
     />
   );
 }
