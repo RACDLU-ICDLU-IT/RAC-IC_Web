@@ -184,40 +184,67 @@ function htmlToPreviewText(html: string): string {
 function AnnouncementBodyFrame({ html }: { html: string }) {
   const [height, setHeight] = useState(120);
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
 
   const doc = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
     html, body { margin: 0; padding: 0; }
     body { font-family: Georgia, 'Times New Roman', Times, serif; }
-    /* Let fixed-width email tables shrink on narrow screens instead of
-       forcing horizontal scroll, while still honoring their own
-       max-width (so they don't stretch past it on wide screens). */
-    table { max-width: 100% !important; }
+    /* Outermost full-bleed table (the EFEDF2 page-background wrapper
+       every email template starts with) should fill the iframe width.
+       Nested tables keep whatever width/max-width the template itself
+       set (e.g. max-width:600px on the actual card) — forcing every
+       table to 100% breaks the intentional narrower content column and
+       is what caused the previous cut-off/collapse. */
+    body > table { width: 100% !important; }
     img { max-width: 100%; height: auto; }
   </style></head><body>${html}</body></html>`;
 
   const measure = () => {
-    const doc = frameRef.current?.contentDocument;
-    if (!doc) return;
-    const h = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
+    const cdoc = frameRef.current?.contentDocument;
+    if (!cdoc || !cdoc.body) return;
+    const h = Math.max(cdoc.documentElement.scrollHeight, cdoc.body.scrollHeight);
     if (h > 0) setHeight(h);
   };
 
+  const handleLoad = () => {
+    measure();
+    const cdoc = frameRef.current?.contentDocument;
+    if (!cdoc || !cdoc.body) return;
+
+    // Re-measure whenever the iframe's own content actually changes
+    // size — covers images (including the header/footer logos and
+    // social icons in the template) loading asynchronously after the
+    // initial load event, web fonts swapping in, etc. This replaces a
+    // fixed set of setTimeout guesses, which either fired too early
+    // (before slow images finished) or left a gap if nothing changed
+    // between the two checks.
+    roRef.current?.disconnect();
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(cdoc.body);
+    roRef.current = ro;
+
+    // Belt-and-suspenders: also catch every image's load/error event
+    // directly, since a ResizeObserver on <body> won't necessarily
+    // fire if an image loads into a fixed-size cell that doesn't
+    // change the body's own box.
+    cdoc.querySelectorAll('img').forEach((img) => {
+      if (!(img as HTMLImageElement).complete) {
+        img.addEventListener('load', measure, { once: true });
+        img.addEventListener('error', measure, { once: true });
+      }
+    });
+  };
+
   useEffect(() => {
-    // Re-measure shortly after mount/update too, in case images inside
-    // the announcement load asynchronously and change the document's
-    // height after the initial onLoad fires.
-    const t1 = setTimeout(measure, 200);
-    const t2 = setTimeout(measure, 800);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [html]);
+    return () => roRef.current?.disconnect();
+  }, []);
 
   return (
     <iframe
       ref={frameRef}
       title="Announcement content"
       srcDoc={doc}
-      onLoad={measure}
+      onLoad={handleLoad}
       sandbox="allow-popups allow-popups-to-escape-sandbox"
       style={{ width: '100%', height, border: 'none', display: 'block' }}
       scrolling="no"
@@ -495,7 +522,6 @@ export default function DashboardAnnouncements() {
                           <h3 style={{ fontSize: 15.5, fontWeight: 700, color: p.tl, margin: 0, letterSpacing: '-.1px' }}>{a.title}</h3>
                           <div style={{ fontSize: 10.5, color: p.tsub, marginTop: 3 }}>
                             {timeAgo(a.published_at || a.created_at)}
-                            {a.author_name ? ` · ${a.author_name}` : ''}
                           </div>
                         </div>
                       </div>
@@ -548,3 +574,24 @@ export default function DashboardAnnouncements() {
   );
 }
 
+/**
+ * ------------------------------------------------------------------
+ * Migration notes — read-tracking table (run once, alongside the
+ * announcements table migration in AdminCommunications.tsx):
+ *
+ * create table if not exists announcement_reads (
+ *   announcement_id uuid not null references announcements(id) on delete cascade,
+ *   user_id uuid not null,
+ *   tenant_id text not null,
+ *   read_at timestamptz not null default now(),
+ *   primary key (announcement_id, user_id)
+ * );
+ * create index if not exists announcement_reads_user_idx
+ *   on announcement_reads (tenant_id, user_id);
+ *
+ * RLS: members should only be able to upsert/select their own rows
+ * (user_id = auth.uid()), scoped to their own tenant_id — matching
+ * the RLS pattern already used on `attendance` and other per-member
+ * tables in this schema.
+ * ------------------------------------------------------------------
+ */
