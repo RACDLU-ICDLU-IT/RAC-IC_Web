@@ -7,6 +7,19 @@ import { useApprovals } from '../../hooks/useApprovals';
 import { useToast } from '../../hooks/useToast';
 import { getClubPalette } from '../../theme/racPalette';
 
+const INTER_FONT_URL = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
+const INTER_LINK_ID = 'rac-dashboard-inter-font';
+function useInterFont() {
+  useEffect(() => {
+    if (document.getElementById(INTER_LINK_ID)) return;
+    const link = document.createElement('link');
+    link.id = INTER_LINK_ID;
+    link.rel = 'stylesheet';
+    link.href = INTER_FONT_URL;
+    document.head.appendChild(link);
+  }, []);
+}
+
 function fmtAmount(n: number) {
   return new Intl.NumberFormat('en-BD', { style: 'currency', currency: 'BDT', minimumFractionDigits: 2 }).format(n || 0);
 }
@@ -58,6 +71,7 @@ export default function AdminPoints() {
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
   const p = getClubPalette(tenant.id, dark ? 'dark' : 'light');
+  useInterFont();
 
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['key']>('levels');
 
@@ -77,6 +91,7 @@ export default function AdminPoints() {
 
   const [items, setItems] = useState<FpRedemptionItem[]>([]);
   const [showItemForm, setShowItemForm] = useState(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [itemName, setItemName] = useState('');
   const [itemDesc, setItemDesc] = useState('');
   const [itemCost, setItemCost] = useState('');
@@ -153,20 +168,37 @@ export default function AdminPoints() {
   };
 
   const openItemForm = () => {
+    setEditingItemId(null);
     setItemName(''); setItemDesc(''); setItemCost('');
     setItemRedemptionType('unlimited'); setItemMaxRedemptions('');
     setShowItemForm(true);
   };
 
+  const openEditItemForm = (item: FpRedemptionItem) => {
+    setEditingItemId(item.id);
+    setItemName(item.name);
+    setItemDesc(item.description || '');
+    setItemCost(String(item.fp_cost));
+    setItemRedemptionType(((item as any).redemption_type || 'unlimited') as RedemptionType);
+    setItemMaxRedemptions((item as any).max_redemptions != null ? String((item as any).max_redemptions) : '');
+    setShowItemForm(true);
+  };
+
   const submitItemForm = async () => {
-    await createRedemptionItem({
+    const payload = {
       name: itemName,
       description: itemDesc,
       fp_cost: Number(itemCost),
       redemption_type: itemRedemptionType,
       max_redemptions: itemRedemptionType === 'limited' ? Number(itemMaxRedemptions) : null,
-    } as any);
+    } as any;
+    if (editingItemId) {
+      await updateRedemptionItem(editingItemId, payload);
+    } else {
+      await createRedemptionItem(payload);
+    }
     setShowItemForm(false);
+    setEditingItemId(null);
     loadAll();
   };
 
@@ -197,7 +229,7 @@ export default function AdminPoints() {
     <div className="admin-points-page">
       <style>{`
         .admin-points-page, .admin-points-page * {
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
         }
         .admin-points-page ::-webkit-scrollbar { display: none; }
         .ap-tabs { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
@@ -402,7 +434,8 @@ export default function AdminPoints() {
                         {redemptionTypeLabel(item)}
                       </span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 10 }}>
+                      <button style={btnGhost} onClick={() => openEditItemForm(item)}>Edit</button>
                       <button style={btnGhost} onClick={() => updateRedemptionItem(item.id, { is_active: !item.is_active }).then(loadAll)}>
                         {item.is_active ? 'Deactivate' : 'Activate'}
                       </button>
@@ -444,11 +477,11 @@ export default function AdminPoints() {
         </div>
       </div>
 
-      {/* ---------------- Add redemption item modal ---------------- */}
+      {/* ---------------- Add/edit redemption item modal ---------------- */}
       {showItemForm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }} onClick={() => setShowItemForm(false)}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }} onClick={() => { setShowItemForm(false); setEditingItemId(null); }}>
           <div style={{ background: p.dark, border: `1px solid ${p.border}`, borderRadius: 20, padding: 20, width: '100%', maxWidth: 420, color: p.tl }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Add redemption item</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>{editingItemId ? 'Edit redemption item' : 'Add redemption item'}</div>
 
             <span style={label}>Name</span>
             <input value={itemName} onChange={(e) => setItemName(e.target.value)} style={{ ...inputStyleDark, marginBottom: 12 }} placeholder="e.g. PHF Award" />
@@ -492,8 +525,8 @@ export default function AdminPoints() {
             )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button style={btnGhost} onClick={() => setShowItemForm(false)}>Cancel</button>
-              <button style={{ ...btnPrimary, ...(!canSubmitItem ? btnDisabled : {}) }} disabled={!canSubmitItem} onClick={submitItemForm}>Create</button>
+              <button style={btnGhost} onClick={() => { setShowItemForm(false); setEditingItemId(null); }}>Cancel</button>
+              <button style={{ ...btnPrimary, ...(!canSubmitItem ? btnDisabled : {}) }} disabled={!canSubmitItem} onClick={submitItemForm}>{editingItemId ? 'Save' : 'Create'}</button>
             </div>
           </div>
         </div>
