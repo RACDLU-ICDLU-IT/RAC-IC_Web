@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
+import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenant';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePoints, LevelConfig, DonationPointConfig, Donation, FpRedemptionItem, FpRedemptionRequest, FundAccount } from '../../hooks/usePoints';
 import { useApprovals } from '../../hooks/useApprovals';
 import { useToast } from '../../hooks/useToast';
+import { supabase } from '../../supabase';
 import { getClubPalette } from '../../theme/racPalette';
 
 const INTER_FONT_URL = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
@@ -48,12 +50,15 @@ const TABS = [
   { key: 'fprate', label: 'FP Exchange Rate' },
   { key: 'donations', label: 'Donation Rewards' },
   { key: 'pending-donations', label: 'Pending Donations' },
+  { key: 'donation-history', label: 'Donation History' },
   { key: 'redemption', label: 'Redemption Catalog' },
   { key: 'pending-redemptions', label: 'Pending Redemptions' },
+  { key: 'redemption-history', label: 'Redemption History' },
 ] as const;
 
 export default function AdminPoints() {
   const { adminTenant: tenant } = useAdminTenant();
+  const { user } = useAuth();
   const { addToast } = useToast();
   const {
     loading,
@@ -86,6 +91,7 @@ export default function AdminPoints() {
   const [donationDirty, setDonationDirty] = useState<Record<string, boolean>>({});
 
   const [pendingDonations, setPendingDonations] = useState<Donation[]>([]);
+  const [donationHistory, setDonationHistory] = useState<Donation[]>([]);
   const [rejectingDonation, setRejectingDonation] = useState<Donation | null>(null);
   const [donationRejectReason, setDonationRejectReason] = useState('');
 
@@ -99,16 +105,18 @@ export default function AdminPoints() {
   const [itemMaxRedemptions, setItemMaxRedemptions] = useState('');
 
   const [pendingRedemptions, setPendingRedemptions] = useState<FpRedemptionRequest[]>([]);
+  const [redemptionHistory, setRedemptionHistory] = useState<FpRedemptionRequest[]>([]);
   const [rejectingRedemption, setRejectingRedemption] = useState<FpRedemptionRequest | null>(null);
   const [redemptionRejectReason, setRedemptionRejectReason] = useState('');
 
   useEffect(() => { loadAll(); }, [tenant.id]);
 
   const loadAll = async () => {
-    const [lvls, rate, hist, dConfigs, pDonations, redItems, pRedemptions] = await Promise.all([
+    const [lvls, rate, hist, dConfigs, pDonations, redItems, pRedemptions, dHistory, rHistory] = await Promise.all([
       fetchLevelConfigs(), fetchCurrentFpRate(), fetchFpRateHistory(),
       fetchDonationPointConfigs(), fetchPendingDonations(),
       fetchRedemptionItems(false), fetchPendingRedemptions(),
+      fetchDonationHistory(), fetchRedemptionHistory(),
     ]);
 
     setLevels(lvls.length ? lvls.map((d) => ({ level: d.level, xp_required: d.xp_required, label: d.label || '' })) : generateDefaultLevels(10));
@@ -125,6 +133,39 @@ export default function AdminPoints() {
     setPendingDonations(pDonations);
     setItems(redItems);
     setPendingRedemptions(pRedemptions);
+    setDonationHistory(dHistory);
+    setRedemptionHistory(rHistory);
+  };
+
+  /** Reviewed (non-pending) donations, most recent first. Reads
+   * member_name (snapshot column) rather than the live users join, so
+   * history stays intact even if the member record later changes. */
+  const fetchDonationHistory = async (): Promise<Donation[]> => {
+    const { data, error } = await supabase
+      .from('donations')
+      .select('*, users(name)')
+      .eq('tenant_id', tenant.id)
+      .neq('status', 'pending')
+      .order('verified_at', { ascending: false, nullsFirst: false })
+      .limit(100);
+    if (error) { console.warn('[AdminPoints] donation history fetch failed:', error); return []; }
+    return (data as any[]) || [];
+  };
+
+  /** Reviewed (non-pending) redemption requests, most recent first.
+   * Reads item_name_snapshot / fp_cost_snapshot / member_name_snapshot
+   * rather than live joins, so an item edit or delete afterward can't
+   * change or blank out what was actually requested and approved. */
+  const fetchRedemptionHistory = async (): Promise<FpRedemptionRequest[]> => {
+    const { data, error } = await supabase
+      .from('fp_redemption_requests')
+      .select('*')
+      .eq('tenant_id', tenant.id)
+      .neq('status', 'pending')
+      .order('approved_at', { ascending: false, nullsFirst: false })
+      .limit(100);
+    if (error) { console.warn('[AdminPoints] redemption history fetch failed:', error); return []; }
+    return (data as any[]) || [];
   };
 
   function generateDefaultLevels(count: number) {
@@ -165,6 +206,55 @@ export default function AdminPoints() {
     const c = donationConfigs[fa];
     await saveDonationPointConfig({ fund_account: fa as FundAccount, xp_per_100: c.xp_per_100, fp_per_100: c.fp_per_100 });
     setDonationDirty((p2) => ({ ...p2, [fa]: false }));
+  };
+
+  /** verifyDonation/rejectDonation already stamp verified_by, verified_at,
+   * and rejection_reason as part of their own logic — no need to
+   * duplicate that here. The only gap is member_name: it exists on the
+   * table already, but the pending-list fetch may not always populate
+   * it, so this locks it in from the live join at the moment of action,
+   * before that join could ever change. */
+  const handleVerifyDonation = async (d: Donation) => {
+    await verifyDonation(d.id);
+    if (!(d as any).member_name && (d as any).users?.name) {
+      await supabase.from('donations').update({ member_name: (d as any).users.name }).eq('id', d.id);
+    }
+    loadAll();
+  };
+
+  const handleRejectDonation = async (d: Donation, reason: string) => {
+    await rejectDonation(d.id, reason);
+    if (!(d as any).member_name && (d as any).users?.name) {
+      await supabase.from('donations').update({ member_name: (d as any).users.name }).eq('id', d.id);
+    }
+    loadAll();
+  };
+
+  /** approveRedemption/rejectRedemption already stamp approved_by,
+   * approved_at, and rejection_reason. The gap is the item/member
+   * snapshot fields, which are new — freeze them here so a later item
+   * edit or delete can't alter what history shows was requested. */
+  const handleApproveRedemption = async (r: FpRedemptionRequest) => {
+    await approveRedemption(r.id);
+    await supabase.from('fp_redemption_requests').update({
+      item_name_snapshot: r.fp_redemption_items?.name || null,
+      item_description_snapshot: (r.fp_redemption_items as any)?.description || null,
+      fp_cost_snapshot: r.fp_cost,
+      member_name_snapshot: (r as any).users?.name || null,
+    }).eq('id', r.id);
+    loadAll();
+  };
+
+  const handleRejectRedemption = async (r: FpRedemptionRequest, reason: string) => {
+    await rejectRedemption(r.id, reason);
+    await supabase.from('fp_redemption_requests').update({
+      item_name_snapshot: r.fp_redemption_items?.name || null,
+      item_description_snapshot: (r.fp_redemption_items as any)?.description || null,
+      fp_cost_snapshot: r.fp_cost,
+      member_name_snapshot: (r as any).users?.name || null,
+
+    }).eq('id', r.id);
+    loadAll();
   };
 
   const openItemForm = () => {
@@ -402,10 +492,43 @@ export default function AdminPoints() {
                     <div style={{ fontSize: 10, fontFamily: 'monospace', color: p.tsub, marginBottom: 12 }}>Txn: {d.transaction_id}</div>
                     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                       <button style={btnDanger} onClick={() => { setRejectingDonation(d); setDonationRejectReason(''); }}>Reject</button>
-                      <button style={btnSuccess} onClick={() => verifyDonation(d.id).then(loadAll)}>Verify</button>
+                      <button style={btnSuccess} onClick={() => handleVerifyDonation(d)}>Verify</button>
                     </div>
                   </div>
                 ))}
+              </div>
+            )
+          )}
+
+          {/* ---------------- Donation History ---------------- */}
+          {activeTab === 'donation-history' && (
+            donationHistory.length === 0 ? (
+              <div style={{ ...cardDark, textAlign: 'center', color: p.tsub, fontSize: 12, padding: 40 }}>No reviewed donations yet.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {donationHistory.map((d) => {
+                  const status = (d as any).status;
+                  const verified = status === 'verified' || status === 'approved';
+                  return (
+                    <div key={d.id} style={cardDark}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700 }}>{(d as any).member_name || (d as any).users?.name || 'Unknown'}</div>
+                          <div style={{ fontSize: 10.5, color: p.tsub, marginTop: 2 }}>{FUND_LABELS[d.fund_account]}</div>
+                        </div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: p.green }}>{fmtAmount(d.amount)}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', padding: '3px 9px', borderRadius: 20, background: verified ? p.greenDeep : '#3a1a14', color: verified ? p.green : '#e08a72' }}>
+                          {status}
+                        </span>
+                        <span style={{ fontSize: 10, color: p.tmid }}>Reviewed {fmtDateTime((d as any).verified_at)}</span>
+                      </div>
+                      {(d as any).rejection_reason && <div style={{ fontSize: 10.5, color: p.tsub, marginBottom: 6 }}>Reason: {(d as any).rejection_reason}</div>}
+                      <div style={{ fontSize: 10, fontFamily: 'monospace', color: p.tmid }}>Txn: {d.transaction_id}</div>
+                    </div>
+                  );
+                })}
               </div>
             )
           )}
@@ -467,10 +590,45 @@ export default function AdminPoints() {
                     <div style={{ fontSize: 10, color: p.tsub, marginBottom: 12 }}>{fmtDateTime(r.created_at)}</div>
                     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                       <button style={btnDanger} onClick={() => { setRejectingRedemption(r); setRedemptionRejectReason(''); }}>Reject</button>
-                      <button style={btnSuccess} onClick={() => approveRedemption(r.id).then(loadAll)}>Approve</button>
+                      <button style={btnSuccess} onClick={() => handleApproveRedemption(r)}>Approve</button>
                     </div>
                   </div>
                 ))}
+              </div>
+            )
+          )}
+
+          {/* ---------------- Redemption History ---------------- */}
+          {activeTab === 'redemption-history' && (
+            redemptionHistory.length === 0 ? (
+              <div style={{ ...cardDark, textAlign: 'center', color: p.tsub, fontSize: 12, padding: 40 }}>No reviewed redemptions yet.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {redemptionHistory.map((r) => {
+                  const status = (r as any).status;
+                  const good = status === 'approved' || status === 'fulfilled';
+                  const itemName = (r as any).item_name_snapshot || r.fp_redemption_items?.name || 'Deleted item';
+                  const memberName = (r as any).member_name_snapshot || r.users?.name || 'Unknown';
+                  const cost = (r as any).fp_cost_snapshot ?? r.fp_cost;
+                  return (
+                    <div key={r.id} style={cardDark}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700 }}>{memberName}</div>
+                          <div style={{ fontSize: 10.5, color: p.tsub, marginTop: 2 }}>{itemName}</div>
+                        </div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: p.av2 }}>{cost} FP</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', padding: '3px 9px', borderRadius: 20, background: good ? p.greenDeep : '#3a1a14', color: good ? p.green : '#e08a72' }}>
+                          {status}
+                        </span>
+                        <span style={{ fontSize: 10, color: p.tmid }}>Reviewed {fmtDateTime((r as any).approved_at)}</span>
+                      </div>
+                      {(r as any).rejection_reason && <div style={{ fontSize: 10.5, color: p.tsub }}>Reason: {(r as any).rejection_reason}</div>}
+                    </div>
+                  );
+                })}
               </div>
             )
           )}
@@ -543,7 +701,7 @@ export default function AdminPoints() {
               <button
                 style={{ ...btnDanger, background: '#7a3a32', color: '#fff', ...(!donationRejectReason.trim() ? btnDisabled : {}) }}
                 disabled={!donationRejectReason.trim()}
-                onClick={async () => { await rejectDonation(rejectingDonation.id, donationRejectReason.trim()); setRejectingDonation(null); loadAll(); }}
+                onClick={async () => { await handleRejectDonation(rejectingDonation, donationRejectReason.trim()); setRejectingDonation(null); }}
               >
                 Reject
               </button>
@@ -563,7 +721,7 @@ export default function AdminPoints() {
               <button
                 style={{ ...btnDanger, background: '#7a3a32', color: '#fff', ...(!redemptionRejectReason.trim() ? btnDisabled : {}) }}
                 disabled={!redemptionRejectReason.trim()}
-                onClick={async () => { await rejectRedemption(rejectingRedemption.id, redemptionRejectReason.trim()); setRejectingRedemption(null); loadAll(); }}
+                onClick={async () => { await handleRejectRedemption(rejectingRedemption, redemptionRejectReason.trim()); setRejectingRedemption(null); }}
               >
                 Reject
               </button>
