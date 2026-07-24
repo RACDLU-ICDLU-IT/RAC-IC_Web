@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenant';
 import { useTheme } from '../../contexts/ThemeContext';
 import { usePoints, LevelConfig, PointLedgerEntry, FpRedemptionItem, FpRedemptionRequest, FpTransfer, FundAccount, LeaderboardEntry } from '../../hooks/usePoints';
+import { useDues, DuesSettings } from '../../hooks/useDues';
 import { supabase } from '../../supabase';
 import { Zap, Star, Trophy, TrendingUp, HandCoins, CheckSquare, CreditCard, Wand2, Send, Gift, ArrowLeftRight, Medal } from 'lucide-react';
 
@@ -45,6 +46,11 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const FUND_LABELS: Record<FundAccount, string> = { administrative: 'Administrative Fund', project: 'Project Fund', endowment: 'Endowment Fund' };
 
+/** Redemption requests in one of these statuses still occupy a slot —
+ * either awaiting admin action or already granted. 'rejected' and
+ * 'cancelled' are release states: admin freed the slot back up. */
+const BLOCKING_STATUSES = ['pending', 'approved', 'fulfilled'];
+
 type Tab = 'overview' | 'wallet' | 'redeem' | 'transfer' | 'donate' | 'leaderboard';
 
 export default function MemberPoints() {
@@ -56,6 +62,7 @@ export default function MemberPoints() {
     transferFp, fetchMemberTransfers, fetchDonationPointConfigs, submitMemberDonation,
     snapDonationForWholeXp, fetchLeaderboard,
   } = usePoints();
+  const { fetchDuesSettings } = useDues();
 
   const club = resolveClub(tenant.id);
   useInterFont();
@@ -94,6 +101,7 @@ export default function MemberPoints() {
   const [donateSubmitting, setDonateSubmitting] = useState(false);
   const [donateError, setDonateError] = useState<string | null>(null);
   const [donateSubmitted, setDonateSubmitted] = useState(false);
+  const [clubBkashNumber, setClubBkashNumber] = useState<string | null>(null);
 
   // Leaderboard
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -107,13 +115,14 @@ export default function MemberPoints() {
   const loadAll = async () => {
     if (!user) return;
     setPageLoading(true);
-    const [pts, led, lvls, rate, redItems, myReds, myTransfers, dConfigs] = await Promise.all([
+    const [pts, led, lvls, rate, redItems, myReds, myTransfers, dConfigs, duesSettings] = await Promise.all([
       fetchMemberPoints(user.id), fetchMemberPointLedger(user.id), fetchLevelConfigs(),
       fetchCurrentFpRate(), fetchRedemptionItems(true), fetchMemberRedemptions(),
-      fetchMemberTransfers(), fetchDonationPointConfigs(),
+      fetchMemberTransfers(), fetchDonationPointConfigs(), fetchDuesSettings(),
     ]);
     setPoints(pts); setLedger(led); setLevelConfigs(lvls); setFpRate(rate);
     setItems(redItems); setMyRedemptions(myReds); setTransfers(myTransfers);
+    setClubBkashNumber((duesSettings as DuesSettings)?.default_bkash_number || null);
 
     const map: Record<string, { xp_per_100: number; fp_per_100: number }> = {};
     dConfigs.forEach((c) => { map[c.fund_account] = { xp_per_100: c.xp_per_100, fp_per_100: c.fp_per_100 }; });
@@ -152,6 +161,30 @@ export default function MemberPoints() {
   const progressPct = nextLevel ? Math.min(100, Math.round((xpIntoCurrentLevel / xpNeededForNextLevel) * 100)) : 100;
 
   const fmtAmount = (n: number) => new Intl.NumberFormat('en-BD', { style: 'currency', currency: 'BDT', minimumFractionDigits: 2 }).format(n || 0);
+
+  /** Eligibility per item, derived from redemption_type + this member's
+   * own past requests (myRedemptions). Items created before the
+   * redemption_type/max_redemptions fields existed default to
+   * 'unlimited', matching today's behavior unchanged.
+   * - unlimited: always eligible.
+   * - limited: eligible while blocking-request count < max_redemptions.
+   * - one_time: eligible only once — after a prior blocking request, it
+   *   stays locked until an admin rejects/cancels that request, which
+   *   removes it from BLOCKING_STATUSES and frees the item back up. */
+  const redemptionEligibility = (item: FpRedemptionItem): { eligible: boolean; reason: string | null } => {
+    const type = ((item as any).redemption_type || 'unlimited') as 'one_time' | 'unlimited' | 'limited';
+    const mineBlocking = myRedemptions.filter((r) => (r as any).item_id === item.id && BLOCKING_STATUSES.includes(r.status));
+    if (type === 'one_time') {
+      return mineBlocking.length > 0 ? { eligible: false, reason: 'Already redeemed' } : { eligible: true, reason: null };
+    }
+    if (type === 'limited') {
+      const max = (item as any).max_redemptions ?? 0;
+      return mineBlocking.length >= max
+        ? { eligible: false, reason: 'Limit reached' }
+        : { eligible: true, reason: `${mineBlocking.length}/${max} used` };
+    }
+    return { eligible: true, reason: null };
+  };
 
   const handleRedeem = async () => {
     if (!redeemConfirm) return;
@@ -347,17 +380,28 @@ export default function MemberPoints() {
           {tab === 'redeem' && (
             <div className="space-y-4">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }} className="!grid-cols-1 sm:!grid-cols-2">
-                {items.map((item) => (
-                  <div key={item.id} style={{ borderRadius: 16, padding: 16, background: p.dark, border: `1px solid ${p.border}`, color: p.tl }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{item.name}</div>
-                    {item.description && <div style={{ fontSize: 11, color: p.tsub, marginBottom: 10 }}>{item.description}</div>}
-                    <div style={{ fontSize: 15, fontWeight: 700, color: p.av2, marginBottom: 12 }}>{item.fp_cost} FP</div>
-                    <button type="button" disabled={points.fp < item.fp_cost} onClick={() => setRedeemConfirm(item)}
-                      style={{ width: '100%', padding: '9px 0', borderRadius: 12, border: 'none', background: points.fp >= item.fp_cost ? p.green : p.border, color: points.fp >= item.fp_cost ? '#fff' : p.tmid, fontSize: 12, fontWeight: 700, cursor: points.fp >= item.fp_cost ? 'pointer' : 'not-allowed' }}>
-                      {points.fp >= item.fp_cost ? 'Redeem' : 'Insufficient FP'}
-                    </button>
-                  </div>
-                ))}
+                {items.map((item) => {
+                  const { eligible, reason } = redemptionEligibility(item);
+                  const affordable = points.fp >= item.fp_cost;
+                  const canRedeem = eligible && affordable;
+                  const buttonLabel = !eligible ? reason : !affordable ? 'Insufficient FP' : 'Redeem';
+                  return (
+                    <div key={item.id} style={{ borderRadius: 16, padding: 16, background: p.dark, border: `1px solid ${p.border}`, color: p.tl }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{item.name}</div>
+                      {item.description && <div style={{ fontSize: 11, color: p.tsub, marginBottom: 10 }}>{item.description}</div>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: p.av2 }}>{item.fp_cost} FP</span>
+                        {eligible && reason && (
+                          <span style={{ fontSize: 9.5, fontWeight: 700, color: p.tmid, background: p.lightCard, padding: '2px 8px', borderRadius: 20 }}>{reason}</span>
+                        )}
+                      </div>
+                      <button type="button" disabled={!canRedeem} onClick={() => setRedeemConfirm(item)}
+                        style={{ width: '100%', padding: '9px 0', borderRadius: 12, border: 'none', background: canRedeem ? p.green : p.border, color: canRedeem ? '#fff' : p.tmid, fontSize: 12, fontWeight: 700, cursor: canRedeem ? 'pointer' : 'not-allowed' }}>
+                        {buttonLabel}
+                      </button>
+                    </div>
+                  );
+                })}
                 {items.length === 0 && <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 40, color: p.tsub, fontSize: 12 }}>No redemption items available yet.</div>}
               </div>
 
@@ -370,7 +414,7 @@ export default function MemberPoints() {
                         <div style={{ fontSize: 12.5, fontWeight: 600 }}>{r.fp_redemption_items?.name}</div>
                         <div style={{ fontSize: 10, color: p.tmid }}>{new Date(r.created_at).toLocaleDateString()}</div>
                       </div>
-                      <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', padding: '3px 8px', borderRadius: 20, background: r.status === 'approved' || r.status === 'fulfilled' ? '#1c3a2a' : r.status === 'rejected' ? '#3a1a14' : '#3a2f14', color: r.status === 'approved' || r.status === 'fulfilled' ? '#6fcf97' : r.status === 'rejected' ? '#e0726a' : '#e0b96a' }}>
+                      <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', padding: '3px 8px', borderRadius: 20, background: r.status === 'approved' || r.status === 'fulfilled' ? '#1c3a2a' : r.status === 'rejected' || r.status === 'cancelled' ? '#3a1a14' : '#3a2f14', color: r.status === 'approved' || r.status === 'fulfilled' ? '#6fcf97' : r.status === 'rejected' || r.status === 'cancelled' ? '#e0726a' : '#e0b96a' }}>
                         {r.status}
                       </span>
                     </div>
@@ -461,7 +505,7 @@ export default function MemberPoints() {
 
               <div style={{ borderRadius: 14, padding: 14, background: p.lightCard, color: p.td, marginBottom: 16 }}>
                 <div style={{ fontSize: 10.5, color: p.mut, fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>Send to bKash (Send Money)</div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>Contact treasurer for number</div>
+                <div style={{ fontSize: 15, fontWeight: 700, fontFamily: 'monospace' }}>{clubBkashNumber || 'Contact treasurer for number'}</div>
               </div>
 
               <label style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: p.tsub, textTransform: 'uppercase', marginBottom: 6 }}>Your bKash Number</label>
