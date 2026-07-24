@@ -51,6 +51,23 @@ const FUND_LABELS: Record<FundAccount, string> = { administrative: 'Administrati
  * 'cancelled' are release states: admin freed the slot back up. */
 const BLOCKING_STATUSES = ['pending', 'approved', 'fulfilled'];
 
+/** Ranks members by XP descending, using FP descending as a tiebreaker
+ * when XP is equal. Only members tied on both XP and FP share the same
+ * rank (standard competition ranking — e.g. two members tied at rank 2
+ * both show "2", and the next distinct XP/FP pair is ranked 4, not 3). */
+function rankByXp<T extends { xp: number; fp: number }>(members: T[]): (T & { rank: number })[] {
+  const sorted = [...members].sort((a, b) => (b.xp - a.xp) || (b.fp - a.fp));
+  let rank = 0;
+  let last: { xp: number; fp: number } | null = null;
+  return sorted.map((m, i) => {
+    if (last === null || m.xp !== last.xp || m.fp !== last.fp) {
+      rank = i + 1;
+      last = { xp: m.xp, fp: m.fp };
+    }
+    return { ...m, rank };
+  });
+}
+
 type Tab = 'overview' | 'wallet' | 'redeem' | 'transfer' | 'donate' | 'leaderboard';
 
 export default function MemberPoints() {
@@ -141,7 +158,8 @@ export default function MemberPoints() {
       // fetchLeaderboard reads users.xp/fp/level directly (the live schema —
       // see usePoints' fetchMemberPoints), scoped to this tenant, active
       // members only, and already excludes master_admin server-side.
-      const rows = await fetchLeaderboard();
+      const raw = await fetchLeaderboard();
+      const rows = rankByXp(raw);
       setLeaderboard(rows);
       const mine = rows.find((r) => r.id === user.id);
       setMyRank(mine ? mine.rank : null);
