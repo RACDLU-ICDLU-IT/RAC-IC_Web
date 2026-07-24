@@ -10,7 +10,6 @@ import {
   CalendarDays, Pencil, Trash2, X, Image as ImageIcon, MapPin, Clock, Eye, EyeOff,
 } from 'lucide-react';
 
-/* ---- font loader: same pattern/id as AdminAttendance.tsx, idempotent ---- */
 const INTER_FONT_URL = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
 const INTER_LINK_ID = 'rac-dashboard-inter-font';
 function useInterFont() {
@@ -24,9 +23,6 @@ function useInterFont() {
   }, []);
 }
 
-/* ---- event taxonomy — identical to AdminAttendance.tsx so both pages
-   read/write the exact same `type` / `sub_type` values on the same
-   `events` row. Do not diverge these from AdminAttendance's copy. ---- */
 const EVENT_TYPES = ['Meeting', 'Event', 'Project', 'Workshop'] as const;
 type EventType = typeof EVENT_TYPES[number];
 const SUB_TYPES: Record<EventType, string[]> = {
@@ -51,7 +47,6 @@ const emptyForm = {
   title: '', date: '', time: '', type: 'Meeting' as EventType, sub_type: SUB_TYPES.Meeting[0],
   venue: '', description: '', coverImage: '', coverImagePublicId: '', isPublic: false,
   xp_present: 0, xp_late: 0, xp_excused: 0, xp_absent: 0,
-  fp_reward: 0,
 };
 
 export default function AdminEvents() {
@@ -100,13 +95,10 @@ export default function AdminEvents() {
       coverImage: ev.coverImage || '', coverImagePublicId: ev.coverImagePublicId || '',
       isPublic: ev.isPublic ?? false,
       xp_present: ev.xp_present || 0, xp_late: ev.xp_late || 0, xp_excused: ev.xp_excused || 0, xp_absent: ev.xp_absent || 0,
-      fp_reward: ev.fp_reward || 0,
     });
     setIsFormOpen(true);
   };
 
-  /* ---- save: writes to the SAME `events` row/schema AdminAttendance
-     reads and edits — no separate table, no duplicate creation. ---- */
   const handleSave = async () => {
     if (!form.title || !form.date) { addToast('Title and date are required', 'error'); return; }
     setIsSaving(true);
@@ -121,7 +113,6 @@ export default function AdminEvents() {
           coverImage: form.coverImage, coverImagePublicId: form.coverImagePublicId,
           isPublic: form.isPublic,
           xp_present: form.xp_present, xp_late: form.xp_late, xp_excused: form.xp_excused, xp_absent: form.xp_absent,
-          fp_reward: form.fp_reward,
           ...(editingEventId ? {} : { createdAt: new Date().toISOString() }),
         },
         { onConflict: 'id' }
@@ -152,7 +143,6 @@ export default function AdminEvents() {
     }
   };
 
-  /* ---- style tokens — copied 1:1 from AdminAttendance.tsx ---- */
   const card: React.CSSProperties = { borderRadius: 20, padding: 16, background: p.dark, color: p.tl, border: `1px solid ${p.border}` };
   const pillBtn: React.CSSProperties = { border: `1px solid ${p.pillBorder}`, borderRadius: 20, fontSize: 10, padding: '6px 12px', color: p.tmid, background: 'none', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 };
   const solidBtn: React.CSSProperties = { background: p.green, color: '#1b0c12', borderRadius: 20, fontSize: 11, fontWeight: 700, padding: '8px 16px', border: 'none', cursor: 'pointer' };
@@ -237,7 +227,6 @@ export default function AdminEvents() {
         </div>
       </div>
 
-      {/* ---------------- ADD / EDIT EVENT MODAL ---------------- */}
       {isFormOpen && (
         <div
           onClick={() => !isSaving && setIsFormOpen(false)}
@@ -334,17 +323,6 @@ export default function AdminEvents() {
                     </div>
                   ))}
                 </div>
-              </div>
-
-              <div>
-                <label style={{ fontSize: 10, color: '#a066d6', fontWeight: 600, display: 'block', marginBottom: 5 }}>★ FP Reward (flat, on attendance)</label>
-                <input
-                  type="number" min={0}
-                  value={form.fp_reward}
-                  onChange={(e) => setForm({ ...form, fp_reward: Number(e.target.value) })}
-                  style={input}
-                  placeholder="0"
-                />
               </div>
 
               <button onClick={handleSave} disabled={isSaving} style={{ ...solidBtn, width: '100%', marginTop: 6, padding: '11px 0', opacity: isSaving ? 0.6 : 1 }}>
