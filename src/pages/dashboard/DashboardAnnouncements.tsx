@@ -139,16 +139,46 @@ function isVisibleToMember(a: AnnouncementRow, memberId: string | undefined, rol
   return false;
 }
 
-/** Plain-text preview for the collapsed card. Strips whole <style> and
- * <script> elements (contents included, not just the tags) before
- * stripping the remaining tags — full HTML email templates embed a
- * <style> block, and a naive tag-only strip leaves its raw CSS
- * sitting in the visible preview text. */
+/**
+ * Plain-text preview for the collapsed card.
+ *
+ * Parses into a detached (never-rendered, never-attached-to-page) DOM
+ * element rather than using regex string replacement. Two concrete
+ * problems that fixes:
+ *
+ * 1. HTML entities (&mdash;, &nbsp;, etc.) decode correctly for free
+ *    — a regex-based tag-strip has no concept of entities and leaves
+ *    them as literal text, which is exactly the "&mdash;" and
+ *    "&nbsp;" showing up raw in card previews.
+ * 2. It can walk actual DOM structure to skip decorative chrome. A
+ *    full HTML email template's very first text nodes are typically
+ *    its own header/logo/label-bar text (e.g. "ROTARACT CLUB OF
+ *    DHAKA LUMINOUS ... CLUB ANNOUNCEMENT — TEST RENDER"), which is
+ *    not the message — but a naive "take the first N characters of
+ *    visible text" approach grabs exactly that instead of the actual
+ *    "Dear Member, ..." content. This skips common structural/brand
+ *    wrapper patterns (elements styled as solid brand-color
+ *    backgrounds, all-caps uppercase-styled bars) so the preview
+ *    reflects the letter itself, not its letterhead.
+ */
 function htmlToPreviewText(html: string): string {
-  const withoutStyleScript = html
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ');
-  return withoutStyleScript.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  const container = document.createElement('div');
+  container.innerHTML = html;
+
+  // Strip elements that never carry preview-worthy content, plus
+  // decorative chrome: solid brand-color header bands and all-caps
+  // label bars are almost always logo/branding/section-label text,
+  // not the message.
+  container.querySelectorAll('style, script').forEach(el => el.remove());
+  container.querySelectorAll('[style]').forEach(el => {
+    const style = (el.getAttribute('style') || '').toLowerCase();
+    const isSolidBrandBand = /background(-color)?\s*:\s*#/.test(style) && el.textContent && el.textContent.trim().length < 80;
+    const isUppercaseLabel = /text-transform\s*:\s*uppercase/.test(style);
+    if (isSolidBrandBand || isUppercaseLabel) el.remove();
+  });
+
+  const text = (container.textContent || '').replace(/\s+/g, ' ').trim();
+  return text;
 }
 
 /**
