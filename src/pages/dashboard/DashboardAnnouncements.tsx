@@ -4,11 +4,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenant';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getClubPalette } from '../../theme/racPalette';
-import { Megaphone, Pin, Paperclip, Download, Circle, CheckCheck } from 'lucide-react';
+import { Megaphone, Pin, Paperclip, Download, ChevronDown, CheckCheck, AlertCircle, X } from 'lucide-react';
 
 /**
  * ------------------------------------------------------------------
- * DashboardAnnouncements — member-facing, full rebuild.
+ * DashboardAnnouncements — member-facing, full redesign.
  *
  * Visual identity is pixel-matched to DashboardHome.tsx: same Inter
  * font loader, same scoped !important font opt-out, same
@@ -18,22 +18,27 @@ import { Megaphone, Pin, Paperclip, Download, Circle, CheckCheck } from 'lucide-
  * DashboardHome itself uses are reused here — no new palette keys
  * invented.
  *
+ * This redesign keeps the data/visibility/read-tracking logic from
+ * the previous version entirely intact and rebuilds only the visual
+ * layer: clearer type rhythm, smoother expand/collapse motion,
+ * glanceable unread/pinned/attachment state, and a proper inline
+ * error surface for read-state write failures (see readWriteError
+ * below) instead of failing silently.
+ *
  * --------------------------- SCHEMA ---------------------------
  * Reads the same `announcements` table AdminCommunications.tsx
  * writes (status / is_permanent / is_pinned / target_all /
  * target_roles / target_members / body_html / attachments / expires_at
  * — see that file's header comment for the full column list).
  *
- * Adds one new table for read-tracking:
- *   announcement_reads
- *     announcement_id  uuid, references announcements(id)
- *     user_id          uuid, references users(id)
- *     tenant_id        text — carried denormalized for RLS simplicity,
- *                      matching how every other tenant-scoped table in
- *                      this codebase filters (see AdminMembers.tsx,
- *                      DashboardHome.tsx's attendance/events queries).
- *     read_at          timestamptz
- *     primary key (announcement_id, user_id)
+ * Reads/writes `announcement_reads` for per-member read tracking:
+ *   announcement_id  uuid, references announcements(id)
+ *   user_id          uuid, references users(id)
+ *   tenant_id        text — denormalized for RLS, matching the
+ *                    pattern every other tenant-scoped table in this
+ *                    codebase uses.
+ *   read_at          timestamptz
+ *   primary key (announcement_id, user_id)
  *
  * --------------------------- VISIBILITY ---------------------------
  * A published announcement is visible to a member when:
@@ -41,11 +46,9 @@ import { Megaphone, Pin, Paperclip, Download, Circle, CheckCheck } from 'lucide-
  *      (effectively expired = has expires_at in the past AND is not
  *      permanent — same isEffectivelyExpired rule as the admin page,
  *      intentionally kept in lockstep with it so the two pages can
- *      never disagree about what "expired" means. Enforced here
- *      entirely client-side, per product decision: once a member's
- *      page renders, an expired announcement simply isn't included in
- *      what's shown — no DB write-back required for correctness on
- *      this page).
+ *      never disagree about what "expired" means. Enforced entirely
+ *      client-side: once a member's page renders, an expired
+ *      announcement simply isn't included in what's shown).
  *   2. AND audience matches: target_all, OR this member's role_id is
  *      in target_roles, OR this member's own id is in target_members.
  * ------------------------------------------------------------------
@@ -136,19 +139,11 @@ function isVisibleToMember(a: AnnouncementRow, memberId: string | undefined, rol
   return false;
 }
 
-/** Rough guess at a file's kind from its URL, purely to pick an icon —
- * not used for anything functional. */
-function isImageAttachment(att: Attachment): boolean {
-  const s = (att.name || att.url || '').toLowerCase();
-  return /\.(png|jpe?g|gif|webp|svg)(\?|$)/.test(s);
-}
-
 /** Plain-text preview for the collapsed card. Strips whole <style> and
  * <script> elements (contents included, not just the tags) before
- * stripping the remaining tags — full HTML email templates like the
- * club's formal announcement template embed a <style> block, and a
- * naive tag-only strip leaves its raw CSS sitting in the visible
- * preview text. */
+ * stripping the remaining tags — full HTML email templates embed a
+ * <style> block, and a naive tag-only strip leaves its raw CSS
+ * sitting in the visible preview text. */
 function htmlToPreviewText(html: string): string {
   const withoutStyleScript = html
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -158,27 +153,20 @@ function htmlToPreviewText(html: string): string {
 
 /**
  * Renders an announcement's body_html directly into the page, scoped
- * inside its own constrained container — not inside an iframe.
+ * inside its own constrained container — not inside an iframe. An
+ * iframe reads visually as "a box inside a box" (its own scrollbar,
+ * a hard edge, a mismatched background) rather than as part of the
+ * card itself; a plain announcement should look like page content,
+ * because it is page content. body_html is only ever written by
+ * admins through AdminCommunications.tsx's composer.
  *
- * An iframe was tried first and reverted: however it's sized, it
- * always reads visually as "a box inside a box" (its own scrollbars,
- * a hard edge, a separate white background) rather than as part of
- * the announcement card itself — which is exactly the "scrappy
- * preview frame" look that doesn't belong in a real feed. A plain
- * announcement should look like page content, because it is page
- * content.
- *
- * body_html is only ever written by admins through
- * AdminCommunications.tsx's composer, so it's rendered directly here.
- *
- * The problem an iframe *was* incidentally solving — a table-based
- * email template's fixed max-width:600px column overflowing a narrow
- * phone card — is solved here directly instead, with scoped CSS that
- * forces every table inside the rendered content (however deeply
- * nested, whatever width or max-width it declares inline) to respect
- * the card's own width. `table-layout: fixed` stops a single
- * long/nowrap cell from stretching its row past 100% regardless of
- * what width was requested.
+ * Scoped CSS (in the page's <style> block below) forces every table
+ * inside the rendered content — however deeply nested, whatever width
+ * it declares inline — to respect the card's own width, so a
+ * table-based HTML email template's fixed max-width:600px column
+ * can't overflow a narrow phone card. table-layout: fixed stops a
+ * single long/nowrap cell from stretching a row past 100% regardless
+ * of what width was requested.
  */
 function AnnouncementBody({ html }: { html: string }) {
   return (
@@ -209,6 +197,7 @@ export default function DashboardAnnouncements() {
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [readWriteError, setReadWriteError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const roleId = (profile as any)?.role_id ?? (role as any)?.id ?? null;
@@ -264,12 +253,21 @@ export default function DashboardAnnouncements() {
 
   const unreadCount = sorted.filter(a => !readIds.has(a.id)).length;
 
+  /**
+   * Writes read state to the DB. Optimistic, but NOT silently
+   * accepted as final if the write fails — an earlier version treated
+   * a failed write as an acceptable outcome (UI shows read, DB
+   * doesn't persist it), which meant a real persistence bug (missing
+   * table, RLS rejecting the insert, a primary-key mismatch on the
+   * upsert's conflict target) looked identical to success until the
+   * next refresh silently reverted it. Now a failed write rolls the
+   * UI back and surfaces the actual error via readWriteError, shown
+   * as an inline banner below the header — so a schema/RLS problem is
+   * visible and diagnosable instead of masked.
+   */
   const markAsRead = useCallback(
     async (announcementId: string) => {
       if (!user || readIds.has(announcementId)) return;
-      // Optimistic — the member has already seen the content the
-      // instant they expand the card, so the UI shouldn't wait on a
-      // round trip to reflect that.
       setReadIds(prev => new Set(prev).add(announcementId));
       try {
         const { error } = await supabase
@@ -279,11 +277,14 @@ export default function DashboardAnnouncements() {
             { onConflict: 'announcement_id,user_id' }
           );
         if (error) throw error;
-      } catch (err) {
+      } catch (err: any) {
         console.error('[announcements] Failed to record read state:', err);
-        // Left as read in the UI even if the write failed — retrying
-        // silently on every expand would be more disruptive than a
-        // read receipt that doesn't durably persist this one time.
+        setReadIds(prev => {
+          const next = new Set(prev);
+          next.delete(announcementId);
+          return next;
+        });
+        setReadWriteError(err?.message || 'Could not save read status. Check that announcement_reads exists and RLS allows this write.');
       }
     },
     [user, tenant.id, readIds]
@@ -298,6 +299,7 @@ export default function DashboardAnnouncements() {
   const markAllAsRead = async () => {
     const unread = sorted.filter(a => !readIds.has(a.id));
     if (unread.length === 0 || !user) return;
+    const previousReadIds = readIds;
     setReadIds(prev => {
       const next = new Set(prev);
       unread.forEach(a => next.add(a.id));
@@ -307,8 +309,10 @@ export default function DashboardAnnouncements() {
       const rows = unread.map(a => ({ announcement_id: a.id, user_id: user.id, tenant_id: tenant.id, read_at: new Date().toISOString() }));
       const { error } = await supabase.from('announcement_reads').upsert(rows, { onConflict: 'announcement_id,user_id' });
       if (error) throw error;
-    } catch (err) {
+    } catch (err: any) {
       console.error('[announcements] Failed to mark all as read:', err);
+      setReadIds(previousReadIds);
+      setReadWriteError(err?.message || 'Could not save read status. Check that announcement_reads exists and RLS allows this write.');
     }
   };
 
@@ -321,15 +325,15 @@ export default function DashboardAnnouncements() {
         style={{ background: p.bg, padding: 18 }}
         className="p-4 md:p-8 -m-4 md:-m-8"
       >
-        <div style={{ maxWidth: 780, margin: '0 auto' }}>
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
           <div
-            style={{ height: 44, borderRadius: 14, marginBottom: 12, background: p.dark, border: `1px solid ${p.border}`, opacity: 0.5 }}
+            style={{ height: 32, width: 180, borderRadius: 8, marginBottom: 24, background: p.dark, border: `1px solid ${p.border}`, opacity: 0.5 }}
             className="animate-pulse"
           />
           {[0, 1, 2].map(i => (
             <div
               key={i}
-              style={{ height: 128, borderRadius: 20, marginBottom: 12, background: p.dark, border: `1px solid ${p.border}`, opacity: 0.5 }}
+              style={{ height: 96, borderRadius: 18, marginBottom: 10, background: p.dark, border: `1px solid ${p.border}`, opacity: 0.5 - i * 0.08 }}
               className="animate-pulse"
             />
           ))}
@@ -346,20 +350,34 @@ export default function DashboardAnnouncements() {
         }
         .rac-announcements-page ::-webkit-scrollbar { display: none; }
 
+        @keyframes rac-ann-expand {
+          from { opacity: 0; transform: translateY(-4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .rac-ann-expand-enter {
+          animation: rac-ann-expand .22s cubic-bezier(.2,.8,.2,1) both;
+        }
+        .rac-ann-card {
+          transition: border-color .18s ease, box-shadow .18s ease, transform .12s ease;
+        }
+        .rac-ann-card:active {
+          transform: scale(.997);
+        }
+        .rac-ann-chevron {
+          transition: transform .22s cubic-bezier(.2,.8,.2,1);
+        }
+
         /* Announcement body — renders admin-authored HTML natively as
            page content (no iframe). Two things this has to guarantee
            regardless of what an admin pastes in:
            1. Nothing can ever be wider than the card, however it was
               authored — this is what actually matters for full HTML
               email templates (table-based, often with an inline
-              max-width:600px on the main content table). table-layout:
-              fixed stops a single long/nowrap cell from stretching a
-              row past 100% even when a width was explicitly requested.
+              max-width:600px on the main content table).
            2. Normal rich-text content (headings, lists, links, plain
               paragraphs from the WYSIWYG tab) still reads well as part
-              of the page, with sensible spacing and the club's accent
-              color on links — it shouldn't only look right for
-              full email templates. */
+              of the page — it shouldn't only look right for full
+              email templates. */
         .rac-announcements-page .rac-ann-body,
         .rac-announcements-page .rac-ann-body * {
           max-width: 100% !important;
@@ -369,12 +387,8 @@ export default function DashboardAnnouncements() {
           width: 100% !important;
           table-layout: fixed;
         }
-        .rac-announcements-page .rac-ann-body img {
-          height: auto;
-        }
-        .rac-announcements-page .rac-ann-body a {
-          color: ${p.green};
-        }
+        .rac-announcements-page .rac-ann-body img { height: auto; }
+        .rac-announcements-page .rac-ann-body a { color: ${p.green}; }
         .rac-announcements-page .rac-ann-body h1,
         .rac-announcements-page .rac-ann-body h2,
         .rac-announcements-page .rac-ann-body h3 {
@@ -387,29 +401,44 @@ export default function DashboardAnnouncements() {
           padding-left: 1.4em;
           margin: .4em 0;
         }
-        .rac-announcements-page .rac-ann-body p {
-          margin: .5em 0;
-        }
+        .rac-announcements-page .rac-ann-body p { margin: .5em 0; }
       `}</style>
       <div style={{ background: p.bg, padding: 18, transition: 'background .25s' }} className="p-4 md:p-8 -m-4 md:-m-8">
-        <div style={{ maxWidth: 780, margin: '0 auto', paddingBottom: 40 }}>
+        <div style={{ maxWidth: 720, margin: '0 auto', paddingBottom: 40 }}>
 
           {/* ---------------- page-top: title + live clock ---------------- */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12, padding: '0 2px', gap: 12 }}>
-            <span style={{ fontSize: 19, fontWeight: 600, color: p.ptxt, letterSpacing: '-.2px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4, padding: '0 2px', gap: 12 }}>
+            <span style={{ fontSize: 19, fontWeight: 600, color: p.ptxt, letterSpacing: '-.2px', flexShrink: 0 }}>
               Announcements
-              {unreadCount > 0 && (
-                <span
-                  style={{
-                    fontSize: 10.5, fontWeight: 700, color: '#0d1a12', background: p.green,
-                    borderRadius: 20, padding: '2px 8px', letterSpacing: 0,
-                  }}
-                >
-                  {unreadCount} new
-                </span>
-              )}
             </span>
             <span style={{ fontSize: 24, color: p.ptxt, fontWeight: 600 }}>{clockLabel}</span>
+          </div>
+
+          {/* ---------------- unread summary + mark-all row ---------------- */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2px', marginBottom: 18, minHeight: 22 }}>
+            <span style={{ fontSize: 12.5, color: p.tsub }}>
+              {unreadCount > 0 ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.green, display: 'inline-block' }} />
+                  {unreadCount} unread
+                </span>
+              ) : sorted.length > 0 ? (
+                'All caught up'
+              ) : null}
+            </span>
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                onClick={markAllAsRead}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  background: 'none', color: p.tmid, border: 'none',
+                  padding: '4px 2px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                }}
+              >
+                <CheckCheck size={13} /> Mark all read
+              </button>
+            )}
           </div>
 
           {error && (
@@ -417,109 +446,156 @@ export default function DashboardAnnouncements() {
               role="alert"
               style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
-                padding: 14, borderRadius: 12, marginBottom: 12, background: '#3a1a14', color: '#e08a72',
+                padding: '12px 14px', borderRadius: 12, marginBottom: 12, background: '#3a1a14', color: '#e08a72',
               }}
             >
               <p style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>{error}</p>
               <button
                 onClick={fetchAnnouncements}
-                style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', textDecoration: 'underline', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
+                style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', textDecoration: 'underline', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', flexShrink: 0 }}
               >
                 Retry
               </button>
             </div>
           )}
 
-          {sorted.length > 0 && unreadCount > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+          {readWriteError && (
+            <div
+              role="alert"
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+                padding: '12px 14px', borderRadius: 12, marginBottom: 12,
+                background: '#3a1a14', color: '#e08a72', border: '1px solid rgba(224,138,114,.25)',
+              }}
+            >
+              <AlertCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+              <p style={{ fontSize: 12.5, fontWeight: 500, margin: 0, lineHeight: 1.5, flex: 1 }}>
+                Couldn't save read status — {readWriteError}
+              </p>
               <button
-                type="button"
-                onClick={markAllAsRead}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  background: 'none', color: p.tmid, border: `1px solid ${p.pillBorder}`, borderRadius: 20,
-                  padding: '6px 12px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
-                }}
+                onClick={() => setReadWriteError(null)}
+                style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', flexShrink: 0, opacity: 0.7 }}
+                title="Dismiss"
               >
-                <CheckCheck size={13} /> Mark all as read
+                <X size={14} />
               </button>
             </div>
           )}
 
           {/* ---------------- feed ---------------- */}
           {sorted.length === 0 ? (
-            <div style={{ borderRadius: 20, background: p.dark, border: `1px solid ${p.border}`, padding: '56px 16px', textAlign: 'center' }}>
-              <Megaphone size={32} style={{ margin: '0 auto 10px', opacity: 0.5, color: p.tsub }} />
-              <div style={{ fontSize: 14, fontWeight: 600, color: p.tl, marginBottom: 4 }}>No announcements right now</div>
-              <div style={{ fontSize: 12, color: p.tsub }}>Check back later for club news and updates.</div>
+            <div style={{ borderRadius: 20, background: p.dark, border: `1px solid ${p.border}`, padding: '64px 16px', textAlign: 'center' }}>
+              <div
+                style={{
+                  width: 52, height: 52, borderRadius: 16, margin: '0 auto 16px',
+                  background: p.lightCard, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <Megaphone size={22} style={{ color: p.tsub }} />
+              </div>
+              <div style={{ fontSize: 14.5, fontWeight: 600, color: p.tl, marginBottom: 4 }}>No announcements right now</div>
+              <div style={{ fontSize: 12.5, color: p.tsub }}>Check back later for club news and updates.</div>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {sorted.map(a => {
                 const unread = !readIds.has(a.id);
                 const expanded = expandedId === a.id;
                 const plainPreview = htmlToPreviewText(a.body_html);
+                const attachmentCount = (a.attachments || []).length;
+
                 return (
                   <div
                     key={a.id}
+                    className="rac-ann-card"
                     style={{
-                      borderRadius: 20,
+                      borderRadius: 18,
                       background: p.dark,
                       color: p.tl,
-                      border: `1px solid ${a.is_pinned ? p.green : p.border}`,
+                      border: `1px solid ${a.is_pinned ? p.green : (unread ? p.pillBorder : p.border)}`,
                       overflow: 'hidden',
-                      position: 'relative',
+                      boxShadow: expanded ? '0 4px 20px rgba(0,0,0,.18)' : 'none',
                     }}
                   >
-                    {a.is_pinned && (
-                      <div
-                        style={{
-                          position: 'absolute', top: 0, right: 0,
-                          background: p.green, color: '#0d1a12',
-                          padding: '5px 12px', borderBottomLeftRadius: 14,
-                          fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em',
-                          display: 'flex', alignItems: 'center', gap: 4,
-                        }}
-                      >
-                        <Pin size={10} /> Pinned
-                      </div>
-                    )}
-
                     <button
                       type="button"
                       onClick={() => toggleExpanded(a)}
                       style={{
                         width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
-                        padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 6,
+                        padding: '16px 18px', display: 'flex', alignItems: 'flex-start', gap: 12,
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
-                        {unread && (
-                          <Circle
-                            size={7}
-                            fill={p.green}
-                            style={{ color: p.green, marginTop: 7, flexShrink: 0 }}
-                          />
+                      {/* Left accent rail — unread state reads instantly
+                          without relying on a small dot alone; pinned
+                          announcements get the club accent color even
+                          when read, so they stay visually distinct in
+                          the feed. */}
+                      <div
+                        style={{
+                          width: 3, alignSelf: 'stretch', borderRadius: 3, flexShrink: 0, marginTop: 2, marginBottom: 2,
+                          background: a.is_pinned ? p.green : unread ? p.green : 'transparent',
+                          opacity: a.is_pinned ? 1 : unread ? 0.9 : 0,
+                          minHeight: 20,
+                        }}
+                      />
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
+                          {a.is_pinned && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: '#0d1a12', background: p.green, borderRadius: 6, padding: '2px 6px' }}>
+                              <Pin size={9} /> Pinned
+                            </span>
+                          )}
+                          <h3
+                            style={{
+                              fontSize: 15, fontWeight: unread ? 700 : 600, color: p.tl, margin: 0,
+                              letterSpacing: '-.1px', lineHeight: 1.3,
+                            }}
+                          >
+                            {a.title}
+                          </h3>
+                        </div>
+
+                        {!expanded && (
+                          <p
+                            style={{
+                              fontSize: 12.5, color: p.tsub, margin: '0 0 6px 0', lineHeight: 1.5,
+                              overflow: 'hidden', textOverflow: 'ellipsis',
+                              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any,
+                            }}
+                          >
+                            {plainPreview || 'No content'}
+                          </p>
                         )}
-                        <div style={{ minWidth: 0, flex: 1, paddingRight: a.is_pinned ? 70 : 0 }}>
-                          <h3 style={{ fontSize: 15.5, fontWeight: 700, color: p.tl, margin: 0, letterSpacing: '-.1px' }}>{a.title}</h3>
-                          <div style={{ fontSize: 10.5, color: p.tsub, marginTop: 3 }}>
-                            {timeAgo(a.published_at || a.created_at)}
-                          </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11, color: p.tmid }}>
+                          <span>{timeAgo(a.published_at || a.created_at)}</span>
+                          {attachmentCount > 0 && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              <Paperclip size={10.5} /> {attachmentCount}
+                            </span>
+                          )}
                         </div>
                       </div>
-                      {!expanded && (
-                        <p style={{ fontSize: 12.5, color: p.tsub, margin: '2px 0 0 16px', lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>
-                          {plainPreview || 'No content'}
-                        </p>
-                      )}
+
+                      <ChevronDown
+                        size={16}
+                        className="rac-ann-chevron"
+                        style={{
+                          color: p.tmid, flexShrink: 0, marginTop: 3,
+                          transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                        }}
+                      />
                     </button>
 
                     {expanded && (
-                      <div style={{ padding: '0 20px 20px 20px', maxWidth: '100%', overflow: 'hidden' }}>
-                        <AnnouncementBody html={a.body_html} />
-                        {(a.attachments || []).length > 0 && (
-                          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div className="rac-ann-expand-enter" style={{ padding: '0 18px 18px 18px', maxWidth: '100%', overflow: 'hidden' }}>
+                        <div style={{ borderTop: `1px solid ${p.border}`, paddingTop: 14 }}>
+                          <AnnouncementBody html={a.body_html} />
+                        </div>
+
+                        {attachmentCount > 0 && (
+                          <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
                             {a.attachments!.map((att, i) => (
                               <a
                                 key={att.url + i}
@@ -529,7 +605,7 @@ export default function DashboardAnnouncements() {
                                 download
                                 style={{
                                   display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: p.tl,
-                                  textDecoration: 'none', padding: '8px 11px', borderRadius: 10,
+                                  textDecoration: 'none', padding: '9px 12px', borderRadius: 10,
                                   border: `1px solid ${p.border}`, background: p.lightCard,
                                 }}
                               >
@@ -554,25 +630,3 @@ export default function DashboardAnnouncements() {
     </div>
   );
 }
-
-/**
- * ------------------------------------------------------------------
- * Migration notes — read-tracking table (run once, alongside the
- * announcements table migration in AdminCommunications.tsx):
- *
- * create table if not exists announcement_reads (
- *   announcement_id uuid not null references announcements(id) on delete cascade,
- *   user_id uuid not null,
- *   tenant_id text not null,
- *   read_at timestamptz not null default now(),
- *   primary key (announcement_id, user_id)
- * );
- * create index if not exists announcement_reads_user_idx
- *   on announcement_reads (tenant_id, user_id);
- *
- * RLS: members should only be able to upsert/select their own rows
- * (user_id = auth.uid()), scoped to their own tenant_id — matching
- * the RLS pattern already used on `attendance` and other per-member
- * tables in this schema.
- * ------------------------------------------------------------------
- */
