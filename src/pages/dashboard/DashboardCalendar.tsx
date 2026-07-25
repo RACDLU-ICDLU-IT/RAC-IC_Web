@@ -129,6 +129,12 @@ function googleCalendarUrl(ev: EventRecord) {
     action: 'TEMPLATE',
     text: ev.title,
     dates,
+    // Without ctz, Google renders the UTC `dates` value in whatever
+    // timezone the viewer's Google account/browser happens to be set
+    // to — which is why a Dhaka 8:18 PM event was showing as 2:18 PM.
+    // The stored date/time is always club-local (Asia/Dhaka), so this
+    // pins the render to that, regardless of the viewer's own settings.
+    ctz: 'Asia/Dhaka',
   });
   const detailsParts = [ev.description, ev.sub_type ? `Type: ${ev.type} — ${ev.sub_type}` : ev.type ? `Type: ${ev.type}` : ''].filter(Boolean);
   if (detailsParts.length) params.set('details', detailsParts.join('\n\n'));
@@ -251,7 +257,13 @@ export default function DashboardCalendar() {
   const lightCard: React.CSSProperties = { borderRadius: 20, padding: 16, background: p.lightCard, color: p.td };
   const pillBtn: React.CSSProperties = { border: `1px solid ${p.pillBorder}`, borderRadius: 20, fontSize: 10, padding: '6px 12px', color: p.tmid, background: 'none', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 };
   const solidBtn: React.CSSProperties = { background: p.green, color: '#1b0c12', borderRadius: 20, fontSize: 11, fontWeight: 700, padding: '8px 16px', border: 'none', cursor: 'pointer' };
-  const filterField: React.CSSProperties = { background: p.bg, color: p.tl, border: `1px solid ${p.border}`, borderRadius: 12, padding: '10px 12px', fontSize: 12, fontWeight: 500, outline: 'none', height: 38, boxSizing: 'border-box' };
+  // filterField/filterLabel are always drawn on top of darkCard, so
+  // their background must be p.dark (never p.bg). tl/tsub are constant
+  // across light/dark mode in racPalette.ts, but bg is not — using
+  // p.bg here meant the input background followed the *page*
+  // background (pale in light mode) while the text stayed white,
+  // making Search/type-filter text unreadable in light mode.
+  const filterField: React.CSSProperties = { background: p.dark, color: p.tl, border: `1px solid ${p.border}`, borderRadius: 12, padding: '10px 12px', fontSize: 12, fontWeight: 500, outline: 'none', height: 38, boxSizing: 'border-box' };
   const filterLabel: React.CSSProperties = { fontSize: 9.5, color: p.tsub, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6, display: 'block' };
 
   if (loading) {
@@ -361,7 +373,7 @@ export default function DashboardCalendar() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <button onClick={prevMonth} style={{ ...pillBtn, padding: '6px 9px' }}><ChevronLeft size={13} /></button>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 14, fontWeight: 700 }}>{monthLabel}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: p.tl }}>{monthLabel}</span>
                   <button onClick={goToday} style={pillBtn}>Today</button>
                 </div>
                 <button onClick={nextMonth} style={{ ...pillBtn, padding: '6px 9px' }}><ChevronRight size={13} /></button>
@@ -443,7 +455,7 @@ export default function DashboardCalendar() {
               <div style={{ ...lightCard }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                   <span style={{ fontSize: 13, fontWeight: 600 }}>Past</span>
-                  <span style={{ fontSize: 10, color: '#f2eef0', background: p.dark, borderRadius: 20, padding: '2px 8px', fontWeight: 600, opacity: 0.85 }}>{past.length}</span>
+                  <span style={{ fontSize: 10, color: p.tl, background: p.dark, borderRadius: 20, padding: '2px 8px', fontWeight: 600, opacity: 0.85 }}>{past.length}</span>
                 </div>
                 {past.length === 0 ? (
                   <div style={{ fontSize: 11, color: p.mut, textAlign: 'center', padding: '20px 0' }}>No past events yet.</div>
