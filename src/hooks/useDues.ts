@@ -115,9 +115,21 @@ export interface LedgerFilters {
   dateTo?: string;
 }
 
+/**
+ * DuesSettings — the full row shape read from `dues_settings`.
+ *
+ * `application_fee` was added alongside the Join-form payment flow
+ * (applications.payment_status / AdminApplications.tsx's fee modal).
+ * It's optional on the TYPE (not required) specifically so existing
+ * callers that only ever touch club_prefix/default_bkash_number —
+ * e.g. AdminDuesSettings.tsx — keep type-checking with zero changes
+ * on their end. Only updateDuesSettings' merge behavior (below)
+ * actually needs to know this field exists.
+ */
 export interface DuesSettings {
   club_prefix: string;
   default_bkash_number: string | null;
+  application_fee?: number;
 }
 
 export function getRotaryYear(date: Date | string): string {
@@ -622,22 +634,57 @@ export function useDues() {
 
   // ── Dues settings ────────────────────────────────────────────────────────────
 
+  /**
+   * fetchDuesSettings — now also selects application_fee, in addition
+   * to the existing club_prefix / default_bkash_number. Any caller that
+   * only destructures the original two fields is unaffected; this just
+   * makes the third field available to callers that ask for it (e.g.
+   * the Join form's payment step, AdminApplications.tsx's fee modal).
+   */
   const fetchDuesSettings = useCallback(async (): Promise<DuesSettings> => {
     try {
       const { data, error } = await supabase.from('dues_settings')
-        .select('club_prefix, default_bkash_number').eq('tenant_id', tenant.id).maybeSingle();
-      if (error) { console.warn('[dues] settings fetch failed', error); return { club_prefix: '', default_bkash_number: null }; }
-      return { club_prefix: data?.club_prefix || '', default_bkash_number: data?.default_bkash_number ?? null };
+        .select('club_prefix, default_bkash_number, application_fee').eq('tenant_id', tenant.id).maybeSingle();
+      if (error) { console.warn('[dues] settings fetch failed', error); return { club_prefix: '', default_bkash_number: null, application_fee: 0 }; }
+      return {
+        club_prefix: data?.club_prefix || '',
+        default_bkash_number: data?.default_bkash_number ?? null,
+        application_fee: typeof data?.application_fee === 'number' ? data.application_fee : 0,
+      };
     } catch {
-      return { club_prefix: '', default_bkash_number: null };
+      return { club_prefix: '', default_bkash_number: null, application_fee: 0 };
     }
   }, [tenant.id]);
 
-  const updateDuesSettings = useCallback(async (settings: DuesSettings): Promise<boolean> => {
+  /**
+   * updateDuesSettings — PARTIAL update, not a full-row overwrite.
+   *
+   * Previously this did `upsert({ tenant_id, ...settings })`, which
+   * meant any field not included in `settings` was written as
+   * `undefined`/omitted on the upsert payload. Since AdminDuesSettings.tsx
+   * only ever sends { club_prefix, default_bkash_number }, adding a
+   * second caller (AdminApplications.tsx's fee modal, sending
+   * { application_fee, default_bkash_number }) would have silently
+   * wiped club_prefix — breaking receipt-number generation on the next
+   * verified payment. Same risk in reverse for application_fee if
+   * AdminDuesSettings.tsx saves without knowing about it.
+   *
+   * Fixed by accepting a Partial<DuesSettings> and merging against the
+   * current row before upserting, so every caller can save just the
+   * fields it owns without clobbering fields it doesn't know about.
+   * Existing call sites (AdminDuesSettings.tsx passing the full
+   * { club_prefix, default_bkash_number } shape) behave identically to
+   * before — merging a value into itself is a no-op — so this is a
+   * backward-compatible fix, not a breaking change.
+   */
+  const updateDuesSettings = useCallback(async (settings: Partial<DuesSettings>): Promise<boolean> => {
     requireAdmin();
     try {
+      const current = await fetchDuesSettings();
+      const merged: DuesSettings = { ...current, ...settings };
+
       const { error } = await supabase.from('dues_settings').upsert(
-        { tenant_id: tenant.id, ...settings, updated_at: new Date().toISOString() },
+        { tenant_id: tenant.id, ...merged, updated_at: new Date().toISOString() },
         { onConflict: 'tenant_id' }
       );
       if (error) { addToast(error.message || 'Failed to save settings', 'error'); return false; }
@@ -651,7 +698,7 @@ export function useDues() {
       addToast(err?.message || 'Failed to save settings', 'error');
       return false;
     }
-  }, [user, tenant.id]);
+  }, [user, tenant.id, fetchDuesSettings]);
 
   const fetchDefaultBkashNumber = useCallback(async (): Promise<string | null> => {
     const s = await fetchDuesSettings();
