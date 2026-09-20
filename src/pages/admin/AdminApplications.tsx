@@ -71,10 +71,13 @@ const PAYMENT_STATUSES: PaymentStatus[] = ['unpaid', 'pending_verification', 've
  * page's own p.green/p.greenDeep pairing (same as DashboardHome's
  * status accents) since Table.tsx guarantees this now sits on the
  * correct card background for whichever theme is active. */
-function paymentStatusMeta(status: PaymentStatus | undefined, p: ReturnType<typeof getClubPalette>, dark: boolean) {
+function paymentStatusMeta(status: PaymentStatus | undefined, p: ReturnType<typeof getClubPalette>, dark: boolean, icdlu = false) {
   switch (status) {
     case 'verified':
-      return { label: 'Verified', color: p.green, bg: p.greenDeep };
+      // ICDLU's spec calls this state "Paid". Same underlying DB value
+      // ('verified'), so RACDLU and the payment_status CHECK constraint
+      // are unaffected — this is display-only.
+      return { label: icdlu ? 'Paid' : 'Verified', color: p.green, bg: p.greenDeep };
     case 'pending_verification':
       return { label: 'Pending', color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' };
     case 'rejected':
@@ -563,10 +566,64 @@ export default function AdminApplications() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActivityLogOpen]);
 
+  // ICDLU only: approve = (payment must be Paid) → create the member
+  // account → mark approved. Account creation runs FIRST so a failure
+  // leaves the application pending and retryable, rather than approved
+  // (and therefore locked against applicant edits) with no account.
+  // The create-member Edge Function re-enforces the payment gate
+  // server-side and is idempotent, so retrying after a partial failure
+  // never creates a duplicate.
+  const approveIcdluApplication = async (app: any) => {
+    if (app.payment_status !== 'verified') {
+      addToast('Set the payment status to Paid before approving this application.', 'error');
+      return false;
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-member`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + session?.access_token,
+      },
+      body: JSON.stringify({ application_id: app.id }),
+    });
+    const resData = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(resData?.error || 'Failed to create the member account');
+    }
+
+    const { error: statusError } = await supabase
+      .from('applications')
+      .update({ status: 'approved' })
+      .eq('id', app.id)
+      .eq('tenant_id', tenant.id);
+    if (statusError) throw statusError;
+
+    await logAudit(tenant.id, 'applications', app.id, 'approve', user?.id, {
+      action: 'application_approved',
+      account_created: true,
+      created_user_id: resData?.uid || null,
+      member_id: resData?.memberId || null,
+    });
+    return true;
+  };
+
   const handleApprove = async () => {
     if (!confirmApprove) return;
     setActionLoading(true);
     try {
+      if (tenant.id === 'icdlu') {
+        const ok = await approveIcdluApplication(confirmApprove);
+        if (!ok) return;
+        addToast('Application approved and member account created.', 'success');
+        setConfirmApprove(null);
+        fetchApplications();
+        return;
+      }
+
       await supabase
         .from('applications')
         .update({ status: 'approved' })
@@ -578,9 +635,12 @@ export default function AdminApplications() {
       addToast('Application approved.', 'success');
       setConfirmApprove(null);
       fetchApplications();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      addToast('Failed to approve application', 'error');
+      addToast(
+        tenant.id === 'icdlu' && err?.message ? err.message : 'Failed to approve application',
+        'error'
+      );
     } finally {
       setActionLoading(false);
     }
@@ -920,6 +980,16 @@ export default function AdminApplications() {
       'Emergency Contact': app.emergencyContact || '',
       'Residential Address': app.address || '',
       'Referred By': app.referredBy || '',
+      ...(tenant.id === 'icdlu'
+        ? {
+            School: app.school || '',
+            'Grade / Year': app.grade || '',
+            'Class / Section': app.class || '',
+            Bio: app.bio || '',
+            'Joining Date': app.joiningDate || '',
+            'Rotary Year': app.rotaryYear || '',
+          }
+        : {}),
       'Reference Number': app.reference_number || '',
       Status: app.status || 'pending',
       'Applied On': app.createdAt ? new Date(app.createdAt).toLocaleDateString() : '',
@@ -1260,7 +1330,7 @@ export default function AdminApplications() {
                 const age = calculateAge(app.dob);
                 const validAge = tenant.id === 'racdlu' ? age >= 18 && age <= 30 : age >= 12 && age <= 18;
                 const rangeLabel = tenant.id === 'racdlu' ? '18-30' : '12-18';
-                const payMeta = paymentStatusMeta(app.payment_status, p, dark);
+                const payMeta = paymentStatusMeta(app.payment_status, p, dark, tenant.id === 'icdlu');
                 const status = (app.status || 'pending').toLowerCase();
                 const rowSelected = selectedAppIds.includes(app.id);
                 // Mirrors Table.tsx's own bodyText/subText pairing exactly:
@@ -1448,7 +1518,11 @@ export default function AdminApplications() {
         onClose={() => setConfirmApprove(null)}
         onConfirm={handleApprove}
         title="Approve Application"
-        message={`Approve ${confirmApprove?.name}'s application and create their member account?`}
+        message={
+          tenant.id === 'icdlu' && confirmApprove?.payment_status !== 'verified'
+            ? `${confirmApprove?.name}'s payment is not marked Paid yet. Set the payment status to Paid first — approval creates their member account and is blocked until then.`
+            : `Approve ${confirmApprove?.name}'s application and create their member account?`
+        }
         confirmLabel="Approve"
         isLoading={actionLoading}
       />
@@ -1554,7 +1628,7 @@ export default function AdminApplications() {
                         : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    {s.replace('_', ' ')}
+                    {s === 'verified' && tenant.id === 'icdlu' ? 'paid' : s.replace('_', ' ')}
                   </button>
                 ))}
               </div>
@@ -1697,14 +1771,49 @@ export default function AdminApplications() {
                     <span className="text-xs text-gray-500 uppercase font-bold">Emergency Contact</span>
                     <p className="font-medium">{selectedApp.emergencyContact || '-'}</p>
                   </div>
-                  <div className="col-span-2">
-                    <span className="text-xs text-gray-500 uppercase font-bold">Residential Address</span>
-                    <p className="font-medium">{selectedApp.address || '-'}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-xs text-gray-500 uppercase font-bold">Referred By</span>
-                    <p className="font-medium">{selectedApp.referredBy || '-'}</p>
-                  </div>
+                  {tenant.id === 'icdlu' && (
+                    <>
+                      <div className="col-span-2">
+                        <span className="text-xs text-gray-500 uppercase font-bold">School</span>
+                        <p className="font-medium">{selectedApp.school || '-'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500 uppercase font-bold">Grade / Year</span>
+                        <p className="font-medium">{selectedApp.grade || '-'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500 uppercase font-bold">Class / Section</span>
+                        <p className="font-medium">{selectedApp.class || '-'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500 uppercase font-bold">Joining Date</span>
+                        <p className="font-medium">{selectedApp.joiningDate || '-'}</p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500 uppercase font-bold">Rotary Year</span>
+                        <p className="font-medium">{selectedApp.rotaryYear || '-'}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-xs text-gray-500 uppercase font-bold">Bio</span>
+                        <p className="font-medium whitespace-pre-line">{selectedApp.bio || '-'}</p>
+                      </div>
+                    </>
+                  )}
+                  {/* Address / Referred By are RACDLU fields. ICDLU's form no
+                      longer collects them; only shown for ICDLU if a legacy
+                      row already has a value. */}
+                  {(tenant.id !== 'icdlu' || selectedApp.address) && (
+                    <div className="col-span-2">
+                      <span className="text-xs text-gray-500 uppercase font-bold">Residential Address</span>
+                      <p className="font-medium">{selectedApp.address || '-'}</p>
+                    </div>
+                  )}
+                  {(tenant.id !== 'icdlu' || selectedApp.referredBy) && (
+                    <div className="col-span-2">
+                      <span className="text-xs text-gray-500 uppercase font-bold">Referred By</span>
+                      <p className="font-medium">{selectedApp.referredBy || '-'}</p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-4 border-t border-gray-100">
@@ -1724,7 +1833,11 @@ export default function AdminApplications() {
                     </div>
                     <div>
                       <span className="text-xs text-gray-400">Status</span>
-                      <p className="font-medium text-sm capitalize">{(selectedApp.payment_status || 'unpaid').replace('_', ' ')}</p>
+                      <p className="font-medium text-sm capitalize">
+                        {selectedApp.payment_status === 'verified' && tenant.id === 'icdlu'
+                          ? 'paid'
+                          : (selectedApp.payment_status || 'unpaid').replace('_', ' ')}
+                      </p>
                     </div>
                     <div>
                       <span className="text-xs text-gray-400">Sender Number</span>
