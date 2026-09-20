@@ -4,7 +4,7 @@ import { useAdminTenant } from '../../hooks/useAdminTenant';
 import { Users, UserCheck, CalendarDays, Presentation, Plus, Megaphone, Inbox, Image as ImageIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
-import { usePoints, FundAccount } from '../../hooks/usePoints';
+import { usePoints, FundAccountBalance } from '../../hooks/usePoints';
 import { Landmark, Briefcase, TrendingUp } from 'lucide-react';
 import { useToast } from '../../hooks/useToast';
 
@@ -19,7 +19,7 @@ export default function AdminOverview() {
   // Dashboard Image Management
   const [dashboardImage, setDashboardImage] = useState<string>('');
   const [isSavingImage, setIsSavingImage] = useState(false);
-  const [fundAccounts, setFundAccounts] = useState<FundAccount[]>([]);
+  const [fundAccounts, setFundAccounts] = useState<FundAccountBalance[]>([]);
   const { fetchFundAccounts } = usePoints();
 
   useEffect(() => {
@@ -43,13 +43,26 @@ export default function AdminOverview() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const p1 = supabase.from('users').select('*').eq('status', 'active').eq('tenant_id', tenant.id);
-        const p2 = supabase.from('applications').select('*').eq('status', 'Pending').eq('tenant_id', tenant.id);
-        
+        // Count-only (head) queries: these four cards only need totals, so
+        // don't download every row (and don't hit PostgREST's default row
+        // cap on a large tenant).
+        const p1 = supabase.from('users').select('id', { count: 'exact', head: true }).eq('status', 'active').eq('tenant_id', tenant.id);
+        // applications.status is stored lowercase ('pending' — the column
+        // default, AdminApplications' writes and the sidebar badge all use
+        // it). Filtering on 'Pending' matched nothing, so this was always 0.
+        const p2 = supabase.from('applications').select('id', { count: 'exact', head: true }).eq('status', 'pending').eq('tenant_id', tenant.id);
+
+        // events.date is a text 'YYYY-MM-DD' column. The old code compared
+        // it to a UTC ISO timestamp, which (a) never matched the text format
+        // reliably and (b) in UTC+ timezones shifts local midnight on the 1st
+        // back into the previous month. Build local calendar bounds instead,
+        // and bound BOTH ends so future months aren't counted.
         const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-        const p3 = supabase.from('events').select('*').gte('date', startOfMonth).eq('tenant_id', tenant.id);
-        const p4 = supabase.from('projects').select('*').eq('status', 'Ongoing').eq('tenant_id', tenant.id);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const monthStart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+        const monthEnd = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate())}`;
+        const p3 = supabase.from('events').select('id', { count: 'exact', head: true }).gte('date', monthStart).lte('date', monthEnd).eq('tenant_id', tenant.id);
+        const p4 = supabase.from('projects').select('id', { count: 'exact', head: true }).eq('status', 'Ongoing').eq('tenant_id', tenant.id);
 
         // Fetch fund accounts in parallel with other stats so they all resolve together
         const [usersSnap, appsSnap, eventsSnap, projectsSnap, fundData] = await Promise.all([
@@ -58,10 +71,10 @@ export default function AdminOverview() {
 
         setFundAccounts(fundData);
         setStats({
-          activeMembers: (usersSnap.data || []).length,
-          pendingApps: (appsSnap.data || []).length,
-          eventsThisMonth: (eventsSnap.data || []).length,
-          ongoingProjects: (projectsSnap.data || []).length
+          activeMembers: usersSnap.count ?? 0,
+          pendingApps: appsSnap.count ?? 0,
+          eventsThisMonth: eventsSnap.count ?? 0,
+          ongoingProjects: projectsSnap.count ?? 0
         });
 
         const { data: recentEventsSnap } = await supabase.from('events').select('*').eq('tenant_id', tenant.id).order('createdAt', { ascending: false }).limit(5);
@@ -162,7 +175,7 @@ export default function AdminOverview() {
           { type: 'project',        label: 'Project Fund',        icon: TrendingUp, color: 'text-green-600 bg-green-50' },
           { type: 'endowment',      label: 'Endowment Fund',      icon: Landmark,   color: 'text-purple-600 bg-purple-50' },
         ].map(({ type, label, icon: Icon, color }) => {
-          const fund = fundAccounts.find(f => f.account_type === type);
+          const fund = fundAccounts.find(f => f.fund_type === type);
           return (
             <div key={type} className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
               <div className="flex items-center justify-between mb-3">
