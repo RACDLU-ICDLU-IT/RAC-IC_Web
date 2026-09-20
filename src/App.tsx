@@ -23,6 +23,7 @@ import About from './pages/About';
 import Projects from './pages/Projects';
 import ProjectDetail from './pages/ProjectDetail';
 import Events from './pages/Events';
+import EventDetail from './pages/EventDetail';
 import Board from './pages/Board';
 import News from './pages/News';
 import NewsDetail from './pages/NewsDetail';
@@ -131,6 +132,7 @@ export default function App() {
                     <Route path="/projects" element={<Projects />} />
                     <Route path="/projects/:id" element={<ProjectDetail />} />
                     <Route path="/events" element={<Events />} />
+                    <Route path="/events/:id" element={<EventDetail />} />
                     <Route path="/board" element={<Board />} />
                     <Route path="/news" element={<News />} />
                     <Route path="/news/:id" element={<NewsDetail />} />
