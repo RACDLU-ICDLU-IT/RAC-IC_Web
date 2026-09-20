@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Calendar, MapPin } from 'lucide-react';
 import { useTenant } from '../hooks/useTenant';
+import { localToday, isUpcomingEvent } from '../utils/eventDates';
 
 /**
  * Home-page "Events" section.
@@ -16,16 +17,6 @@ import { useTenant } from '../hooks/useTenant';
  * upcoming and completed. Events have no status column, so the tag is derived
  * from the date - the same rule the public /events page uses.
  */
-
-/** Today as YYYY-MM-DD in the visitor's LOCAL timezone.
- *  (toISOString() is UTC, which would flip "today" to yesterday for the first
- *  hours of every day in UTC+ timezones such as Bangladesh.) */
-function localToday(): string {
-  const d = new Date();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
-}
 
 function formatEventDate(date: string): string {
   if (!date) return '';
@@ -58,9 +49,9 @@ export default function FeaturedEvents({ title = 'Events.' }: { title?: string }
 
         // Upcoming first (soonest -> latest), then completed (newest -> oldest)
         // so an imminent event is never buried behind old ones.
-        const upcoming = all.filter((e: any) => e.date >= today);
+        const upcoming = all.filter((e: any) => isUpcomingEvent(e.date, today));
         const completed = all
-          .filter((e: any) => !e.date || e.date < today)
+          .filter((e: any) => !isUpcomingEvent(e.date, today))
           .sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''));
 
         setEvents([...upcoming, ...completed]);
@@ -121,12 +112,12 @@ export default function FeaturedEvents({ title = 'Events.' }: { title?: string }
       >
         <div className="flex gap-6 w-max">
           {events.map((event) => {
-            const isUpcoming = !!event.date && event.date >= today;
+            const isUpcoming = isUpcomingEvent(event.date, today);
             const statusLabel = isUpcoming ? 'Upcoming' : 'Completed';
 
             return (
               <Link
-                to="/events"
+                to={`/events/${event.id}`}
                 key={event.id}
                 className="w-[85vw] sm:w-[400px] md:w-[450px] aspect-[3/4] relative rounded-2xl overflow-hidden group snap-center shadow-xl block"
                 style={{
