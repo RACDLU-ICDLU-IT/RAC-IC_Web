@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useToast } from '../../hooks/useToast';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
+import { usePoints } from '../../hooks/usePoints';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getClubPalette } from '../../theme/racPalette';
 import { CloudinaryUpload } from '../../components/CloudinaryUpload';
@@ -52,6 +53,7 @@ const emptyForm = {
 export default function AdminEvents() {
   const { adminTenant: tenant } = useAdminTenant();
   const { addToast } = useToast();
+  const { reverseAttendancePoints } = usePoints();
   useInterFont();
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === 'dark';
@@ -132,6 +134,16 @@ export default function AdminEvents() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
+      // Same cleanup Attendance -> Delete Event performs. `attendance` has no
+      // FK to `events`, so deleting only the event row orphaned its
+      // attendance rows: they kept counting toward members' attendance rate
+      // and volunteer hours, and their XP was never reversed.
+      const { data: markedRows } = await supabase.from('attendance').select('userId').eq('tenant_id', tenant.id).eq('eventId', deleteId);
+      const memberIds = [...new Set((markedRows || []).map((r: any) => r.userId))];
+      await Promise.all(memberIds.map((memberId) => reverseAttendancePoints(memberId, deleteId, 'Event deleted — attendance XP reversed').catch(console.error)));
+      const { error: attErr } = await supabase.from('attendance').delete().eq('tenant_id', tenant.id).eq('eventId', deleteId);
+      if (attErr) throw attErr;
+
       const { error } = await supabase.from('events').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
       if (error) throw error;
       addToast('Event deleted', 'success');
