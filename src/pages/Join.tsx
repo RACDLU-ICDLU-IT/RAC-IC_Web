@@ -25,6 +25,36 @@ const joinSchema = z.object({
 
 type JoinFormData = z.infer<typeof joinSchema>;
 
+// ── ICDLU (Interact) application schema ─────────────────────────────
+// ICDLU collects a different field set than RACDLU (no address /
+// referredBy; adds password, school, grade, class, bio). Joining Date
+// and Rotary Year are intentionally NOT here: they're assigned
+// server-side at submission and hidden from applicants.
+// `password` is optional at the schema level so an applicant EDITING an
+// existing application can leave it blank to keep their current one;
+// the first-time submit enforces it explicitly in onSubmit.
+const ICDLU_GENDERS = ['Male', 'Female', 'Other'] as const;
+const ICDLU_BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'] as const;
+
+const icdluJoinSchema = z.object({
+  name: z.string().trim().min(2, 'Full name is required (min 2 characters)'),
+  email: z.string().trim().email('A valid email address is required'),
+  password: z
+    .string()
+    .optional()
+    .refine((v?: string) => !v || v.length >= 8, 'Password must be at least 8 characters'),
+  phone: z.string().trim().min(5, 'A valid contact number is required'),
+  emergencyContact: z.string().trim().min(3, "Emergency / guardian's contact is required"),
+  dob: z.string().min(1, 'Date of birth is required'),
+  gender: z.enum(ICDLU_GENDERS, { message: 'Please select your gender' }),
+  bloodGroup: z.enum(ICDLU_BLOOD_GROUPS, { message: 'Please select your blood group' }),
+  school: z.string().trim().min(2, 'School is required'),
+  grade: z.string().trim().min(1, 'Grade / Year is required'),
+  class: z.string().trim().min(1, 'Class / Section is required'),
+  bio: z.string().trim().max(500, 'Bio must be 500 characters or fewer').optional(),
+});
+type IcdluJoinFormData = z.infer<typeof icdluJoinSchema>;
+
 // Payment submission schema
 const paymentSchema = z.object({
   senderNumber: z
@@ -159,6 +189,9 @@ function PaymentCountdown({ createdAt, onExpired }: { createdAt: string; onExpir
 export default function Join() {
   const { tenant } = useTenant();
   const isRotaract = tenant.id === 'racdlu';
+  // ICDLU-only flow switch. Everything gated on this is new behaviour;
+  // RACDLU (isRotaract) continues through the original code paths.
+  const isInteract = tenant.id === 'icdlu';
   const clubTypeName = isRotaract ? 'Rotaract' : 'Interact';
   const ageRange = isRotaract ? '18 and 30 years old' : '12 and 18 years old';
 
@@ -252,6 +285,18 @@ export default function Join() {
 
   const isLight = tenant.brand.primaryColor === '#FFFFFF';
 
+  // ICDLU: the payment section exists ONLY when the application fee is
+  // greater than 0. With a fee of 0 the payment step, the pay button,
+  // the countdown and the payment badge are all hidden entirely, and the
+  // server marks the application Paid on submission (see
+  // submit_icdlu_application). RACDLU is unaffected: it always shows
+  // payment exactly as before.
+  // When an application row exists, its own application_fee (stamped by
+  // the server at submission) is authoritative; before that, fall back
+  // to the tenant's current fee setting.
+  const effectiveFee = application ? Number(application.application_fee ?? 0) : (applicationFee ?? 0);
+  const requiresPayment = !isInteract || effectiveFee > 0;
+
   // Compute allowed DOB range based on club type
   const getDobRange = () => {
     const today = new Date();
@@ -321,6 +366,17 @@ export default function Join() {
     formState: { errors },
   } = useForm<JoinFormData>({
     resolver: zodResolver(joinSchema),
+  });
+
+  // ICDLU's own form instance — separate from the RACDLU one above so
+  // neither club's validation/state can leak into the other.
+  const {
+    register: registerIcdlu,
+    handleSubmit: handleIcdluSubmit,
+    reset: resetIcdluForm,
+    formState: { errors: icdluErrors },
+  } = useForm<IcdluJoinFormData>({
+    resolver: zodResolver(icdluJoinSchema),
   });
 
   const {
@@ -434,6 +490,89 @@ export default function Join() {
       setStep('payment');
     } catch (err: any) {
       console.error('Application submit error:', err);
+      addToast('Failed to submit application. Please try again.', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── ICDLU submit (first-time + edit) ────────────────────────────────
+  // Goes through SECURITY DEFINER RPCs instead of a raw insert so that:
+  //   • the chosen password is stored encrypted in a default-deny table
+  //     (never on the anon-readable `applications` row),
+  //   • Joining Date + Rotary Year are stamped by the SERVER (hidden
+  //     from applicants, unforgeable),
+  //   • the invitation code is consumed atomically with the insert,
+  //   • a fee of 0 produces an application that is already Paid.
+  const onSubmitIcdlu = async (data: IcdluJoinFormData) => {
+    if (!photoUrl && !(application && application.photo)) {
+      setPhotoError('A formal picture is required to submit your application.');
+      return;
+    }
+    setPhotoError('');
+
+    const isEdit = !!application;
+    if (!isEdit && !data.password) {
+      addToast('Please create a password (at least 8 characters).', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const trimmedCode = inviteCode.trim().toUpperCase();
+    const payload = {
+      name: data.name,
+      email: data.email,
+      phone: data.phone,
+      emergencyContact: data.emergencyContact,
+      dob: data.dob,
+      gender: data.gender,
+      bloodGroup: data.bloodGroup,
+      school: data.school,
+      grade: data.grade,
+      class: data.class,
+      bio: data.bio || '',
+      photo: photoUrl || application?.photo || '',
+    };
+
+    try {
+      if (isEdit) {
+        const { data: result, error } = await supabase.rpc('update_icdlu_application', {
+          p_code: trimmedCode,
+          p_tenant_id: tenant.id,
+          p_password: data.password || null,
+          p_data: payload,
+        });
+        if (error) throw error;
+        if (!result?.ok) {
+          addToast(result?.message || 'Could not update application.', 'error');
+          return;
+        }
+        setApplication(result.application);
+        setStep('status');
+        addToast('Application updated.', 'success');
+        return;
+      }
+
+      const { data: result, error } = await supabase.rpc('submit_icdlu_application', {
+        p_code: trimmedCode,
+        p_tenant_id: tenant.id,
+        p_password: data.password,
+        p_data: payload,
+      });
+      if (error) throw error;
+      if (!result?.ok) {
+        addToast(result?.message || 'Could not submit application.', 'error');
+        return;
+      }
+
+      setApplication(result.application);
+      // Payment section only when the fee is > 0. Read from the row the
+      // server just created (its application_fee is the authoritative
+      // value at submission time), not from possibly-stale local state.
+      const fee = Number(result.application?.application_fee ?? 0);
+      setStep(fee > 0 ? 'payment' : 'status');
+    } catch (err: any) {
+      console.error('ICDLU application submit error:', err);
       addToast('Failed to submit application. Please try again.', 'error');
     } finally {
       setIsSubmitting(false);
@@ -571,6 +710,7 @@ export default function Join() {
       // === false). If unset, skip straight to the form.
       setReferenceNumber(data.reference_number || '');
       resetJoinForm();
+      resetIcdluForm();
 
       const conditionsText = await fetchMembershipConditions();
 
@@ -916,8 +1056,8 @@ export default function Join() {
           </div>
         )}
 
-        {/* ── APPLICATION FORM STEP ── */}
-        {step === 'form' && (
+        {/* ── APPLICATION FORM STEP (RACDLU — original, unchanged) ── */}
+        {step === 'form' && !isInteract && (
           <div
             className="p-8 md:p-12 rounded-3xl shadow-2xl animate-fade-in-up"
             style={{ backgroundColor: '#ffffff', color: '#111827', colorScheme: 'light' }}
@@ -1172,8 +1312,334 @@ export default function Join() {
           </div>
         )}
 
+        {/* ── APPLICATION FORM STEP (ICDLU) ── */}
+        {/* Fields (per club spec): Personal — Photo, Full Name, Email,
+            Create Password, Contact Number, Emergency/Guardian Contact,
+            Date of Birth, Gender, Blood Group. Academics — School,
+            Grade/Year, Class/Section. Other — Bio.
+            Joining Date and Rotary Year are NOT shown: both are stamped
+            server-side at submission (see submit_icdlu_application) and
+            only an Admin/Super Admin can change Joining Date later. */}
+        {step === 'form' && isInteract && (
+          <div
+            className="p-6 sm:p-8 md:p-12 rounded-3xl shadow-2xl animate-fade-in-up"
+            style={{ backgroundColor: '#ffffff', color: '#111827', colorScheme: 'light' }}
+          >
+            <div className="text-center mb-10">
+              <h2 className="text-3xl font-heading font-bold mb-2" style={{ color: '#111827' }}>
+                {application ? 'Edit Your Application' : 'Application Form'}
+              </h2>
+              <p className="text-sm" style={{ color: '#6b7280' }}>
+                Please fill in all details carefully. We will review and contact you shortly.
+              </p>
+              {referenceNumber && (
+                <p className="text-xs mt-2 font-mono" style={{ color: '#9ca3af' }}>
+                  Reference No: <span className="font-bold" style={{ color: '#374151' }}>{referenceNumber}</span>
+                </p>
+              )}
+            </div>
+
+            <form onSubmit={handleIcdluSubmit(onSubmitIcdlu)} className="space-y-10" noValidate>
+              {/* ───────── Personal ───────── */}
+              <section className="space-y-6">
+                <h3 className="text-xs font-bold uppercase tracking-widest" style={{ color: '#9ca3af' }}>
+                  Personal
+                </h3>
+
+                {/* Photo */}
+                <div className="flex flex-col items-center gap-3">
+                  <label className="text-sm font-bold" style={{ color: '#374151' }}>
+                    Photo <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <div className="w-36">
+                    <CloudinaryUpload
+                      onUpload={(url: string, publicId: string) => {
+                        setPhotoUrl(url);
+                        setPhotoPublicId(publicId);
+                        setPhotoError('');
+                      }}
+                      currentUrl={photoUrl || application?.photo || ''}
+                      currentPublicId={photoPublicId}
+                      label="Upload Photo"
+                      aspectRatio="portrait"
+                    />
+                  </div>
+                  <p className="text-xs text-center" style={{ color: '#9ca3af' }}>
+                    Upload a clear, formal/passport-style photo
+                  </p>
+                  {photoError && (
+                    <p className="text-xs text-center" style={{ color: '#ef4444' }}>{photoError}</p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                      Full Name <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      {...registerIcdlu('name')}
+                      defaultValue={application?.name || ''}
+                      autoComplete="name"
+                      className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                      style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
+                      placeholder="Your full name as per official ID"
+                    />
+                    {icdluErrors.name && (
+                      <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{icdluErrors.name.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                      Email <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      {...registerIcdlu('email')}
+                      defaultValue={application?.email || ''}
+                      type="email"
+                      autoComplete="email"
+                      className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                      style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
+                      placeholder="your@email.com"
+                    />
+                    {icdluErrors.email && (
+                      <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{icdluErrors.email.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                      Create Password {!application && <span style={{ color: '#ef4444' }}>*</span>}
+                    </label>
+                    <input
+                      {...registerIcdlu('password')}
+                      type="password"
+                      autoComplete="new-password"
+                      className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                      style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
+                      placeholder={application ? 'Leave blank to keep current password' : 'Minimum 8 characters'}
+                    />
+                    <p className="text-xs mt-1" style={{ color: '#9ca3af' }}>
+                      You'll use this to sign in once your application is approved.
+                    </p>
+                    {icdluErrors.password && (
+                      <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{icdluErrors.password.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                      Contact Number <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      {...registerIcdlu('phone')}
+                      defaultValue={application?.phone || ''}
+                      type="tel"
+                      autoComplete="tel"
+                      className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                      style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
+                      placeholder="+880 01XXX XXXXXX"
+                    />
+                    {icdluErrors.phone && (
+                      <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{icdluErrors.phone.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                      Emergency Contact / Guardian's Contact <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      {...registerIcdlu('emergencyContact')}
+                      defaultValue={application?.emergencyContact || ''}
+                      type="tel"
+                      className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                      style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
+                      placeholder="Parent/Guardian phone number"
+                    />
+                    {icdluErrors.emergencyContact && (
+                      <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{icdluErrors.emergencyContact.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                      Date of Birth <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      {...registerIcdlu('dob')}
+                      defaultValue={application?.dob || ''}
+                      type="date"
+                      min={dobRange.min}
+                      max={dobRange.max}
+                      className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                      style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
+                    />
+                    <p className="text-xs mt-1" style={{ color: '#9ca3af' }}>
+                      Interact requires applicants to be between 12 and 17 years old.
+                    </p>
+                    {icdluErrors.dob && (
+                      <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{icdluErrors.dob.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                      Gender <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <select
+                      {...registerIcdlu('gender')}
+                      defaultValue={application?.gender || ''}
+                      className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                      style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
+                    >
+                      <option value="">Select gender...</option>
+                      {ICDLU_GENDERS.map((g) => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
+                    </select>
+                    {icdluErrors.gender && (
+                      <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{icdluErrors.gender.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                      Blood Group <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <select
+                      {...registerIcdlu('bloodGroup')}
+                      defaultValue={application?.bloodGroup || ''}
+                      className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                      style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
+                    >
+                      <option value="">Select blood group...</option>
+                      {ICDLU_BLOOD_GROUPS.map((b) => (
+                        <option key={b} value={b}>{b.replace('-', '−')}</option>
+                      ))}
+                    </select>
+                    {icdluErrors.bloodGroup && (
+                      <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{icdluErrors.bloodGroup.message}</p>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {/* ───────── Academics ───────── */}
+              <section className="space-y-6 pt-8" style={{ borderTop: '1px solid #f3f4f6' }}>
+                <h3 className="text-xs font-bold uppercase tracking-widest" style={{ color: '#9ca3af' }}>
+                  Academics
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                      School <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      {...registerIcdlu('school')}
+                      defaultValue={application?.school || ''}
+                      className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                      style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
+                      placeholder="Name of your school"
+                    />
+                    {icdluErrors.school && (
+                      <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{icdluErrors.school.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                      Grade / Year <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      {...registerIcdlu('grade')}
+                      defaultValue={application?.grade || ''}
+                      className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                      style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
+                      placeholder="e.g. Grade 9 / Year 10"
+                    />
+                    {icdluErrors.grade && (
+                      <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{icdluErrors.grade.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                      Class / Section <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      {...registerIcdlu('class')}
+                      defaultValue={application?.class || ''}
+                      className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
+                      style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
+                      placeholder="e.g. Section A"
+                    />
+                    {icdluErrors.class && (
+                      <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{icdluErrors.class.message}</p>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              {/* ───────── Other ───────── */}
+              <section className="space-y-6 pt-8" style={{ borderTop: '1px solid #f3f4f6' }}>
+                <h3 className="text-xs font-bold uppercase tracking-widest" style={{ color: '#9ca3af' }}>
+                  Other
+                </h3>
+                <div>
+                  <label className="block text-sm font-bold mb-2" style={{ color: '#374151' }}>
+                    Bio{' '}
+                    <span className="font-normal" style={{ color: '#9ca3af' }}>(optional)</span>
+                  </label>
+                  <textarea
+                    {...registerIcdlu('bio')}
+                    defaultValue={application?.bio || ''}
+                    rows={3}
+                    maxLength={500}
+                    className="w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all resize-none"
+                    style={{ backgroundColor: '#f9fafb', color: '#111827', border: '1px solid #e5e7eb', colorScheme: 'light' }}
+                    placeholder="Tell us a little about yourself"
+                  />
+                  {icdluErrors.bio && (
+                    <p className="text-xs mt-1" style={{ color: '#ef4444' }}>{icdluErrors.bio.message}</p>
+                  )}
+                </div>
+              </section>
+
+              <div className="pt-2 flex flex-col gap-3">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="lg"
+                  className="w-full !rounded-xl"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting
+                    ? application
+                      ? 'Saving Changes...'
+                      : 'Submitting Application...'
+                    : application
+                    ? 'Save Changes →'
+                    : 'Submit Application →'}
+                </Button>
+                {application && (
+                  <button
+                    type="button"
+                    onClick={() => setStep('status')}
+                    className="text-sm text-center transition-opacity opacity-70 hover:opacity-100"
+                    style={{ color: '#6b7280' }}
+                  >
+                    ← Back to Status
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        )}
+
         {/* ── PAYMENT STEP (part 2 of the form) ── */}
-        {step === 'payment' && application && (
+        {step === 'payment' && application && requiresPayment && (
           <div
             className="p-6 sm:p-8 md:p-12 rounded-3xl shadow-2xl animate-fade-in-up"
             style={{ backgroundColor: '#ffffff', color: '#111827', colorScheme: 'light' }}
@@ -1378,7 +1844,7 @@ export default function Join() {
               </div>
 
               {/* Status badges */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+              <div className={`grid grid-cols-1 ${requiresPayment ? 'sm:grid-cols-2' : ''} gap-3 mb-5`}>
                 <div
                   className="rounded-2xl p-4 sm:p-5 text-center"
                   style={{ backgroundColor: applicationStatusMeta(application.status).bg }}
@@ -1390,17 +1856,19 @@ export default function Join() {
                     {applicationStatusMeta(application.status).label}
                   </p>
                 </div>
-                <div
-                  className="rounded-2xl p-4 sm:p-5 text-center"
-                  style={{ backgroundColor: paymentStatusMeta(application.payment_status).bg }}
-                >
-                  <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: '#9ca3af' }}>
-                    Payment
-                  </p>
-                  <p className="text-base sm:text-lg font-bold" style={{ color: paymentStatusMeta(application.payment_status).color }}>
-                    {paymentStatusMeta(application.payment_status).label}
-                  </p>
-                </div>
+                {requiresPayment && (
+                  <div
+                    className="rounded-2xl p-4 sm:p-5 text-center"
+                    style={{ backgroundColor: paymentStatusMeta(application.payment_status).bg }}
+                  >
+                    <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: '#9ca3af' }}>
+                      Payment
+                    </p>
+                    <p className="text-base sm:text-lg font-bold" style={{ color: paymentStatusMeta(application.payment_status).color }}>
+                      {paymentStatusMeta(application.payment_status).label}
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Countdown — only relevant while payment_status is
@@ -1409,7 +1877,7 @@ export default function Join() {
                   (pending_verification/verified/rejected-by-admin), the
                   72h auto-cancel no longer applies, so the clock is no
                   longer meaningful and is hidden. */}
-              {application.payment_status === 'unpaid' && application.createdAt && (
+              {requiresPayment && application.payment_status === 'unpaid' && application.createdAt && (
                 <div className="mb-5">
                   <PaymentCountdown
                     createdAt={application.createdAt}
@@ -1495,7 +1963,8 @@ export default function Join() {
               {/* Action buttons */}
               <div className="flex flex-col gap-3">
                 {/* Pay / retry payment button */}
-                {(application.payment_status === 'unpaid' || application.payment_status === 'rejected') &&
+                {requiresPayment &&
+                  (application.payment_status === 'unpaid' || application.payment_status === 'rejected') &&
                   (application.status || '').toLowerCase() !== 'rejected' && (
                     <Button
                       variant="primary"
