@@ -91,6 +91,10 @@ type AttendanceRecord = {
   userId: string;
   eventId: string;
   status: 'present' | 'absent' | 'excused' | 'late' | string;
+  /** Hours an admin credited to this member for this event
+   * (attendance.volunteer_hours, numeric — PostgREST returns it as a
+   * number or numeric string, so always coerce with Number()). */
+  volunteer_hours?: number | string | null;
 };
 
 /** Matches the real `projects` table used in DashboardProjects.tsx.
@@ -241,15 +245,78 @@ function timeAgo(dateStr?: string) {
   return new Date(then).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-/** Bar-chart heights for the "Member engagement" hero card. Purely
- * decorative in the mockup (three hardcoded arrays rendered as CSS bar
- * heights) — kept as-is since there's no per-day time-series backing
- * this yet. Same shape/length as dashboard-combined.html's p1/p2/p3. */
-const ENGAGEMENT_BARS = {
-  active: [38, 52, 33, 58, 78, 48, 63, 42, 68, 53, 58, 38, 48, 73, 58, 53, 78, 63, 48, 44, 60, 50, 40, 55],
-  attendance: [35, 48, 58, 66, 52, 40, 62, 70, 56, 44, 38, 50, 60, 48, 36, 44, 52, 58, 42, 34],
-  hours: [36, 42, 34, 48, 58, 44, 52, 64, 58, 72, 60, 50, 66, 78, 68, 58, 72, 60, 50, 44, 56, 48],
-};
+/** Max bars drawn per engagement mini-chart (same visual density as the
+ * mockup's 20-24 bars). Only the most recent N events are charted. */
+const ENGAGEMENT_BAR_LIMIT = 20;
+
+/** Bar heights (0-100) for the engagement mini-charts, derived from this
+ * member's REAL attendance rows — replacing the three hardcoded arrays
+ * that used to be here (which had no relationship to any data).
+ *
+ * `rows` must already be in chronological order (oldest -> newest), so
+ * bars read left-to-right as time passes.
+ *   - attendance: one bar per applicable (non-`not_required`) event —
+ *     tall when the member attended (present/late), a short stub when
+ *     they didn't (excused/absent). Height is a yes/no signal, not a %.
+ *   - hours: one bar per event with recorded hours, scaled to the
+ *     member's own max so the tallest event fills the chart.
+ * A short stub (rather than 0) keeps a bar visible so the chart never
+ * looks broken; empty input returns [] and the chart renders as an
+ * empty baseline. */
+function buildAttendanceBars(rows: AttendanceRecord[]): number[] {
+  return rows
+    .filter((r) => r.status !== 'not_required' && ['present', 'late', 'excused', 'absent'].includes(r.status))
+    .slice(-ENGAGEMENT_BAR_LIMIT)
+    .map((r) => (r.status === 'present' || r.status === 'late' ? 78 : 14));
+}
+function buildHoursBars(rows: AttendanceRecord[]): number[] {
+  const withHours = rows.filter((r) => (Number(r.volunteer_hours) || 0) > 0).slice(-ENGAGEMENT_BAR_LIMIT);
+  const max = Math.max(0, ...withHours.map((r) => Number(r.volunteer_hours) || 0));
+  return withHours.map((r) => Math.max(14, Math.round(((Number(r.volunteer_hours) || 0) / max) * 100)));
+}
+
+/* ------------------------------- engagement metrics ------------------------------- */
+
+/** The three real, per-member numbers behind the "Member engagement"
+ * card. Pure function of already-fetched rows so it's trivially testable
+ * and can never drift from what's on screen.
+ *
+ * Attendance rate uses the SAME definition as DashboardAttendance.tsx and
+ * AdminAttendance.tsx: (present + late) / (present + late + excused +
+ * absent). `not_required` is excluded from both sides. Returns null (not
+ * 0) when the member has no applicable records so the UI can show "—"
+ * instead of a misleading 0%.
+ *
+ * Volunteer hours is the sum of attendance.volunteer_hours across ALL of
+ * this member's rows. Hours are only ever stored as >0 for present/late
+ * (enforced on the admin save path), so no status filter is needed here.
+ * Rounded to 2dp to hide float noise from summing numeric(6,2) values. */
+function computeEngagement(attendance: AttendanceRecord[]) {
+  let attended = 0;
+  let applicable = 0;
+  let hours = 0;
+  for (const r of attendance) {
+    hours += Number(r.volunteer_hours) || 0;
+    if (r.status === 'not_required') continue;
+    if (r.status === 'present' || r.status === 'late') {
+      attended++;
+      applicable++;
+    } else if (r.status === 'excused' || r.status === 'absent') {
+      applicable++;
+    }
+  }
+  return {
+    attended,
+    applicable,
+    attendanceRate: applicable > 0 ? Math.round((attended / applicable) * 100) : null,
+    volunteerHours: Math.round(hours * 100) / 100,
+  };
+}
+
+/** "12" / "12.5" / "12.25" — no trailing zeros, no forced decimals. */
+function formatHours(n: number): string {
+  return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(2)));
+}
 
 /* ------------------------------- status → dot mapping (Attendance rate card) ------------------------------- */
 
@@ -351,19 +418,17 @@ function isAnnouncementVisible(a: NeedsAttentionAnnouncement, memberId: string |
 /**
  * loadDashboardData — ports the real queries from the previous
  * DashboardHome.tsx unchanged (events / announcements / this member's
- * attendance / projects), plus the active member count query, plus
- * a club-wide past-events + club-wide attendance fetch used to build
- * the "Detailed report" calendar list and to find this member's true
- * last-meeting status, plus (new) an upcoming-events-this-week/month
- * fetch for the Tracking card and a full announcements fetch (with
- * targeting columns) for the Needs attention card.
+ * attendance / projects), plus a club-wide past-events + club-wide
+ * attendance fetch used to build the "Detailed report" calendar list
+ * and to find this member's true last-meeting status, plus an
+ * upcoming-events-this-week/month fetch for the Tracking card, a full
+ * announcements fetch (with targeting columns) for the Needs attention
+ * card, and a tenant-wide (id, status, memberIds) projects fetch used to
+ * count the Completed Projects this member took part in.
  *
- * The member-count query targets `users` filtered by tenant_id + status,
- * matching the pattern every other tenant-scoped query in this codebase
- * uses (see DashboardLayout.tsx's applications/contact_messages counts).
- * If `users` doesn't have a `status` column, or filtering differs from
- * what AdminMembers.tsx actually expects, this will surface as a console
- * warning and memberCount will be null — NOT a crash, NOT a fake number.
+ * The member's own attendance fetch uses `select('*')`, so it also
+ * carries attendance.volunteer_hours, which the Member engagement card
+ * sums for the Volunteer Hours figure.
  */
 async function loadDashboardData(tenantId: string, userId?: string) {
   const now = new Date();
@@ -403,11 +468,11 @@ async function loadDashboardData(tenantId: string, userId?: string) {
     annRes,
     attendanceRes,
     projectsRes,
-    memberCountRes,
     pastEventsRes,
     clubAttendanceRes,
     upcomingRangeRes,
     needsAttentionAnnRes,
+    projectParticipationRes,
   ] = await Promise.all([
     supabase
       .from('events')
@@ -438,15 +503,6 @@ async function loadDashboardData(tenantId: string, userId?: string) {
       .eq('tenant_id', tenantId)
       .order('startDate', { ascending: false })
       .limit(3),
-    supabase
-      .from('users')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('status', 'active')
-      .then(
-        (res) => res,
-        (err) => ({ data: null, count: null, error: err })
-      ),
     // Past events (any event with date <= today), most recent first.
     // Distinct from the `events` query above, which is upcoming-only —
     // that's the correct source for the "Upcoming events" list, but it
@@ -487,6 +543,17 @@ async function loadDashboardData(tenantId: string, userId?: string) {
       .eq('tenant_id', tenantId)
       .eq('status', 'published')
       .order('created_at', { ascending: false }),
+    // Completed Projects (Member engagement card). Deliberately its own
+    // query: the `projects` fetch above is `.limit(3)` for the Active
+    // projects card and would silently undercount. Only the three columns
+    // needed to decide "is this member on a completed project" are
+    // selected. Status casing is stored inconsistently across the app
+    // ('Completed' from AdminProjects, lowercased on read elsewhere), so
+    // the status match is done case-insensitively in fetchDashboard.
+    supabase
+      .from('projects')
+      .select('id, status, memberIds')
+      .eq('tenant_id', tenantId),
   ]);
 
   if (eventsRes.error) throw eventsRes.error;
@@ -497,13 +564,7 @@ async function loadDashboardData(tenantId: string, userId?: string) {
   if (clubAttendanceRes.error) console.warn('[dashboard] Club-wide attendance fetch failed:', clubAttendanceRes.error);
   if (upcomingRangeRes.error) console.warn('[dashboard] Upcoming-range events fetch failed:', upcomingRangeRes.error);
   if (needsAttentionAnnRes.error) console.warn('[dashboard] Needs-attention announcements fetch failed:', needsAttentionAnnRes.error);
-  if ((memberCountRes as any).error) {
-    console.warn(
-      '[dashboard] Member count query failed — likely means `users.status` or tenant_id filtering ' +
-        'differs from AdminMembers.tsx. This needs a real backing query; see conversation notes.',
-      (memberCountRes as any).error
-    );
-  }
+  if (projectParticipationRes.error) console.warn('[dashboard] Project participation fetch failed:', projectParticipationRes.error);
 
   // Map DB snake_case `created_at` onto the client-side `createdAt`
   // field so every other place in this file that reads
@@ -520,11 +581,15 @@ async function loadDashboardData(tenantId: string, userId?: string) {
     announcements,
     attendance: (attendanceRes.data as AttendanceRecord[]) || [],
     projects: (projectsRes.data as ProjectRecord[]) || [],
-    memberCount: (memberCountRes as any).count ?? null,
     pastEvents: (pastEventsRes.data as EventRecord[]) || [],
     clubAttendance: (clubAttendanceRes.data as { userId: string; eventId: string; status: string }[]) || [],
     upcomingRangeEvents: (upcomingRangeRes.data as { id: string; date: string }[]) || [],
     needsAttentionAnnouncements: (needsAttentionAnnRes.data as NeedsAttentionAnnouncement[]) || [],
+    // null (not 0) when the query failed, so the card can show "—"
+    // instead of asserting a false "0 completed projects".
+    projectParticipation: projectParticipationRes.error
+      ? null
+      : ((projectParticipationRes.data as { id: string; status: string | null; memberIds: unknown }[]) || []),
     todayISO: today,
     startOfWeekISO,
     endOfMonthISO,
@@ -696,7 +761,8 @@ export default function DashboardHome() {
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [eventLookup, setEventLookup] = useState<Record<string, EventRecord>>({});
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
-  const [memberCount, setMemberCount] = useState<number | null>(null);
+  // Completed projects THIS member took part in; null = not loaded / failed.
+  const [completedProjects, setCompletedProjects] = useState<number | null>(null);
   const [meetingDays, setMeetingDays] = useState<MeetingDayRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -737,7 +803,21 @@ export default function DashboardHome() {
       setEvents(data.events);
       setAnnouncements(data.announcements);
       setProjects(data.projects);
-      setMemberCount(data.memberCount);
+
+      // Completed Projects: projects with status Completed whose
+      // memberIds (jsonb array of user ids, written by AdminProjects)
+      // contains this member. Array.isArray guards against a null /
+      // malformed jsonb value on legacy rows.
+      setCompletedProjects(
+        data.projectParticipation === null
+          ? null
+          : data.projectParticipation.filter(
+              (pr) =>
+                (pr.status || '').toLowerCase() === 'completed' &&
+                Array.isArray(pr.memberIds) &&
+                (pr.memberIds as unknown[]).includes(user.id)
+            ).length
+      );
 
       if (data.attendance.length > 0) {
         const { data: eventsSnap } = await supabase.from('events').select('*').eq('tenant_id', tenant.id);
@@ -874,7 +954,8 @@ export default function DashboardHome() {
   // tapped meeting's eventId, resolved directly against meetingDays.
   const selectedReportRow = selectedReportDay ? meetingDays.find((d) => d.eventId === selectedReportDay) || null : null;
 
-  // Bars are pure decoration (see ENGAGEMENT_BARS comment) — render once.
+  // Bars are real per-member data now (see buildAttendanceBars /
+  // buildHoursBars). An empty array renders an empty baseline.
   const barEls = (values: number[]) =>
     values.map((v, i) => <div key={i} style={{ height: `${v}%`, flex: 1, background: p.bar, borderRadius: '.5px', minHeight: 2 }} />);
 
@@ -914,8 +995,18 @@ export default function DashboardHome() {
   }
 
   const rotaryYearLabel = formatRotaryYear(settings.rotaryYear);
-  const presentCount = attendance.filter((a) => a.status === 'present' || a.status === 'late').length;
-  const attendanceRate = attendance.length > 0 ? Math.round((presentCount / attendance.length) * 100) : null;
+  // Real per-member engagement numbers (see computeEngagement for the
+  // exact definitions). The old inline calc divided by attendance.length,
+  // which counted `not_required` rows against the member and so disagreed
+  // with the Attendance page and the admin analytics.
+  const engagement = computeEngagement(attendance);
+  const { attendanceRate, volunteerHours } = engagement;
+  // `attendance` state is newest-first; the bar charts read left-to-right
+  // as time passes, so feed them oldest-first.
+  const attendanceChrono = [...attendance].reverse();
+  const attendanceBarValues = buildAttendanceBars(attendanceChrono);
+  const hoursBarValues = buildHoursBars(attendanceChrono);
+  const completedProjectsBarValues = Array.from({ length: Math.min(completedProjects ?? 0, ENGAGEMENT_BAR_LIMIT) }, () => 78);
 
   // Last meeting = most recent PAST event (meetingDays is already sorted
   // desc by date, mirroring pastEvents' query order). Previously this
@@ -1178,44 +1269,49 @@ export default function DashboardHome() {
 
           {/* ---------------- primary grid ---------------- */}
           <div style={{ display: 'grid', gridTemplateColumns: '1.65fr 1fr 1fr', gap: 12, marginBottom: 12 }} className="!grid-cols-1 sm:!grid-cols-2 lg:!grid-cols-[1.65fr_1fr_1fr]">
-            {/* Member engagement */}
+            {/* Member engagement — every number and bar here is real,
+                per-member data (see computeEngagement /
+                buildAttendanceBars / buildHoursBars):
+                  Attendance rate    <- this member's attendance rows
+                  Completed projects <- Completed projects whose
+                                        memberIds include this member
+                  Volunteer hours    <- sum of attendance.volunteer_hours
+                                        recorded by admins for this member
+                The old "Change period" pill (no handler) and the static
+                ▲/▼ trend glyphs (no trend was ever computed) were removed:
+                they implied functionality that did not exist. */}
             <div style={{ borderRadius: 20, padding: 16, background: p.dark, color: p.tl, border: `1px solid ${p.border}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>Member engagement</span>
-                <button
-                  type="button"
-                  style={{ border: `1px solid ${p.pillBorder}`, borderRadius: 20, fontSize: 10, padding: '5px 11px', color: p.tmid, background: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                >
-                  Change period
-                </button>
               </div>
               <div style={{ display: 'flex', borderTop: `1px solid ${p.border}`, paddingTop: 12, flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 90, padding: '0 9px 0 0', borderRight: `1px solid ${p.border}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: p.tmid, marginBottom: 8 }}>
-                    <span>Active members</span>
-                    <span style={{ fontSize: 8, color: p.tmid }}>▲</span>
+                    <span>Attendance Rate</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 64, marginBottom: 9 }}>{barEls(ENGAGEMENT_BARS.active)}</div>
-                  <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-.3px' }}>{memberCount !== null ? memberCount : '142'}</div>
-                  <div style={{ fontSize: 9.5, color: p.tsub, marginTop: 2 }}>{memberCount !== null ? 'active roster' : 'of 156 roster'}</div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 64, marginBottom: 9 }}>{barEls(attendanceBarValues)}</div>
+                  <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-.3px' }}>{attendanceRate !== null ? `${attendanceRate}%` : '—'}</div>
+                  <div style={{ fontSize: 9.5, color: p.tsub, marginTop: 2 }}>
+                    {engagement.applicable > 0 ? `${engagement.attended} of ${engagement.applicable} events` : 'no events recorded'}
+                  </div>
                 </div>
-                <div style={{ flex: 1, minWidth: 90, padding: '0 9px' }}>
+                <div style={{ flex: 1, minWidth: 90, padding: '0 9px' , borderRight: `1px solid ${p.border}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: p.tmid, marginBottom: 8 }}>
-                    <span>Attendance</span>
-                    <span style={{ fontSize: 8, color: p.tmid }}>▲</span>
+                    <span>Completed Projects</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 64, marginBottom: 9 }}>{barEls(ENGAGEMENT_BARS.attendance)}</div>
-                  <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-.3px' }}>{attendanceRate !== null ? `${attendanceRate}%` : '78%'}</div>
-                  <div style={{ fontSize: 9.5, color: p.tsub, marginTop: 2 }}>{attendance.length > 0 ? `${presentCount} of ${attendance.length} events` : 'avg. 8 weeks'}</div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 64, marginBottom: 9 }}>{barEls(completedProjectsBarValues)}</div>
+                  <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-.3px' }}>{completedProjects !== null ? completedProjects : '—'}</div>
+                  <div style={{ fontSize: 9.5, color: p.tsub, marginTop: 2 }}>
+                    {completedProjects === null ? 'unavailable' : completedProjects === 1 ? 'project' : 'projects'}
+                  </div>
                 </div>
                 <div style={{ flex: 1, minWidth: 90, padding: '0 0 0 9px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: p.tmid, marginBottom: 8 }}>
-                    <span>Service hours</span>
-                    <span style={{ fontSize: 8, color: p.tmid }}>▼</span>
+                    <span>Volunteer Hours</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 64, marginBottom: 9 }}>{barEls(ENGAGEMENT_BARS.hours)}</div>
-                  <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-.3px' }}>316</div>
-                  <div style={{ fontSize: 9.5, color: p.tsub, marginTop: 2 }}>logged this month</div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 64, marginBottom: 9 }}>{barEls(hoursBarValues)}</div>
+                  <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-.3px' }}>{formatHours(volunteerHours)}</div>
+                  <div style={{ fontSize: 9.5, color: p.tsub, marginTop: 2 }}>{volunteerHours === 1 ? 'hour' : 'hours'} recorded</div>
                 </div>
               </div>
             </div>
