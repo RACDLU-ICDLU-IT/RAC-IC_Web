@@ -9,7 +9,7 @@ import { usePoints, AttendanceStatus } from '../../hooks/usePoints';
 import { getClubPalette } from '../../theme/racPalette';
 import {
   Download, CalendarPlus, CalendarDays, X, Pencil, Copy, BarChart3,
-  Users, TrendingUp, Trash2, AlertTriangle, Ban,
+  Users, TrendingUp, Trash2, AlertTriangle, Ban, Clock,
 } from 'lucide-react';
 
 /* ---- font loader: same pattern/id as DashboardHome.tsx, idempotent ---- */
@@ -53,6 +53,19 @@ const STATUS_META: Record<Status, { letter: string; label: string }> = {
 };
 
 const isXpStatus = (s: MarkValue): s is Status => s !== 'not_required';
+
+/* Volunteer hours are only credited to members who actually showed up
+   (present / late). excused / absent / not_required always store 0 hours,
+   so an admin can never accidentally credit hours to someone who wasn't
+   there, and re-marking someone absent cleanly zeroes their hours. */
+const earnsHours = (s: MarkValue | '' | undefined): boolean => s === 'present' || s === 'late';
+/* Clamp to the DB CHECK range (0..9999) and 2dp (numeric(6,2)) so a bad
+   input surfaces as a corrected value instead of a failed save. */
+const cleanHours = (v: unknown): number => {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(9999, Math.round(n * 100) / 100);
+};
 const xpForStatus = (ev: any, status: Status) => Number(ev?.[`xp_${status}`] ?? 0);
 
 const uid = () => (crypto as any).randomUUID();
@@ -110,7 +123,12 @@ export default function AdminAttendance() {
   const [form, setForm] = useState({
     title: '', date: '', type: 'Meeting' as EventType, sub_type: SUB_TYPES.Meeting[0],
     xp_present: 0, xp_late: 0, xp_excused: 0, xp_absent: 0,
+    volunteer_hours: 0,
   });
+
+  /* per-member volunteer hours for the event currently on the mark sheet,
+     keyed by userId. Persisted to attendance.volunteer_hours on save. */
+  const [hoursSheet, setHoursSheet] = useState<Record<string, number>>({});
 
   /* delete event flow */
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
@@ -138,13 +156,18 @@ export default function AdminAttendance() {
   useEffect(() => { loadBaseData(); }, [tenant.id]);
 
   const loadEventAttendance = async (eventId: string, applyToSheet = true) => {
-    if (!eventId) { if (applyToSheet) setSheet({}); return []; }
+    if (!eventId) { if (applyToSheet) { setSheet({}); setHoursSheet({}); } return []; }
     const { data } = await supabase.from('attendance').select('*').eq('tenant_id', tenant.id).eq('eventId', eventId);
     const records = data || [];
     if (applyToSheet) {
       const s: Record<string, MarkValue | ''> = {};
-      records.forEach((r: any) => { s[r.userId] = r.status; });
+      const h: Record<string, number> = {};
+      records.forEach((r: any) => {
+        s[r.userId] = r.status;
+        h[r.userId] = Number(r.volunteer_hours) || 0;
+      });
       setSheet(s);
+      setHoursSheet(h);
     }
     return records;
   };
@@ -212,7 +235,7 @@ export default function AdminAttendance() {
       const batch: any[] = [];
       const xpOps: Promise<any>[] = [];
 
-      Object.entries(sheet).forEach(([userId, status]) => {
+      (Object.entries(sheet) as [string, MarkValue | ''][]).forEach(([userId, status]) => {
         if (!status) return;
         batch.push(
           supabase.from('attendance').upsert(
@@ -220,6 +243,9 @@ export default function AdminAttendance() {
               id: `${selectedEventId}_${userId}`, tenant_id: tenant.id, userId, eventId: selectedEventId,
               eventTitle: ev?.title || 'Unknown Event', eventDate: ev?.date || '', eventType: ev?.type || '',
               status, markedAt: new Date().toISOString(), markedBy: user?.id,
+              // Only members who attended earn hours; everyone else is
+              // stored as 0 so a status change can never leave stale hours.
+              volunteer_hours: earnsHours(status) ? cleanHours(hoursSheet[userId]) : 0,
             },
             { onConflict: 'id' }
           )
@@ -247,7 +273,12 @@ export default function AdminAttendance() {
         }
       });
 
-      await Promise.all(batch);
+      // supabase-js reports failures as `{ error }` values, NOT rejections,
+      // so Promise.all alone would happily report success after an RLS or
+      // constraint failure. Inspect every result before claiming success.
+      const results = await Promise.all(batch);
+      const failed = results.find((r: any) => r?.error);
+      if (failed) throw (failed as any).error;
       await Promise.all(xpOps);
       addToast('Attendance saved', 'success');
       const updated = await loadEventAttendance(selectedEventId, true);
@@ -261,15 +292,50 @@ export default function AdminAttendance() {
     }
   };
 
+  /* Default hours for the event currently on the sheet (what the admin
+     entered in Add/Edit Event). Used only to PRE-FILL a member's hours the
+     moment they're marked present/late; it never overwrites a value the
+     admin already typed or that was already saved for that member. */
+  const currentEventDefaultHours = (): number => {
+    const ev = events.find((e) => e.id === selectedEventId);
+    return cleanHours(ev?.volunteer_hours);
+  };
+
+  /* Single rule for how a status change affects a member's hours:
+       - non-attending status (excused / absent / not_required / cleared) -> 0
+       - attending status, hours already set (>0)                         -> keep
+       - attending status, hours empty                                    -> event default */
+  const hoursForStatusChange = (current: number | undefined, status: MarkValue | ''): number => {
+    if (!earnsHours(status)) return 0;
+    const cur = Number(current) || 0;
+    return cur > 0 ? cur : currentEventDefaultHours();
+  };
+
+  /* Sets one member's status AND keeps their hours consistent with it. */
+  const setMemberStatus = (userId: string, status: MarkValue) => {
+    setSheet((prev) => ({ ...prev, [userId]: status }));
+    setHoursSheet((prev) => ({ ...prev, [userId]: hoursForStatusChange(prev[userId], status) }));
+  };
+
   const setAll = (status: MarkValue | null) => {
     const s: Record<string, MarkValue | ''> = {};
     if (status) activeMembers.forEach((m) => { s[m.id] = status; });
     setSheet(s);
+    setHoursSheet((prev) => {
+      const h: Record<string, number> = {};
+      if (status) activeMembers.forEach((m) => { h[m.id] = hoursForStatusChange(prev[m.id], status); });
+      return h;
+    });
   };
   const applyToSelected = (status: MarkValue) => {
     setSheet((prev) => {
       const next = { ...prev };
       selectedMemberIds.forEach((id) => { next[id] = status; });
+      return next;
+    });
+    setHoursSheet((prev) => {
+      const next = { ...prev };
+      selectedMemberIds.forEach((id) => { next[id] = hoursForStatusChange(prev[id], status); });
       return next;
     });
   };
@@ -286,6 +352,15 @@ export default function AdminAttendance() {
     setSheet((prev) => {
       const next = { ...prev };
       records.forEach((r: any) => { if (!next[r.userId]) next[r.userId] = r.status; });
+      return next;
+    });
+    // Copy STATUS only; hours are re-derived from THIS event's default so
+    // hours from a different event are never carried over by accident.
+    setHoursSheet((prev) => {
+      const next = { ...prev };
+      records.forEach((r: any) => {
+        if (!(prev[r.userId] > 0) && earnsHours(r.status)) next[r.userId] = currentEventDefaultHours();
+      });
       return next;
     });
     addToast('Copied unmarked members from selected event', 'success');
@@ -334,7 +409,7 @@ export default function AdminAttendance() {
   /* ---- event modal ---- */
   const openAddEvent = () => {
     setEditingEventId(null);
-    setForm({ title: '', date: '', type: 'Meeting', sub_type: SUB_TYPES.Meeting[0], xp_present: 0, xp_late: 0, xp_excused: 0, xp_absent: 0 });
+    setForm({ title: '', date: '', type: 'Meeting', sub_type: SUB_TYPES.Meeting[0], xp_present: 0, xp_late: 0, xp_excused: 0, xp_absent: 0, volunteer_hours: 0 });
     setIsEventModalOpen(true);
   };
   const openEditEvent = (ev: any) => {
@@ -342,6 +417,7 @@ export default function AdminAttendance() {
     setForm({
       title: ev.title || '', date: ev.date || '', type: (ev.type as EventType) || 'Meeting', sub_type: ev.sub_type || SUB_TYPES[(ev.type as EventType) || 'Meeting'][0],
       xp_present: ev.xp_present || 0, xp_late: ev.xp_late || 0, xp_excused: ev.xp_excused || 0, xp_absent: ev.xp_absent || 0,
+      volunteer_hours: Number(ev.volunteer_hours) || 0,
     });
     setIsEventModalOpen(true);
   };
@@ -362,14 +438,22 @@ export default function AdminAttendance() {
         previousEvent = data;
       }
 
-      await supabase.from('events').upsert(
+      // Only send fields this modal owns. On EDIT we must not send
+      // isPublic/createdAt: the previous version reset isPublic to false
+      // (silently un-publishing events) and overwrote createdAt on every
+      // edit. Those are only set when the event is first created.
+      const { error: eventErr } = await supabase.from('events').upsert(
         {
           id, tenant_id: tenant.id, title: form.title, date: form.date, type: form.type, sub_type: form.sub_type,
           xp_present: form.xp_present, xp_late: form.xp_late, xp_excused: form.xp_excused, xp_absent: form.xp_absent,
-          isPublic: false, createdAt: new Date().toISOString(),
+          volunteer_hours: cleanHours(form.volunteer_hours),
+          ...(editingEventId ? {} : { isPublic: false, createdAt: new Date().toISOString() }),
         },
         { onConflict: 'id' }
       );
+      // supabase-js returns failures as a value, not a throw. Without this
+      // check a blocked/invalid write still showed "Event created".
+      if (eventErr) throw eventErr;
 
       if (editingEventId && previousEvent) {
         const changedStatuses = STATUS_ORDER.filter((s) => Number(previousEvent[`xp_${s}`] || 0) !== Number(form[`xp_${s}` as keyof typeof form]));
@@ -432,8 +516,13 @@ export default function AdminAttendance() {
         );
       }
 
-      await supabase.from('attendance').delete().eq('tenant_id', tenant.id).eq('eventId', eventId);
-      await supabase.from('events').delete().eq('tenant_id', tenant.id).eq('id', eventId);
+      // Check each result: supabase-js returns errors as values, so an
+      // unchecked failure here would report "Event deleted" while leaving the
+      // rows (and any volunteer hours on them) still counting toward members.
+      const { error: attDelErr } = await supabase.from('attendance').delete().eq('tenant_id', tenant.id).eq('eventId', eventId);
+      if (attDelErr) throw attDelErr;
+      const { error: evDelErr } = await supabase.from('events').delete().eq('tenant_id', tenant.id).eq('id', eventId);
+      if (evDelErr) throw evDelErr;
 
       addToast(
         memberIds.length > 0
@@ -646,11 +735,34 @@ export default function AdminAttendance() {
                                 <div style={{ fontSize: 9.5, color: p.tsub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.school}</div>
                               </div>
                             </div>
+                            {earnsHours(s) && (
+                              <label title="Volunteer hours for this member" style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                                <Clock size={11} color={p.tsub} />
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={9999}
+                                  step={0.25}
+                                  inputMode="decimal"
+                                  aria-label={`Volunteer hours for ${m.name || 'member'}`}
+                                  value={hoursSheet[m.id] ?? 0}
+                                  onFocus={(e) => e.currentTarget.select()}
+                                  onChange={(e) => {
+                                    // Store the raw number so partial input ("2.") isn't
+                                    // re-clamped mid-typing; cleanHours() is applied at save.
+                                    const n = e.target.value === '' ? 0 : Number(e.target.value);
+                                    setHoursSheet((prev) => ({ ...prev, [m.id]: Number.isFinite(n) ? n : 0 }));
+                                  }}
+                                  style={{ ...input, width: 58, padding: '5px 6px', fontSize: 11, textAlign: 'right' }}
+                                />
+                                <span style={{ fontSize: 9, color: p.tsub }}>h</span>
+                              </label>
+                            )}
                             <div style={{ display: 'flex', gap: 4, background: p.bg === '#0a0a0a' ? '#1a1a1a' : p.lightCard, padding: 3, borderRadius: 10, flexShrink: 0 }}>
                               {STATUS_ORDER.map((st) => (
                                 <button
                                   key={st}
-                                  onClick={() => setSheet({ ...sheet, [m.id]: st })}
+                                  onClick={() => setMemberStatus(m.id, st)}
                                   title={STATUS_META[st].label}
                                   style={{
                                     width: 28, height: 28, borderRadius: 8, fontWeight: 700, fontSize: 11.5, border: 'none', cursor: 'pointer',
@@ -661,7 +773,7 @@ export default function AdminAttendance() {
                                 </button>
                               ))}
                               <button
-                                onClick={() => setSheet({ ...sheet, [m.id]: 'not_required' })}
+                                onClick={() => setMemberStatus(m.id, 'not_required')}
                                 title="Not required to attend"
                                 style={{
                                   width: 28, height: 28, borderRadius: 8, border: 'none', cursor: 'pointer',
@@ -750,9 +862,16 @@ export default function AdminAttendance() {
                                 <div style={{ fontWeight: 600, fontSize: 12 }}>{m?.name || 'Unknown'}</div>
                                 <div style={{ fontSize: 10, color: p.tsub }}>{m?.school || '…'}</div>
                               </div>
-                              <span style={{ fontSize: 10, fontWeight: 700, background: p.lightCard, color: p.td, padding: '4px 10px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                {isNA ? <><Ban size={10} /> Not Required</> : (STATUS_META[st]?.label || r.status)}
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {Number(r.volunteer_hours) > 0 && (
+                                  <span style={{ fontSize: 10, fontWeight: 600, color: p.tsub, display: 'flex', alignItems: 'center', gap: 3 }}>
+                                    <Clock size={10} /> {Number(r.volunteer_hours)}h
+                                  </span>
+                                )}
+                                <span style={{ fontSize: 10, fontWeight: 700, background: p.lightCard, color: p.td, padding: '4px 10px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  {isNA ? <><Ban size={10} /> Not Required</> : (STATUS_META[st]?.label || r.status)}
+                                </span>
+                              </div>
                             </div>
                           );
                         })}
@@ -790,12 +909,13 @@ export default function AdminAttendance() {
                   <div style={{ padding: '40px 0', textAlign: 'center', color: p.tsub, fontSize: 12 }}>Loading…</div>
                 ) : (
                   <>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }} className="!grid-cols-2">
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 16 }} className="!grid-cols-2">
                       {[
                         { label: 'Applicable Events', value: applicableRecords.length },
                         { label: 'Present', value: applicableRecords.filter((r) => r.status === 'present' || r.status === 'late').length },
                         { label: 'Absent', value: applicableRecords.filter((r) => r.status === 'absent').length },
                         { label: 'Rate', value: applicableRecords.length ? `${Math.round((applicableRecords.filter((r) => r.status === 'present' || r.status === 'late').length / applicableRecords.length) * 100)}%` : 'N/A' },
+                        { label: 'Volunteer Hours', value: Math.round(memberHistoryRecords.reduce((sum, r) => sum + (Number(r.volunteer_hours) || 0), 0) * 100) / 100 },
                       ].map((s) => (
                         <div key={s.label} style={{ ...lightCard, textAlign: 'center', padding: 12 }}>
                           <div style={{ fontSize: 22, fontWeight: 700 }}>{s.value}</div>
@@ -820,9 +940,16 @@ export default function AdminAttendance() {
                                 <div style={{ fontWeight: 600, fontSize: 12 }}>{r.eventTitle}</div>
                                 <div style={{ fontSize: 10, color: p.tsub }}>{r.eventDate} {r.eventType ? `· ${r.eventType}` : ''}</div>
                               </div>
-                              <span style={{ fontSize: 10, fontWeight: 700, background: p.lightCard, color: p.td, padding: '4px 10px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                {isNA ? <><Ban size={10} /> Not Required</> : (STATUS_META[r.status as Status]?.label || r.status)}
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {Number(r.volunteer_hours) > 0 && (
+                                  <span style={{ fontSize: 10, fontWeight: 600, color: p.tsub, display: 'flex', alignItems: 'center', gap: 3 }}>
+                                    <Clock size={10} /> {Number(r.volunteer_hours)}h
+                                  </span>
+                                )}
+                                <span style={{ fontSize: 10, fontWeight: 700, background: p.lightCard, color: p.td, padding: '4px 10px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  {isNA ? <><Ban size={10} /> Not Required</> : (STATUS_META[r.status as Status]?.label || r.status)}
+                                </span>
+                              </div>
                             </div>
                           );
                         })}
@@ -970,6 +1097,25 @@ export default function AdminAttendance() {
                 <div style={{ fontSize: 9.5, color: p.tsub, marginTop: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
                   <Ban size={10} /> Not Required members never earn XP for this event, by design.
                 </div>
+              </div>
+
+              <div style={{ borderTop: `1px solid ${p.border}`, paddingTop: 12 }}>
+                <label style={{ fontSize: 10, color: p.tsub, fontWeight: 600, display: 'block', marginBottom: 4 }}>Volunteer Hours</label>
+                <div style={{ fontSize: 9.5, color: p.tsub, marginBottom: 8, lineHeight: 1.4 }}>
+                  Hours credited to each member marked Present or Late. You can adjust the hours per member on the mark sheet before saving attendance.
+                  {editingEventId && ' Changing this only affects members marked from now on; hours already recorded are not rewritten.'}
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  max={9999}
+                  step={0.25}
+                  inputMode="decimal"
+                  value={form.volunteer_hours}
+                  onChange={(e) => setForm({ ...form, volunteer_hours: e.target.value === '' ? 0 : Number(e.target.value) })}
+                  style={input}
+                  placeholder="0"
+                />
               </div>
 
               <button onClick={saveEvent} disabled={isSavingEvent} style={{ ...solidBtn, width: '100%', marginTop: 6, padding: '11px 0', opacity: isSavingEvent ? 0.6 : 1 }}>
