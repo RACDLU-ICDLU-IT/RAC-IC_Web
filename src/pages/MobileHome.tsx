@@ -8,6 +8,7 @@ import MarqueeTicker from '../components/MarqueeTicker';
 import { Link } from 'react-router-dom';
 import ScrollAnimatedNumber from '../components/ScrollAnimatedNumber';
 import FeaturedProjects from '../components/FeaturedProjects';
+import FeaturedEvents from '../components/FeaturedEvents';
 import { useTenant } from '../hooks/useTenant';
 import SEOHead from '../components/SEOHead';
 import imgGallery1 from '../assets/images/regenerated_image_1777783191084.jpg';
@@ -1084,8 +1085,12 @@ export default function Home() {
         />
       </section>
 
-      {/* UPCOMING EVENTS */}
-      {upcomingEvents.length > 0 && (
+      {/* EVENTS — ICDLU: cover-image cards (upcoming + completed); RACDLU: original list */}
+      {tenant.id === 'icdlu' ? (
+        <div className="hv2-reveal">
+          <FeaturedEvents />
+        </div>
+      ) : upcomingEvents.length > 0 && (
       <section className="hv2-events-inverted py-28 px-6 hv2-reveal">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-end justify-between mb-16">
