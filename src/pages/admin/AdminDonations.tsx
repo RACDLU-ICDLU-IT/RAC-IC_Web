@@ -364,7 +364,7 @@ export default function AdminDonations() {
         {(['administrative', 'project', 'endowment'] as const).map(fa => {
           const cfg = FUND_LABELS[fa];
           const Icon = cfg.icon;
-          const fund = funds.find(f => f.account_type === fa);
+          const fund = funds.find(f => f.fund_type === fa);
           return (
             <div key={fa} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
               <div className="flex items-center justify-between mb-3">
