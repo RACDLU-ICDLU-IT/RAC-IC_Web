@@ -35,6 +35,18 @@ export interface PointLedgerEntry {
   created_at: string;
 }
 
+/** One row of the `funds` table — the running balance for a single fund
+ * (kept current by the trg_sync_fund_balance trigger on treasury_ledger).
+ * Column is `fund_type`; there is no `account_type` column. */
+export interface FundAccountBalance {
+  id: string;
+  fund_type: FundAccount;
+  balance: number;
+  total_in: number;
+  total_out: number;
+  updated_at: string;
+}
+
 export interface DonationPointConfig {
   id: string;
   fund_account: FundAccount;
@@ -411,6 +423,32 @@ export function usePoints() {
     return { snappedAmount, xp: wholeXp };
   }, []);
 
+  /** Fund balances for the admin Overview and Donations cards. Was being
+   * destructured from usePoints() by AdminOverview and AdminDonations but
+   * never defined, so both calls threw a TypeError (swallowed by their
+   * try/catch) — leaving every fund card at 0 and, in AdminOverview,
+   * aborting the whole stats Promise.all so ALL stat cards stayed 0.
+   * Reads the same `funds` table useTreasury.fetchFunds does; numeric
+   * columns come back from PostgREST as numbers or numeric strings, so
+   * they are coerced here once. Returns [] on failure (never throws) so
+   * a fund read problem cannot take down the page around it. */
+  const fetchFundAccounts = useCallback(async (): Promise<FundAccountBalance[]> => {
+    requireAdmin();
+    try {
+      const { data, error } = await supabase.from('funds').select('*').eq('tenant_id', tenant.id).order('fund_type');
+      if (error) throw error;
+      return ((data as any[]) || []).map((f) => ({
+        ...f,
+        balance: Number(f.balance) || 0,
+        total_in: Number(f.total_in) || 0,
+        total_out: Number(f.total_out) || 0,
+      })) as FundAccountBalance[];
+    } catch (err) {
+      console.error('fetchFundAccounts failed', err);
+      return [];
+    }
+  }, [tenant.id, isAdmin]);
+
   const fetchDonations = useCallback(async (): Promise<Donation[]> => {
     requireAdmin();
     setLoading(true);
@@ -720,7 +758,7 @@ export function usePoints() {
     fetchMemberPoints, fetchMemberPointLedger, fetchLeaderboard, awardPoints,
     awardAttendancePoints, reverseAttendancePoints, adjustAttendanceXpForEdit,
     fetchDonationPointConfigs, saveDonationPointConfig, snapDonationForWholeXp,
-    fetchDonations, fetchPendingDonations, recordDonation, submitMemberDonation, verifyDonation, rejectDonation,
+    fetchFundAccounts, fetchDonations, fetchPendingDonations, recordDonation, submitMemberDonation, verifyDonation, rejectDonation,
     fetchRedemptionItems, createRedemptionItem, updateRedemptionItem,
     requestRedemption, fetchMemberRedemptions, fetchPendingRedemptions,
     approveRedemption, rejectRedemption, markRedemptionFulfilled,
