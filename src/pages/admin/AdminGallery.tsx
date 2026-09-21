@@ -44,7 +44,11 @@ export default function AdminGallery() {
   const fetchPhotos = async () => {
     setLoading(true);
     try {
-      const { data: snap } = await supabase.from('gallery').select('*').eq('tenant_id', tenant.id).order('sort_order', { ascending: true });
+      // is_hidden rows are images an admin removed from the Gallery that
+      // still live on their source Event/Project — they are kept as
+      // tombstones so the auto-sync can't re-add them, and must never
+      // be shown. See handleDelete below.
+      const { data: snap } = await supabase.from('gallery').select('*').eq('tenant_id', tenant.id).eq('is_hidden', false).order('sort_order', { ascending: true });
       setPhotos(snap || []);
       
       const { data } = await supabase.from('page_content').select('data').eq('id', 'pageContent').eq('tenant_id', tenant.id).single();
@@ -114,6 +118,10 @@ export default function AdminGallery() {
     const docId = isNew ? crypto.randomUUID() : formData.id;
     
     try {
+      // source_type / source_id / publicId are carried through verbatim.
+      // Dropping them would orphan an auto-linked photo from its Event
+      // or Project, and the next save of that record would then add a
+      // second copy of the same image.
       const { error } = await supabase.from('gallery').upsert({
         id: docId,
         url: formData.url,
@@ -121,6 +129,10 @@ export default function AdminGallery() {
         albumTag: formData.albumTag || '',
         sort_order: formData.sort_order ?? photos.length,
         createdAt: formData.createdAt || new Date().toISOString(),
+        publicId: formData.publicId ?? null,
+        source_type: formData.source_type ?? null,
+        source_id: formData.source_id ?? null,
+        is_hidden: false,
         tenant_id: tenant.id
       }, { onConflict: 'id' });
       if (error) throw error;
@@ -134,13 +146,32 @@ export default function AdminGallery() {
     }
   };
 
+  /**
+   * Removing a photo from the Gallery must never touch the Event or
+   * Project it came from — that record keeps its image exactly as it
+   * was. So a linked photo is hidden rather than deleted: the row stays
+   * as a tombstone, which is also what stops the auto-sync from adding
+   * the image straight back the next time that Event/Project is saved.
+   * Manually-uploaded photos have no source record and are deleted
+   * outright, as before.
+   */
   const handleDelete = async () => {
     if (!deleteId) return;
+    const target = photos.find(p => p.id === deleteId);
     try {
-      const { error: deleteError } = await supabase.from('gallery').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
-      if (deleteError) throw deleteError;
-      
-      addToast('Photo removed', 'success');
+      if (target?.source_type) {
+        const { error: hideError } = await supabase
+          .from('gallery')
+          .update({ is_hidden: true })
+          .eq('id', deleteId)
+          .eq('tenant_id', tenant.id);
+        if (hideError) throw hideError;
+      } else {
+        const { error: deleteError } = await supabase.from('gallery').delete().eq('id', deleteId).eq('tenant_id', tenant.id);
+        if (deleteError) throw deleteError;
+      }
+
+      addToast('Photo removed from gallery', 'success');
       setDeleteId(null);
       
       fetchPhotos();
@@ -163,15 +194,32 @@ export default function AdminGallery() {
 
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
-    if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} photos?`)) return;
+    if (!window.confirm(`Remove ${selectedIds.length} photos from the gallery? Photos that came from an Event or Project keep their original image on that record.`)) return;
     try {
-      const { error } = await supabase
-        .from('gallery')
-        .delete()
-        .in('id', selectedIds)
-        .eq('tenant_id', tenant.id);
-      if (error) throw error;
-      addToast(`Deleted ${selectedIds.length} photos`, 'success');
+      // Same rule as handleDelete: linked photos are hidden, manual
+      // uploads are deleted.
+      const selected = photos.filter(p => selectedIds.includes(p.id));
+      const linkedIds = selected.filter(p => p.source_type).map(p => p.id);
+      const manualIds = selected.filter(p => !p.source_type).map(p => p.id);
+
+      if (linkedIds.length > 0) {
+        const { error: hideError } = await supabase
+          .from('gallery')
+          .update({ is_hidden: true })
+          .in('id', linkedIds)
+          .eq('tenant_id', tenant.id);
+        if (hideError) throw hideError;
+      }
+
+      if (manualIds.length > 0) {
+        const { error } = await supabase
+          .from('gallery')
+          .delete()
+          .in('id', manualIds)
+          .eq('tenant_id', tenant.id);
+        if (error) throw error;
+      }
+      addToast(`Removed ${selectedIds.length} photos from the gallery`, 'success');
       setSelectedIds([]);
       fetchPhotos();
     } catch (err: any) {
@@ -363,6 +411,17 @@ export default function AdminGallery() {
                    )}
                  </div>
 
+                 {/* Auto-linked photos are always visible as such, so it's
+                     clear the image is owned by an Event/Project and that
+                     removing it here only removes it from the gallery. */}
+                 {p.source_type && (
+                   <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
+                     <span className="text-[9px] uppercase font-bold tracking-wider text-white bg-black/60 px-2 py-0.5 rounded backdrop-blur-sm">
+                       From {p.source_type}
+                     </span>
+                   </div>
+                 )}
+
                  <div className="absolute bottom-0 left-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-3 pointer-events-none bg-gradient-to-t from-black/80 to-transparent">
                     <div>
                        {p.albumTag && <span className="text-[10px] uppercase font-bold text-primary bg-primary/20 px-2 py-0.5 rounded backdrop-blur-sm inline-block mb-1">{p.albumTag}</span>}
@@ -403,11 +462,27 @@ export default function AdminGallery() {
 
       <Modal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} title="Photo Details" size="md">
         <div className="space-y-6">
-           <div className="bg-gray-50 p-4 rounded-lg flex justify-center border border-gray-100 border-dashed">
-              <div className="max-w-xs w-full">
-                 <CloudinaryUpload onUpload={(url, _publicId) => setFormData({...formData, url})} currentUrl={formData.url} label="Upload Image" />
-              </div>
-           </div>
+           {formData.source_type ? (
+             /* Auto-linked photo. The image belongs to an Event/Project
+                and is only referenced here, so it can't be swapped out
+                from the gallery — that would break the link and let the
+                original reappear as a duplicate on the next save of
+                that record. Caption and album tag remain editable. */
+             <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 border-dashed space-y-3">
+                <div className="max-w-xs w-full mx-auto rounded-lg overflow-hidden border border-gray-200 bg-white">
+                   <img src={formData.url} alt="" className="w-full aspect-square object-cover" />
+                </div>
+                <p className="text-xs text-gray-500 text-center">
+                  Added automatically from {formData.source_type === 'event' ? 'an Event' : 'a Project'}. The image itself is managed on that record — edit the caption and album tag here.
+                </p>
+             </div>
+           ) : (
+             <div className="bg-gray-50 p-4 rounded-lg flex justify-center border border-gray-100 border-dashed">
+                <div className="max-w-xs w-full">
+                   <CloudinaryUpload onUpload={(url, _publicId) => setFormData({...formData, url})} currentUrl={formData.url} label="Upload Image" />
+                </div>
+             </div>
+           )}
 
            <div><label className={labelClass}>Caption</label><input value={formData.caption || ''} onChange={e => setFormData({...formData, caption: e.target.value})} className={inputClass} /></div>
            <div>
@@ -446,7 +521,17 @@ export default function AdminGallery() {
         </div>
       </Modal>
 
-      <ConfirmDialog isOpen={!!deleteId} onClose={() => setDeleteId(null)} onConfirm={handleDelete} title="Delete Photo" message="Are you sure?" />
+      <ConfirmDialog
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={handleDelete}
+        title="Remove Photo"
+        message={
+          photos.find(p => p.id === deleteId)?.source_type
+            ? 'This removes the photo from the gallery only. The original image stays on its Event/Project.'
+            : 'Are you sure?'
+        }
+      />
 
       {/* Lightbox */}
       {lightboxIndex !== null && (
