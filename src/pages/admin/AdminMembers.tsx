@@ -153,14 +153,25 @@ function generateMemberId(existingMembers: any[], tenant: { shortName: string },
  * sync with DashboardProfile.tsx's COMPLETION_FIELDS so the % shown
  * here (in the member detail modal) can never disagree with what the
  * member sees on their own profile page. */
-const COMPLETION_FIELDS = ['name', 'photo', 'phone', 'dob', 'address', 'school', 'grade', 'bloodGroup', 'emergencyPhone', 'emergencyDetails', 'rotaryMemberId'] as const;
+const COMPLETION_FIELDS_BASE = ['name', 'photo', 'phone', 'dob', 'address', 'school', 'grade', 'bloodGroup', 'emergencyPhone', 'emergencyDetails'] as const;
 
-function computeCompletionPct(m: any): number {
-  const filled = COMPLETION_FIELDS.filter((k) => {
+/** ICDLU is an Interact club and issues no Rotary Member IDs, so that
+ * field is not part of its completion score — leaving it in would cap
+ * every ICDLU member below 100% on a field that doesn't exist for them.
+ * Mirrors completionFieldsFor() in DashboardProfile.tsx / DashboardHome.tsx. */
+function completionKeysFor(tenantId: string): readonly string[] {
+  return tenantId === 'icdlu'
+    ? COMPLETION_FIELDS_BASE
+    : [...COMPLETION_FIELDS_BASE, 'rotaryMemberId'];
+}
+
+function computeCompletionPct(m: any, tenantId: string): number {
+  const keys = completionKeysFor(tenantId);
+  const filled = keys.filter((k) => {
     const v = m?.[k];
     return typeof v === 'string' ? v.trim().length > 0 : !!v;
   });
-  return Math.round((filled.length / COMPLETION_FIELDS.length) * 100);
+  return Math.round((filled.length / keys.length) * 100);
 }
 
 export default function AdminMembers() {
@@ -245,7 +256,9 @@ export default function AdminMembers() {
         m.email?.toLowerCase().includes(s) ||
         m.school?.toLowerCase().includes(s) ||
         m.memberId?.toLowerCase?.().includes(s) ||
-        m.rotaryMemberId?.toLowerCase?.().includes(s)
+        // Rotary Member ID is RACDLU-only; there is nothing to match on
+        // for ICDLU, where the field is never populated.
+        (tenant.id !== 'icdlu' && m.rotaryMemberId?.toLowerCase?.().includes(s))
       );
     }
     return true;
@@ -351,6 +364,10 @@ export default function AdminMembers() {
       }
 
       const { password, ...dataToSave } = dataToPersist;
+      // ICDLU has no Rotary Member ID. The input isn't rendered there,
+      // but formData is seeded from the whole row when editing, so the
+      // key is dropped rather than written back.
+      if (tenant.id === 'icdlu') delete (dataToSave as any).rotaryMemberId;
       const { error: upsertError } = await supabase.from('users').upsert({ id: docId, tenant_id: tenant.id, ...dataToSave }, { onConflict: 'id' });
       if (upsertError) throw upsertError;
       addToast('Member saved', 'success');
@@ -440,7 +457,8 @@ export default function AdminMembers() {
     const wb = XLSX.utils.book_new();
     const rows = dataToExport.map((m: any) => ({
       'Member ID': m.memberId || '',
-      'Rotary Member ID': m.rotaryMemberId || '',
+      // Rotary Member ID is RACDLU-only — no empty column on ICDLU exports.
+      ...(tenant.id === 'icdlu' ? {} : { 'Rotary Member ID': m.rotaryMemberId || '' }),
       'Full Name': m.name || '',
       'Email': m.email || '',
       'Role': roleById(m.role_id)?.label || 'Member',
@@ -459,7 +477,7 @@ export default function AdminMembers() {
       'Rotary Year': m.rotaryYear || '',
       'Bio': m.bio || '',
       'Photo URL': m.photo || '',
-      'Profile Completion %': computeCompletionPct(m),
+      'Profile Completion %': computeCompletionPct(m, tenant.id),
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     ws['!cols'] = Object.keys(rows[0] || {}).map(() => ({ wch: 22 }));
@@ -648,7 +666,7 @@ export default function AdminMembers() {
                   )}
                   {filteredMembers.map(m => {
                     const mRole = roleById(m.role_id);
-                    const pct = computeCompletionPct(m);
+                    const pct = computeCompletionPct(m, tenant.id);
                     return (
                       <tr key={m.id} style={selectedIds.includes(m.id) ? { background: p.greenDeep } : undefined}>
                         <td>
@@ -675,10 +693,10 @@ export default function AdminMembers() {
                         <td>
                           <div style={{ fontWeight: 600, color: p.tl }}>{m.name}</div>
                           <div style={{ fontSize: 11, color: p.tsub }}>{m.email}</div>
-                          {(m.memberId || m.rotaryMemberId) && (
+                          {(m.memberId || (tenant.id !== 'icdlu' && m.rotaryMemberId)) && (
                             <div style={{ fontSize: 10, color: p.tmid, marginTop: 2, display: 'flex', gap: 8 }}>
                               {m.memberId && <span>{m.memberId}</span>}
-                              {m.rotaryMemberId && (
+                              {tenant.id !== 'icdlu' && m.rotaryMemberId && (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                                   <BadgeCheck size={10} /> {m.rotaryMemberId}
                                 </span>
@@ -855,16 +873,21 @@ export default function AdminMembers() {
                 <p style={{ fontSize: 10, color: p.tmid, marginTop: 4 }}>Generated automatically. Cannot be edited.</p>
               </div>
             )}
-            <div>
-              <label style={labelStyle}>Rotary Member ID</label>
-              <input
-                value={formData.rotaryMemberId || ''}
-                onChange={e => setFormData({ ...formData, rotaryMemberId: e.target.value })}
-                style={inputStyle}
-                placeholder="Official Rotary International ID"
-              />
-              <p style={{ fontSize: 10, color: p.tmid, marginTop: 4 }}>Different from the auto-generated Assigned Member ID above.</p>
-            </div>
+            {/* Rotary Member ID is a RACDLU-only field: ICDLU is an
+                Interact club and issues no such ID, so the input is not
+                rendered and the column stays NULL for ICDLU rows. */}
+            {tenant.id !== 'icdlu' && (
+              <div>
+                <label style={labelStyle}>Rotary Member ID</label>
+                <input
+                  value={formData.rotaryMemberId || ''}
+                  onChange={e => setFormData({ ...formData, rotaryMemberId: e.target.value })}
+                  style={inputStyle}
+                  placeholder="Official Rotary International ID"
+                />
+                <p style={{ fontSize: 10, color: p.tmid, marginTop: 4 }}>Different from the auto-generated Assigned Member ID above.</p>
+              </div>
+            )}
 
             <div>
               <label style={labelStyle}>Date of birth</label>
@@ -974,16 +997,18 @@ export default function AdminMembers() {
               <div style={{ background: p.lightCard, borderRadius: 12, padding: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: p.mut }}>Profile completion</span>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: p.td }}>{computeCompletionPct(viewMember)}%</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: p.td }}>{computeCompletionPct(viewMember, tenant.id)}%</span>
                 </div>
                 <div style={{ height: 6, background: p.border, borderRadius: 4, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${computeCompletionPct(viewMember)}%`, background: p.green, borderRadius: 4 }} />
+                  <div style={{ height: '100%', width: `${computeCompletionPct(viewMember, tenant.id)}%`, background: p.green, borderRadius: 4 }} />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4 mt-6 pt-4" style={{ borderTop: `1px solid ${p.border}` }}>
                 <div><strong style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: p.tmid }}>Assigned Member ID</strong>{viewMember.memberId || '-'}</div>
-                <div><strong style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: p.tmid }}>Rotary Member ID</strong>{viewMember.rotaryMemberId || '-'}</div>
+                {tenant.id !== 'icdlu' && (
+                  <div><strong style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: p.tmid }}>Rotary Member ID</strong>{viewMember.rotaryMemberId || '-'}</div>
+                )}
                 <div><strong style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: p.tmid }}>Joined</strong>{viewMember.joiningDate || '-'}</div>
                 <div><strong style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: p.tmid }}>Phone</strong>{viewMember.phone || '-'}</div>
                 <div><strong style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: p.tmid }}>DOB</strong>{viewMember.dob || '-'}</div>
