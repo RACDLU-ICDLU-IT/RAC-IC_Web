@@ -126,10 +126,17 @@ export default function AdminPages() {
                     <input type="number" value={content.homeStatProjects || 0} onChange={e => setContent({...content, homeStatProjects: parseInt(e.target.value) || 0})} className={inputClass} />
                   </div>
                   <div>
-                    <label className={labelClass}>Hours Stat</label>
+                    <label className={labelClass}>Hours Stat{tenant.id === 'icdlu' ? ' (base)' : ''}</label>
                     <input type="number" value={content.homeStatHours || 0} onChange={e => setContent({...content, homeStatHours: parseInt(e.target.value) || 0})} className={inputClass} />
                   </div>
                </div>
+               {tenant.id === 'icdlu' && (
+                 <p className="text-[11px] text-gray-500 -mt-2">
+                   The Hours Stat is a <span className="font-semibold">starting value</span>, not the final figure. Members' real
+                   recorded volunteer hours (event attendance plus project participation) are added on top of it, and the homepage
+                   number updates on its own as those hours are recorded.
+                 </p>
+               )}
                <div>
                   <label className={labelClass}>Home About Image</label>
                   <div className="w-48"><CloudinaryUpload onUpload={(url) => setContent({...content, homeAboutImage: url})} currentUrl={content.homeAboutImage} aspectRatio="landscape" /></div>
