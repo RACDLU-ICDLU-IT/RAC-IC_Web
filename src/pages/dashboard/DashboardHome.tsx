@@ -1,4 +1,5 @@
 import { supabase } from '../../supabase';
+import { fetchMemberVolunteerHours, formatHours, projectCountsTowardHours } from '../../utils/volunteerHours';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTenant } from '../../hooks/useTenant';
@@ -269,10 +270,14 @@ function buildAttendanceBars(rows: AttendanceRecord[]): number[] {
     .slice(-ENGAGEMENT_BAR_LIMIT)
     .map((r) => (r.status === 'present' || r.status === 'late' ? 78 : 14));
 }
-function buildHoursBars(rows: AttendanceRecord[]): number[] {
-  const withHours = rows.filter((r) => (Number(r.volunteer_hours) || 0) > 0).slice(-ENGAGEMENT_BAR_LIMIT);
-  const max = Math.max(0, ...withHours.map((r) => Number(r.volunteer_hours) || 0));
-  return withHours.map((r) => Math.max(14, Math.round(((Number(r.volunteer_hours) || 0) / max) * 100)));
+/** Takes plain {date, hours} entries rather than attendance rows, because
+ * hours now come from two places: attendance rows AND projects this
+ * member took part in (see HourEntry / computeEngagement). */
+function buildHoursBars(entries: HourEntry[]): number[] {
+  const withHours = entries.filter((e) => e.hours > 0).slice(-ENGAGEMENT_BAR_LIMIT);
+  const max = Math.max(0, ...withHours.map((e) => e.hours));
+  if (max <= 0) return [];
+  return withHours.map((e) => Math.max(14, Math.round((e.hours / max) * 100)));
 }
 
 /* ------------------------------- engagement metrics ------------------------------- */
@@ -287,16 +292,16 @@ function buildHoursBars(rows: AttendanceRecord[]): number[] {
  * 0) when the member has no applicable records so the UI can show "—"
  * instead of a misleading 0%.
  *
- * Volunteer hours is the sum of attendance.volunteer_hours across ALL of
- * this member's rows. Hours are only ever stored as >0 for present/late
- * (enforced on the admin save path), so no status filter is needed here.
- * Rounded to 2dp to hide float noise from summing numeric(6,2) values. */
+ * Volunteer hours are deliberately NOT computed here. There is one
+ * definition of a member's hours — attendance hours plus the hours of
+ * every project they took part in — and it lives in the database
+ * (member_volunteer_hours, see src/utils/volunteerHours.ts). Summing
+ * attendance rows here as well would be a second, quietly-disagreeing
+ * implementation of the same number. */
 function computeEngagement(attendance: AttendanceRecord[]) {
   let attended = 0;
   let applicable = 0;
-  let hours = 0;
   for (const r of attendance) {
-    hours += Number(r.volunteer_hours) || 0;
     if (r.status === 'not_required') continue;
     if (r.status === 'present' || r.status === 'late') {
       attended++;
@@ -309,14 +314,29 @@ function computeEngagement(attendance: AttendanceRecord[]) {
     attended,
     applicable,
     attendanceRate: applicable > 0 ? Math.round((attended / applicable) * 100) : null,
-    volunteerHours: Math.round(hours * 100) / 100,
   };
 }
 
-/** "12" / "12.5" / "12.25" — no trailing zeros, no forced decimals. */
-function formatHours(n: number): string {
-  return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(2)));
-}
+/** One dated contribution of volunteer hours, from either an attended
+ * event or a project. Only used to draw the engagement bar chart — the
+ * headline figure comes from the database. */
+type HourEntry = { date: string; hours: number };
+
+/** Tenant-wide project rows used for two things: counting this member's
+ * completed projects, and plotting the hours those projects credited
+ * them. `memberIds` is jsonb written by AdminProjects — always guard
+ * with Array.isArray, legacy rows can hold null. */
+type ProjectParticipationRow = {
+  id: string;
+  status: string | null;
+  memberIds: unknown;
+  volunteerHours?: number | string | null;
+  executionDate?: string | null;
+  startDate?: string | null;
+};
+
+/* formatHours is imported from utils/volunteerHours — it used to be
+   duplicated here. */
 
 /* ------------------------------- status → dot mapping (Attendance rate card) ------------------------------- */
 
@@ -342,7 +362,7 @@ function timelineKeyForStatus(status: string | null): TimelineKey | null {
  * can never disagree with the % shown on the actual Profile page.
  * Deliberately excludes admin-managed fields (role, status,
  * joiningDate, memberId) since a member has no control over those. */
-const COMPLETION_FIELDS: { key: string; label: string }[] = [
+const COMPLETION_FIELDS_BASE: { key: string; label: string }[] = [
   { key: 'name', label: 'Full name' },
   { key: 'photo', label: 'Profile photo' },
   { key: 'phone', label: 'Phone number' },
@@ -353,17 +373,28 @@ const COMPLETION_FIELDS: { key: string; label: string }[] = [
   { key: 'bloodGroup', label: 'Blood group' },
   { key: 'emergencyPhone', label: 'Emergency contact phone' },
   { key: 'emergencyDetails', label: 'Emergency contact details' },
-  { key: 'rotaryMemberId', label: 'Rotary Member ID' },
 ];
 
+/** ICDLU is an Interact club and issues no Rotary Member IDs, so that
+ * field doesn't exist anywhere in its UI — including as a slot in the
+ * completion score, where leaving it in would cap every ICDLU member
+ * below 100%. RACDLU keeps it. Mirrors DashboardProfile.tsx's own
+ * completionFieldsFor(), which must stay identical to this. */
+function completionFieldsFor(tenantId: string): { key: string; label: string }[] {
+  return tenantId === 'icdlu'
+    ? COMPLETION_FIELDS_BASE
+    : [...COMPLETION_FIELDS_BASE, { key: 'rotaryMemberId', label: 'Rotary Member ID' }];
+}
+
 /** Identical logic to DashboardProfile.tsx's computeCompletion. */
-function computeCompletion(data: any) {
-  const filled = COMPLETION_FIELDS.filter((f) => {
+function computeCompletion(data: any, tenantId: string) {
+  const fields = completionFieldsFor(tenantId);
+  const filled = fields.filter((f) => {
     const v = data?.[f.key];
     return typeof v === 'string' ? v.trim().length > 0 : !!v;
   });
-  const pct = COMPLETION_FIELDS.length > 0 ? Math.round((filled.length / COMPLETION_FIELDS.length) * 100) : 0;
-  return { pct, filledCount: filled.length, total: COMPLETION_FIELDS.length };
+  const pct = fields.length > 0 ? Math.round((filled.length / fields.length) * 100) : 0;
+  return { pct, filledCount: filled.length, total: fields.length };
 }
 
 /** Verified-badge tier for the welcome card, next to the member's
@@ -473,6 +504,7 @@ async function loadDashboardData(tenantId: string, userId?: string) {
     upcomingRangeRes,
     needsAttentionAnnRes,
     projectParticipationRes,
+    volunteerHoursTotal,
   ] = await Promise.all([
     supabase
       .from('events')
@@ -550,10 +582,21 @@ async function loadDashboardData(tenantId: string, userId?: string) {
     // selected. Status casing is stored inconsistently across the app
     // ('Completed' from AdminProjects, lowercased on read elsewhere), so
     // the status match is done case-insensitively in fetchDashboard.
+    // Also carries volunteerHours + dates: a project credits its hours
+    // to every participant (see member_volunteer_hours), and the
+    // engagement bar chart plots those alongside attendance hours.
     supabase
       .from('projects')
-      .select('id, status, memberIds')
+      .select('id, status, memberIds, volunteerHours, executionDate, startDate')
       .eq('tenant_id', tenantId),
+    // The member's volunteer-hour total. Computed in the database from
+    // attendance + project participation so this figure and the public
+    // homepage's club total can never drift apart, and so editing or
+    // re-saving a project can't double-count (it's derived each call,
+    // never accumulated). Returns null if unavailable.
+    userId
+      ? fetchMemberVolunteerHours(tenantId, userId)
+      : Promise.resolve(null),
   ]);
 
   if (eventsRes.error) throw eventsRes.error;
@@ -589,7 +632,10 @@ async function loadDashboardData(tenantId: string, userId?: string) {
     // instead of asserting a false "0 completed projects".
     projectParticipation: projectParticipationRes.error
       ? null
-      : ((projectParticipationRes.data as { id: string; status: string | null; memberIds: unknown }[]) || []),
+      : ((projectParticipationRes.data as ProjectParticipationRow[]) || []),
+    // null = couldn't be read; the caller falls back rather than
+    // showing a wrong total.
+    volunteerHoursTotal,
     todayISO: today,
     startOfWeekISO,
     endOfMonthISO,
@@ -763,6 +809,11 @@ export default function DashboardHome() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   // Completed projects THIS member took part in; null = not loaded / failed.
   const [completedProjects, setCompletedProjects] = useState<number | null>(null);
+  // Authoritative volunteer-hour total from the database (attendance +
+  // projects). null = not loaded / unavailable.
+  const [volunteerHoursTotal, setVolunteerHoursTotal] = useState<number | null>(null);
+  // Hours credited by projects this member took part in — bar chart only.
+  const [projectHourEntries, setProjectHourEntries] = useState<HourEntry[]>([]);
   const [meetingDays, setMeetingDays] = useState<MeetingDayRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -817,6 +868,27 @@ export default function DashboardHome() {
                 Array.isArray(pr.memberIds) &&
                 (pr.memberIds as unknown[]).includes(user.id)
             ).length
+      );
+
+      setVolunteerHoursTotal(data.volunteerHoursTotal);
+
+      // Project-credited hours for the engagement bar chart. Mirrors the
+      // same rule member_volunteer_hours applies server-side: a project
+      // credits its hours to each participant once it has actually been
+      // run (Ongoing / Completed — not Upcoming).
+      setProjectHourEntries(
+        (data.projectParticipation || [])
+          .filter(
+            (pr) =>
+              projectCountsTowardHours(pr.status) &&
+              Array.isArray(pr.memberIds) &&
+              (pr.memberIds as unknown[]).includes(user.id)
+          )
+          .map((pr) => ({
+            date: pr.executionDate || pr.startDate || '',
+            hours: Number(pr.volunteerHours) || 0,
+          }))
+          .filter((e) => e.hours > 0)
       );
 
       if (data.attendance.length > 0) {
@@ -933,7 +1005,9 @@ export default function DashboardHome() {
     if (!user?.id) return;
     supabase
       .from('users')
-      .select('status, name, photo, phone, dob, address, school, grade, bloodGroup, emergencyPhone, emergencyDetails, rotaryMemberId')
+      // Column list is built from the same tenant-aware field set the
+      // completion score uses, so ICDLU never even reads rotaryMemberId.
+      .select(['status', ...completionFieldsFor(tenant.id).map((f) => f.key)].join(', '))
       .eq('id', user.id)
       .eq('tenant_id', tenant.id)
       .single()
@@ -1000,12 +1074,33 @@ export default function DashboardHome() {
   // which counted `not_required` rows against the member and so disagreed
   // with the Attendance page and the admin analytics.
   const engagement = computeEngagement(attendance);
-  const { attendanceRate, volunteerHours } = engagement;
+  const { attendanceRate } = engagement;
   // `attendance` state is newest-first; the bar charts read left-to-right
   // as time passes, so feed them oldest-first.
   const attendanceChrono = [...attendance].reverse();
   const attendanceBarValues = buildAttendanceBars(attendanceChrono);
-  const hoursBarValues = buildHoursBars(attendanceChrono);
+
+  // Volunteer hours: one number, computed in the database from
+  // attendance + project participation (see utils/volunteerHours.ts).
+  // Falls back to the attendance-only sum if that read failed, so the
+  // card degrades to an understated figure rather than showing nothing.
+  const volunteerHours =
+    volunteerHoursTotal ??
+    Math.round(
+      attendance.reduce((sum: number, r: AttendanceRecord) => sum + (Number(r.volunteer_hours) || 0), 0) * 100
+    ) / 100;
+
+  // Bars show both sources of hours, oldest first.
+  const hoursEntries: HourEntry[] = [
+    ...attendanceChrono.map((r) => ({
+      date: eventLookup[r.eventId]?.date || '',
+      hours: Number(r.volunteer_hours) || 0,
+    })),
+    ...projectHourEntries,
+  ]
+    .filter((e) => e.hours > 0)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const hoursBarValues = buildHoursBars(hoursEntries);
   const completedProjectsBarValues = Array.from({ length: Math.min(completedProjects ?? 0, ENGAGEMENT_BAR_LIMIT) }, () => 78);
 
   // Last meeting = most recent PAST event (meetingDays is already sorted
@@ -1023,7 +1118,7 @@ export default function DashboardHome() {
   // DashboardProfile.tsx treats as authoritative. null while
   // profileRow hasn't loaded yet — no badge flashes in before the
   // real status/completion is known.
-  const profileCompletion = profileRow ? computeCompletion(profileRow) : null;
+  const profileCompletion = profileRow ? computeCompletion(profileRow, tenant.id) : null;
   const verifiedTier: VerifiedTier = profileRow ? verifiedTierFor(profileRow.status, profileCompletion!.pct) : null;
 
   return (
@@ -1275,7 +1370,7 @@ export default function DashboardHome() {
                   Attendance rate    <- this member's attendance rows
                   Completed projects <- Completed projects whose
                                         memberIds include this member
-                  Volunteer hours    <- sum of attendance.volunteer_hours
+                  Volunteer hours    <- attendance hours + project hours
                                         recorded by admins for this member
                 The old "Change period" pill (no handler) and the static
                 ▲/▼ trend glyphs (no trend was ever computed) were removed:
