@@ -11,6 +11,7 @@ import FeaturedProjects from '../components/FeaturedProjects';
 import FeaturedEvents from '../components/FeaturedEvents';
 import { useTenant } from '../hooks/useTenant';
 import SEOHead from '../components/SEOHead';
+import { fetchClubVolunteerHours } from '../utils/volunteerHours';
 import imgGallery1 from '../assets/images/regenerated_image_1777783191084.jpg';
 import imgGallery2 from '../assets/images/regenerated_image_1777783192770.jpg';
 import imgGallery3 from '../assets/images/regenerated_image_1777783183004.jpg';
@@ -640,6 +641,11 @@ export default function DesktopHome() {
   const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
   const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  /* Hours actually accumulated by members (attendance + projects),
+     read live from the database. null until loaded / if unavailable —
+     the stat then shows the admin-configured base on its own rather
+     than a wrong number. See the Volunteer Hours stat below. */
+  const [clubVolunteerHours, setClubVolunteerHours] = useState<number | null>(null);
 
   const defaultHeroTitle = tenant.brand.primaryColor === '#FFFFFF'
     ? 'Fellowship\nThrough Service.'
@@ -758,7 +764,7 @@ export default function DesktopHome() {
         setUpcomingEvents(eventsSnap || []);
 
         const { data: gallerySnap } = await supabase.from('gallery')
-          .select('*').eq('tenant_id', tenant.id)
+          .select('*').eq('tenant_id', tenant.id).eq('is_hidden', false)
           .order('sort_order', { ascending: true });
         const fetchedPhotos = gallerySnap || [];
         if (fetchedPhotos.length > 0) {
@@ -779,6 +785,31 @@ export default function DesktopHome() {
     fetchData();
   }, [tenant.id]);
 
+  /* ── Live club volunteer hours (ICDLU) ──
+     Deliberately outside the fetch above: it is re-read whenever the tab
+     becomes visible again, so the figure keeps up as members' hours are
+     recorded rather than being frozen at first page load. */
+  useEffect(() => {
+    if (tenant.id !== 'icdlu') {
+      setClubVolunteerHours(null);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      const total = await fetchClubVolunteerHours(tenant.id);
+      if (!cancelled) setClubVolunteerHours(total);
+    };
+    load();
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [tenant.id]);
+
   /* ── Lightbox keyboard nav ── */
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -794,6 +825,17 @@ export default function DesktopHome() {
   const heroTextColor = tenant.brand.primaryColor === '#FFFFFF'
     ? '#ffffff'
     : (tenant.brand.textOnPrimary || '#ffffff');
+
+  /* Volunteer Hours stat.
+     The number an admin sets in Admin → Pages is the club's BASE — the
+     hours served before hour tracking existed in the app. It is never
+     replaced: members' real accumulated hours (attendance + projects)
+     are added on top of it. If the live total can't be read we show the
+     configured base alone rather than an invented figure. */
+  const baseVolunteerHours = Number(content.homeStatHours) || 0;
+  const volunteerHoursStat = clubVolunteerHours === null
+    ? baseVolunteerHours
+    : Math.round(baseVolunteerHours + clubVolunteerHours);
 
   const heroTitleLines = typeof content.homeHeroTitle === 'string'
     ? content.homeHeroTitle.replace(/\\n/g, '\n')
@@ -902,7 +944,7 @@ export default function DesktopHome() {
           {[
             { label: 'Active Members', value: content.homeStatMembers, suffix: '+' },
             { label: 'Projects Completed', value: content.homeStatProjects, suffix: '' },
-            { label: 'Volunteer Hours', value: content.homeStatHours, suffix: '+' },
+            { label: 'Volunteer Hours', value: volunteerHoursStat, suffix: '+' },
           ].map((stat, i) => (
             <div key={i} className="dhv2-stats__item">
               <span className="dhv2-stats__label">{stat.label}</span>
