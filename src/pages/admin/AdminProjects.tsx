@@ -472,7 +472,14 @@ ${particip}`;
               </div>
             </div>
 
-            <div><label className={labelClass}>Volunteer Hours</label><input type="number" value={formData.volunteerHours || 0} onChange={e => setFormData({ ...formData, volunteerHours: Number(e.target.value) })} className={inputClass} /></div>
+            <div>
+              <label className={labelClass}>Volunteer Hours</label>
+              <input type="number" min={0} value={formData.volunteerHours || 0} onChange={e => setFormData({ ...formData, volunteerHours: Number(e.target.value) })} className={inputClass} />
+              <p className="text-[11px] text-gray-500 mt-1">
+                Credited to every participant selected on the right, once the project is <span className="font-semibold">Ongoing</span> or <span className="font-semibold">Completed</span>.
+                The total is recalculated from this figure each time it's read, so editing or re-saving the project never double-counts anyone's hours.
+              </p>
+            </div>
 
             <div>
               <label className={labelClass}>Featured Project</label>
