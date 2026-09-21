@@ -35,7 +35,7 @@ export default function Gallery() {
       } catch (_) {}
 
       try {
-        const { data: snap } = await supabase.from('gallery').select('*').eq('tenant_id', tenant.id).order('sort_order', { ascending: true });
+        const { data: snap } = await supabase.from('gallery').select('*').eq('tenant_id', tenant.id).eq('is_hidden', false).order('sort_order', { ascending: true });
         const galleryData = snap || [];
         const activePhotos = galleryData.length > 0 ? galleryData : defaultPhotos;
         setPhotos(activePhotos);
