@@ -1,7 +1,7 @@
 import { supabase } from '../supabase';
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { formatDate } from '../utils/format';
+import { formatDate, getBodyExcerpt } from '../utils/format';
 import { Newspaper } from 'lucide-react';
 import { useTenant } from '../hooks/useTenant';
 import SEOHead from '../components/SEOHead';
@@ -88,7 +88,7 @@ export default function News() {
                     {articles[0].title}
                   </h2>
                   <p className="text-white/70 text-lg hidden md:block line-clamp-2">
-                    {articles[0].body?.replace(/[#*`_\[\]]/g, '').substring(0, 200)}...
+                    {getBodyExcerpt(articles[0].body, 200)}...
                   </p>
                   <div className="mt-6 flex items-center gap-2 text-accent font-bold text-sm uppercase tracking-wide">
                     Read Article <span className="group-hover:translate-x-2 transition-transform duration-300 inline-block">→</span>
@@ -123,7 +123,7 @@ export default function News() {
                         {article.title}
                       </h3>
                       <p className="text-gray-500 text-sm line-clamp-2 mb-4">
-                        {article.body?.replace(/[#*`_\[\]]/g, '').substring(0, 150)}...
+                        {getBodyExcerpt(article.body, 150)}...
                       </p>
                       <div className="flex items-center justify-between mt-auto pt-4 border-t border-gray-100">
                         <span className="text-xs text-gray-400">By {article.author || tenant.shortName}</span>
