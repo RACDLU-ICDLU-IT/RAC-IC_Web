@@ -10,6 +10,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { useAdminTenant } from '../../hooks/useAdminTenant';
+import { getBodyExcerpt } from '../../utils/format';
 
 export default function AdminNews() {
   const { adminTenant: tenant } = useAdminTenant();
@@ -17,10 +18,14 @@ export default function AdminNews() {
   const [articles, setArticles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
-  
+
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Rich content block builder (same pattern as Add/Edit Project)
+  const [activeTab, setActiveTab] = useState<'rich' | 'raw'>('rich');
+  const [blocks, setBlocks] = useState<any[]>([]);
 
   const { addToast } = useToast();
 
@@ -41,19 +46,72 @@ export default function AdminNews() {
     fetchArticles();
   }, [tenant.id]);
 
+  // Whenever the form opens (new article or edit), hydrate the block builder from body
+  useEffect(() => {
+    if (isFormOpen) {
+      const body = formData.body || '';
+      try {
+        const parsed = JSON.parse(body);
+        if (Array.isArray(parsed)) {
+          setBlocks(parsed);
+          setActiveTab('rich');
+          return;
+        }
+      } catch (e) {}
+
+      setBlocks([
+        { id: crypto.randomUUID(), type: 'text', content: body }
+      ]);
+      setActiveTab('rich');
+    }
+  }, [isFormOpen, formData.id]);
+
+  const addBlock = (type: 'text' | 'image') => {
+    const newId = crypto.randomUUID();
+    const newBlock =
+      type === 'text'
+        ? { id: newId, type: 'text', content: '' }
+        : { id: newId, type: 'image', url: '', style: 'center', caption: '' };
+    setBlocks([...blocks, newBlock]);
+  };
+
+  const updateBlock = (id: string, updatedFields: any) => {
+    setBlocks(blocks.map(b => (b.id === id ? { ...b, ...updatedFields } : b)));
+  };
+
+  const moveBlock = (index: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === blocks.length - 1) return;
+
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    const updated = [...blocks];
+    const temp = updated[index];
+    updated[index] = updated[targetIndex];
+    updated[targetIndex] = temp;
+    setBlocks(updated);
+  };
+
+  const deleteBlock = (id: string) => {
+    setBlocks(blocks.filter(b => b.id !== id));
+  };
+
   const handleSave = async () => {
     const isNew = !formData.id;
     const docId = isNew ? crypto.randomUUID() : formData.id;
-    
+
     const slug = formData.slug || formData.title?.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    const dataToSave = { 
-      ...formData, 
+
+    const finalBody = activeTab === 'rich' ? JSON.stringify(blocks) : (formData.body || '');
+
+    const dataToSave = {
+      ...formData,
+      body: finalBody,
       slug,
       createdAt: formData.createdAt || new Date().toISOString(),
       publishedAt: formData.status === 'Published' && !formData.publishedAt ? new Date().toISOString() : formData.publishedAt,
       tenant_id: tenant.id
     };
-    
+
     try {
       const { data: savedRows, error: saveError } = await supabase
         .from('news')
@@ -108,11 +166,6 @@ export default function AdminNews() {
 
   const inputClass = "w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent bg-white";
   const labelClass = "block text-sm font-medium text-gray-700 mb-1.5";
-
-  const renderPreview = () => {
-    try { return { __html: DOMPurify.sanitize(marked(formData.body || '*No content*') as string) }; } 
-    catch (e) { return { __html: '' }; }
-  };
 
   const filtered = filter === 'all' ? articles : articles.filter(a => a.status?.toLowerCase() === filter);
 
@@ -171,7 +224,7 @@ export default function AdminNews() {
                   </div>
                   <h3 className="font-bold text-gray-900 leading-snug mb-1 line-clamp-2">{a.title}</h3>
                   <p className="text-xs text-gray-500 mb-2 truncate">By {a.author || 'Unknown'}</p>
-                  <p className="text-xs text-gray-600 line-clamp-2 mt-auto">{a.body?.replace(/[#*`_]/g, '')}</p>
+                  <p className="text-xs text-gray-600 line-clamp-2 mt-auto">{getBodyExcerpt(a.body)}</p>
                </div>
             </div>
           ))}
@@ -179,13 +232,13 @@ export default function AdminNews() {
       )}
 
       <Modal isOpen={isFormOpen} onClose={() => setIsFormOpen(false)} title={formData.id ? 'Edit Article' : 'Write Article'} size="xl">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[70vh]">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[75vh]">
           {/* Editor Panel */}
           <div className="flex flex-col gap-4 overflow-y-auto pr-2">
             <div>
               <input value={formData.title || ''} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-0 py-2 text-2xl font-heading font-bold border-0 border-b border-gray-200 focus:ring-0 focus:border-accent placeholder:text-gray-300" placeholder="Article Title" />
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div><label className={labelClass}>Category</label>
                 <select value={formData.category || 'Club News'} onChange={e => setFormData({...formData, category: e.target.value})} className={inputClass}>
@@ -212,32 +265,225 @@ export default function AdminNews() {
               <CloudinaryUpload onUpload={(url, publicId) => setFormData({...formData, coverImage: url, coverImagePublicId: publicId})} currentUrl={formData.coverImage} currentPublicId={formData.coverImagePublicId} aspectRatio="landscape" />
             </div>
 
-            <div className="flex flex-col flex-1 min-h-[300px]">
-              <div className="flex gap-1.5 p-2 bg-gray-100 rounded-t-lg border border-b-0 border-gray-200">
-                 <button onClick={()=>insertMarkdown('**Bold** ')} className="px-2 py-1 bg-white border border-gray-200 rounded text-xs font-bold hover:bg-gray-50">B</button>
-                 <button onClick={()=>insertMarkdown('*Italic* ')} className="px-2 py-1 bg-white border border-gray-200 rounded text-xs italic hover:bg-gray-50">I</button>
-                 <button onClick={()=>insertMarkdown('### Heading\n')} className="px-2 py-1 bg-white border border-gray-200 rounded text-xs hover:bg-gray-50">H3</button>
-                 <button onClick={()=>insertMarkdown('- List item\n')} className="px-2 py-1 bg-white border border-gray-200 rounded text-xs hover:bg-gray-50">•</button>
-                 <button onClick={()=>insertMarkdown('[Link text](https://)')} className="px-2 py-1 bg-white border border-gray-200 rounded text-xs flex items-center hover:bg-gray-50">🔗</button>
+            {/* Content Tab Builder */}
+            <div className="flex flex-col flex-1 min-h-[300px] space-y-3">
+              <div className="flex border-b border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('rich')}
+                  className={`py-2 px-4 text-xs font-bold uppercase border-b-2 transition-all ${activeTab === 'rich' ? 'border-accent text-accent' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                >
+                  Rich Content Builder
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('raw')}
+                  className={`py-2 px-4 text-xs font-bold uppercase border-b-2 transition-all ${activeTab === 'raw' ? 'border-accent text-accent' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                >
+                  Raw Markdown Text
+                </button>
               </div>
-              <textarea 
-                id="news-body-editor"
-                value={formData.body || ''} 
-                onChange={e => setFormData({...formData, body: e.target.value})} 
-                className="w-full flex-1 p-3 text-sm font-mono border border-gray-200 rounded-b-lg focus:outline-none focus:ring-1 focus:ring-accent resize-none bg-gray-50" 
-                placeholder="Write your article here..."
-              />
+
+              {activeTab === 'rich' ? (
+                <div className="space-y-4 flex-1">
+                  <div className="flex flex-wrap gap-2 items-center p-2.5 bg-gray-50 border border-gray-200 rounded-xl">
+                    <span className="text-xs font-bold text-gray-400 uppercase tracking-wider mr-2">Add Content Section:</span>
+                    <button
+                      type="button"
+                      onClick={() => addBlock('text')}
+                      className="px-3 py-1 bg-white border border-gray-200 hover:border-accent text-xs font-medium text-gray-700 hover:text-accent rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+                    >
+                      + Text block
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addBlock('image')}
+                      className="px-3 py-1 bg-white border border-gray-200 hover:border-accent text-xs font-medium text-gray-700 hover:text-accent rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+                    >
+                      + Image
+                    </button>
+                  </div>
+
+                  {blocks.length === 0 ? (
+                    <div className="border border-dashed border-gray-200 rounded-xl py-12 text-center text-gray-400 text-xs italic">
+                      No sections added yet. Click above to add text or images to the article body!
+                    </div>
+                  ) : (
+                    <div className="space-y-4 max-h-[420px] overflow-y-auto pr-1">
+                      {blocks.map((block, index) => (
+                        <div key={block.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative group/block">
+                          {/* Header bar of block */}
+                          <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-3 select-none">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                                block.type === 'text' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' :
+                                'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                              }`}>
+                                {block.type} section
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => moveBlock(index, 'up')}
+                                disabled={index === 0}
+                                className="p-1 hover:bg-gray-100 disabled:opacity-30 rounded text-gray-500 font-bold"
+                                title="Move Up"
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveBlock(index, 'down')}
+                                disabled={index === blocks.length - 1}
+                                className="p-1 hover:bg-gray-100 disabled:opacity-30 rounded text-gray-500 font-bold"
+                                title="Move Down"
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteBlock(block.id)}
+                                className="p-1 hover:bg-red-50 text-red-600 rounded ml-2 font-bold"
+                                title="Delete Section"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Content block editor body */}
+                          {block.type === 'text' && (
+                            <div className="space-y-2">
+                              <textarea
+                                value={block.content || ''}
+                                onChange={e => updateBlock(block.id, { content: e.target.value })}
+                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent bg-white"
+                                rows={4}
+                                placeholder="Type markdown article text here..."
+                              />
+                            </div>
+                          )}
+
+                          {block.type === 'image' && (
+                            <div className="space-y-3">
+                              <div className="flex gap-4 items-start">
+                                <div className="w-24 aspect-video bg-gray-50 rounded border border-gray-200 overflow-hidden shrink-0">
+                                  {block.url ? (
+                                    <img src={block.url} alt="Selected" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-gray-300 text-xs">No img</div>
+                                  )}
+                                </div>
+                                <div className="flex-1 space-y-2">
+                                  <div>
+                                    <label className="text-[11px] font-bold text-gray-500 block mb-1">Upload an image for this section</label>
+                                    <CloudinaryUpload
+                                      onUpload={(url) => updateBlock(block.id, { url })}
+                                      currentUrl={block.url}
+                                      aspectRatio="landscape"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3 pt-1">
+                                <div>
+                                  <label className="block text-xs font-bold text-gray-700 mb-1">Display Style</label>
+                                  <select
+                                    value={block.style || 'center'}
+                                    onChange={e => updateBlock(block.id, { style: e.target.value })}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none bg-white"
+                                  >
+                                    <option value="center">Centered (Standard)</option>
+                                    <option value="full">Full Width</option>
+                                    <option value="left">Left Floating Wrap</option>
+                                    <option value="right">Right Floating Wrap</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-bold text-gray-700 mb-1">Caption / Subtitle</label>
+                                  <input
+                                    type="text"
+                                    value={block.caption || ''}
+                                    onChange={e => updateBlock(block.id, { caption: e.target.value })}
+                                    className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded focus:outline-none bg-white"
+                                    placeholder="e.g. Handing out supplies"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col flex-1">
+                  <div className="flex gap-1.5 p-2 bg-gray-100 rounded-t-lg border border-b-0 border-gray-200">
+                     <button onClick={()=>insertMarkdown('**Bold** ')} className="px-2 py-1 bg-white border border-gray-200 rounded text-xs font-bold hover:bg-gray-50">B</button>
+                     <button onClick={()=>insertMarkdown('*Italic* ')} className="px-2 py-1 bg-white border border-gray-200 rounded text-xs italic hover:bg-gray-50">I</button>
+                     <button onClick={()=>insertMarkdown('### Heading\n')} className="px-2 py-1 bg-white border border-gray-200 rounded text-xs hover:bg-gray-50">H3</button>
+                     <button onClick={()=>insertMarkdown('- List item\n')} className="px-2 py-1 bg-white border border-gray-200 rounded text-xs hover:bg-gray-50">•</button>
+                     <button onClick={()=>insertMarkdown('[Link text](https://)')} className="px-2 py-1 bg-white border border-gray-200 rounded text-xs flex items-center hover:bg-gray-50">🔗</button>
+                     <button onClick={()=>insertMarkdown('![Alt text](https://)')} className="px-2 py-1 bg-white border border-gray-200 rounded text-xs flex items-center hover:bg-gray-50">🖼️</button>
+                  </div>
+                  <textarea
+                    id="news-body-editor"
+                    value={formData.body || ''}
+                    onChange={e => setFormData({...formData, body: e.target.value})}
+                    className="w-full flex-1 p-3 text-sm font-mono border border-gray-200 rounded-b-lg focus:outline-none focus:ring-1 focus:ring-accent resize-none bg-gray-50"
+                    placeholder="Write your article here..."
+                  />
+                </div>
+              )}
             </div>
           </div>
 
           {/* Live Preview Panel */}
           <div className="hidden lg:flex flex-col border-l border-gray-100 pl-8 overflow-y-auto">
              <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Live Preview</div>
-             <div className="prose prose-sm prose-primary max-w-none">
+             <div className="prose prose-sm prose-primary max-w-none after:content-[''] after:table after:clear-both">
                 {formData.coverImage && <img src={formData.coverImage} onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} className="w-full rounded-lg mb-6" />}
                 <h1 className="mb-2">{formData.title || 'Untitled Article'}</h1>
                 <p className="text-gray-500 mb-8"><small>By {formData.author} • {formData.category}</small></p>
-                <div dangerouslySetInnerHTML={renderPreview()} />
+
+                {activeTab === 'rich' ? (
+                  blocks.length === 0 ? (
+                    <p className="italic text-gray-400">No content yet</p>
+                  ) : (
+                    blocks.map((block, idx) => {
+                      if (block.type === 'text') {
+                        return (
+                          <div
+                            key={block.id || idx}
+                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked(block.content || '') as string) }}
+                          />
+                        );
+                      }
+                      if (block.type === 'image') {
+                        const floatClass = block.style === 'left' ? 'float-left mr-4 max-w-[45%] mb-4' :
+                                           block.style === 'right' ? 'float-right ml-4 max-w-[45%] mb-4' :
+                                           block.style === 'full' ? 'w-full mb-6' :
+                                           'max-w-sm mx-auto flex flex-col items-center text-center mb-6';
+                        return (
+                          <div key={block.id || idx} className={floatClass}>
+                            {block.url ? (
+                              <img src={block.url} alt={block.caption || ''} className="rounded-lg w-full" />
+                            ) : (
+                              <div className="w-full aspect-video bg-gray-100 rounded-lg flex items-center justify-center text-gray-300 text-xs">No image selected</div>
+                            )}
+                            {block.caption && <span className="block text-xs text-gray-500 mt-1 not-italic">{block.caption}</span>}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })
+                  )
+                ) : (
+                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked(formData.body || '*No content*') as string) }} />
+                )}
              </div>
           </div>
         </div>
