@@ -60,6 +60,18 @@ export default function NewsDetail() {
     </div>;
   }
 
+  // The body is either a legacy markdown string, or a JSON array of content blocks
+  // (text / image) produced by the Rich Content Builder in the admin dashboard.
+  let isJsonBlocks = false;
+  let parsedBlocks: any[] = [];
+  try {
+    const parsed = JSON.parse(article.body || '');
+    if (Array.isArray(parsed)) {
+      isJsonBlocks = true;
+      parsedBlocks = parsed;
+    }
+  } catch (e) {}
+
   return (
     <div className="bg-white min-h-screen pt-24 pb-32">
       <article>
@@ -90,10 +102,46 @@ export default function NewsDetail() {
 
         {/* Content */}
         <div className="max-w-3xl mx-auto px-6 py-16">
-          <div 
-            className="prose prose-lg max-w-none prose-headings:font-heading prose-headings:font-bold prose-headings:text-primary prose-a:text-accent prose-a:no-underline hover:prose-a:underline prose-p:text-gray-700 prose-p:leading-relaxed prose-blockquote:border-l-accent prose-blockquote:bg-gray-50 prose-blockquote:py-1 prose-blockquote:px-6 prose-blockquote:rounded-r-lg prose-img:rounded-xl"
-            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked(article.body || '') as string) }} 
-          />
+          {isJsonBlocks ? (
+            <div className="after:content-[''] after:table after:clear-both space-y-8">
+              {parsedBlocks.map((block: any, idx: number) => {
+                if (block.type === 'text') {
+                  return (
+                    <div
+                      key={block.id || idx}
+                      className="prose prose-lg max-w-none prose-headings:font-heading prose-headings:font-bold prose-headings:text-primary prose-a:text-accent prose-a:no-underline hover:prose-a:underline prose-p:text-gray-700 prose-p:leading-relaxed prose-blockquote:border-l-accent prose-blockquote:bg-gray-50 prose-blockquote:py-1 prose-blockquote:px-6 prose-blockquote:rounded-r-lg"
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked(block.content || '') as string) }}
+                    />
+                  );
+                }
+
+                if (block.type === 'image') {
+                  if (!block.url) return null;
+                  const floatClass = block.style === 'left' ? 'md:float-left md:mr-8 md:max-w-[45%] w-full mb-6' :
+                                     block.style === 'right' ? 'md:float-right md:ml-8 md:max-w-[45%] w-full mb-6' :
+                                     block.style === 'full' ? 'w-full max-w-none mb-8' :
+                                     'max-w-xl mx-auto w-full flex flex-col items-center justify-center text-center mb-8';
+                  return (
+                    <div key={block.id || idx} className={floatClass}>
+                      <img src={block.url} alt={block.caption || ""} className="rounded-xl shadow-md border border-gray-100 object-cover w-full" />
+                      {block.caption && (
+                        <span className="text-xs text-gray-500 mt-2 font-medium tracking-wide">
+                          {block.caption}
+                        </span>
+                      )}
+                    </div>
+                  );
+                }
+
+                return null;
+              })}
+            </div>
+          ) : (
+            <div
+              className="prose prose-lg max-w-none prose-headings:font-heading prose-headings:font-bold prose-headings:text-primary prose-a:text-accent prose-a:no-underline hover:prose-a:underline prose-p:text-gray-700 prose-p:leading-relaxed prose-blockquote:border-l-accent prose-blockquote:bg-gray-50 prose-blockquote:py-1 prose-blockquote:px-6 prose-blockquote:rounded-r-lg prose-img:rounded-xl"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked(article.body || '') as string) }}
+            />
+          )}
         </div>
 
         <div className="max-w-3xl mx-auto px-6 pb-16">
